@@ -1,0 +1,30 @@
+[
+  {
+    "case_id": "partial-match",
+    "query": "How should scholarly RAG systems be evaluated?",
+    "expected_paper_ids": ["paper-1", "paper-2"],
+    "actual_paper_ids": ["paper-1", "paper-3"],
+    "claims": [
+      {
+        "claim": "Retrieval and generation should be evaluated separately.",
+        "evidence_ids": ["ev-1", "missing"],
+        "support_status": "supported"
+      },
+      {
+        "claim": "This claim has no supporting citation.",
+        "evidence_ids": [],
+        "support_status": "unsupported"
+      }
+    ],
+    "evidence": [
+      {
+        "evidence_id": "ev-1",
+        "paper_id": "paper-1",
+        "chunk_id": "paper-1:chunk:001",
+        "claim_type": "retrieved",
+        "quote": "Retrieval and generation should be evaluated separately.",
+        "relevance_score": 0.9
+      }
+    ]
+  }
+]
