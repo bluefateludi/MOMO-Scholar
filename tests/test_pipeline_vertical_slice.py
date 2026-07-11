@@ -25,6 +25,7 @@ def test_pipeline_writes_papers_and_report(tmp_path):
         search_fn=fake_search,
     )
     assert (run_dir / "papers.json").exists()
+    assert (run_dir / "evidence.json").exists()
     report = (run_dir / "report.md").read_text(encoding="utf-8")
     assert "# Mini Survey" in report
     assert "Example Paper Agent Study" in report
