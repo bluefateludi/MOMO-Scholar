@@ -9,6 +9,11 @@ class Settings:
     paper_agent_model: str | None = None
     semantic_scholar_api_key: str | None = field(default=None, repr=False)
     openalex_mail_address: str | None = None
+    dashscope_api_key: str | None = field(default=None, repr=False)
+    bailian_region: str = "beijing"
+    bailian_embedding_model: str = "text-embedding-v4"
+    vector_collection: str = "momo_scholar_chunks_v1"
+    retrieval_candidate_k: int = 30
 
 
 def _optional_string(value: str | None) -> str | None:
@@ -16,6 +21,22 @@ def _optional_string(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _string_with_default(value: str | None, default: str) -> str:
+    return _optional_string(value) or default
+
+
+def _candidate_k(value: str | None) -> int:
+    if value is None:
+        return 30
+    try:
+        candidate_k = int(value.strip())
+    except ValueError as exc:
+        raise ValueError("RETRIEVAL_CANDIDATE_K must be an integer") from exc
+    if candidate_k < 1:
+        raise ValueError("RETRIEVAL_CANDIDATE_K must be at least 1")
+    return candidate_k
 
 
 def load_settings() -> Settings:
@@ -28,5 +49,18 @@ def load_settings() -> Settings:
         ),
         openalex_mail_address=_optional_string(
             os.environ.get("OPENALEX_MAIL_ADDRESS")
+        ),
+        dashscope_api_key=_optional_string(os.environ.get("DASHSCOPE_API_KEY")),
+        bailian_region=_string_with_default(
+            os.environ.get("BAILIAN_REGION"), "beijing"
+        ),
+        bailian_embedding_model=_string_with_default(
+            os.environ.get("BAILIAN_EMBEDDING_MODEL"), "text-embedding-v4"
+        ),
+        vector_collection=_string_with_default(
+            os.environ.get("VECTOR_COLLECTION"), "momo_scholar_chunks_v1"
+        ),
+        retrieval_candidate_k=_candidate_k(
+            os.environ.get("RETRIEVAL_CANDIDATE_K")
         ),
     )
