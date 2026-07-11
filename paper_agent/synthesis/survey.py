@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+from paper_agent.schemas import Evidence, Paper, PaperAnalysis, ReportClaim
+
+
+def synthesize_claims(
+    question: str,
+    papers: list[Paper],
+    analyses: list[PaperAnalysis],
+    evidence: list[Evidence],
+) -> list[ReportClaim]:
+    del question, evidence
+    analysis_by_paper = {analysis.paper_id: analysis for analysis in analyses}
+    claims: list[ReportClaim] = []
+    for paper in papers:
+        analysis = analysis_by_paper.get(paper.paper_id)
+        if not analysis or not analysis.evidence_ids or not analysis.contribution:
+            continue
+        claims.append(
+            ReportClaim(
+                claim=f"{paper.title}: {analysis.contribution[0]}",
+                evidence_ids=list(analysis.evidence_ids),
+            )
+        )
+    return claims
