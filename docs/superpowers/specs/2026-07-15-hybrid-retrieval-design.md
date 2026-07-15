@@ -1,7 +1,7 @@
 # Hybrid Retrieval Design
 
 日期：2026-07-15
-状态：用户已批准，待规格审查
+状态：用户已批准，规格审查通过
 阶段：Vector Retrieval Infrastructure 之后，Bailian Rerank 之前
 
 ## 1. 决策摘要
@@ -60,7 +60,7 @@ max_rrf = Σ active_source_weight / (rrf_k + 1)
 normalized_fusion_score = clamp(raw_rrf / max_rrf, 0, 1)
 ```
 
-该分数只用于同一次 run 内排序和展示。不同实际模式之间不声明可直接比较，日志必须记录 `actual_mode`。
+`active_source` 指本次成功执行的 source，即使该 source 返回零候选也计入归一化分母。该分数只用于同一次 run 内排序和展示；不同实际模式之间不声明可直接比较，日志必须记录 `actual_mode`。
 
 ## 5. 架构与组件
 
