@@ -243,3 +243,88 @@ paper_agent/pipeline.py                 # retrieval injection and log write
 ## 14. 后续阶段
 
 Hybrid Retrieval 独立验收后，再创建 Bailian Rerank 规格与计划。Rerank 消费融合后的 Top-N，输出 Top-K Evidence；失败时可回退到本规格定义的 fused order，而不改变 lexical、vector 或 RRF 契约。
+
+## 15. 规范性澄清
+
+本节消除前述兼容性、错误分类、生命周期与评测契约中的歧义；若其他章节存在不同解读，以本节为准。
+
+### 15.1 Lexical 分数兼容
+
+- requested/actual mode 为 `lexical` 时不执行 RRF，`Evidence.relevance_score` 保持现有 token-overlap lexical score。
+- `auto` 因未配置 vector 而选择 lexical，或因允许降级的 availability failure 回退 lexical 时，同样绕过 RRF 并保留 lexical score。
+- 只有 actual mode 为 `hybrid` 时，Evidence 才使用 normalized fusion score。
+- `retrieve_evidence()` 的参数、排序、ID 和 relevance score 均保持旧行为。
+
+### 15.2 Embedding 错误分类
+
+现有单一 `EmbeddingTransportError` 必须拆成可判定的领域子类；Hybrid 不解析异常字符串：
+
+| 情况 | 领域错误 | auto 是否降级 |
+|---|---|---|
+| timeout | `EmbeddingTimeoutError` | 是 |
+| DNS、连接断开等网络失败 | `EmbeddingNetworkError` | 是 |
+| HTTP 429 | `EmbeddingRateLimitError` | 是 |
+| HTTP 5xx | `EmbeddingServerError` | 是 |
+| HTTP 401/403 | `EmbeddingAuthenticationError` | 否，配置错误 |
+| 其他 HTTP 4xx | `EmbeddingRequestError` | 否 |
+| unsupported region | `EmbeddingConfigurationError` | 否 |
+| 非 JSON、字段缺失、索引/row 非法 | `EmbeddingResponseError` | 否 |
+| batch 数量、维度、数值非法 | 现有 response/contract error | 否 |
+
+这些错误消息继续脱敏。只有 timeout、network、rate-limit 和 server error 被 vector adapter 映射为 `RetrievalSourceUnavailable`。强制 `hybrid` 对所有错误都失败。
+
+### 15.3 空 chunks
+
+`HybridEvidenceRetriever` 在任何模式下收到空 chunks 时立即返回空 Evidence 和成功 diagnostics：`actual_mode="lexical"`、所有候选计数为 0、`vector_attempted=false`、`degraded=false`。它不得初始化、索引或查询 vector store。
+
+### 15.4 Pipeline 注入与资源所有权
+
+`run_pipeline()` 新增两个可选 keyword-only 参数：
+
+```text
+settings: Settings | None = None
+retrieval_service: EvidenceRetrievalService | None = None
+```
+
+- 注入 `retrieval_service` 时，pipeline 不调用 factory；调用方拥有并负责关闭其资源。
+- 未注入时，pipeline 只调用一次 `load_settings()`（或使用显式 settings），再由 `build_retrieval_service(settings)` 创建 factory-owned context manager。
+- factory-owned service 拥有其创建的 `HttpxEmbeddingTransport`/`httpx.Client`，pipeline 使用 `with` 并在成功或异常时关闭。
+- factory 不得关闭测试注入的 transport/client。
+- `EvidenceRetrievalService.retrieve(question, chunks, run_id)` 返回 Evidence 与 diagnostics；pipeline 后续阶段只消费 Evidence。
+
+### 15.5 成功与失败日志
+
+pipeline 在 retrieval 前创建空的 `logs.jsonl`，随后每次 run 写入一条 retrieval event：
+
+- 成功：`status="ok"`，包含 requested/actual mode、vector_attempted、degraded、degradation_code 和计数。
+- retrieval 失败：先写 `status="error"`、安全 `error_code` 与当时已知计数，再原样重新抛出；不写异常正文。
+- `lexical_candidate_count` 与 `vector_candidate_count` 是各 source 截断到 candidate K 后、跨 source 去重前的数量。
+- `fused_candidate_count` 是按 chunk ID 合并后、Top-K 截断前的唯一候选数。
+- `returned_evidence_count` 是最终 Top-K 数量。
+- source rank 在各 source 完成确定性排序后、跨 source 去重前分配。
+- 相同 chunk 合并时必须匹配 `paper_id`、`text`、`section`、`page`。
+- `retrieval_sources` 的规范顺序固定为 `("lexical", "vector")` 的存在子序列。
+
+### 15.6 Evaluation fixture 与聚合
+
+检索 fixture 的规范字段为：
+
+```text
+case_id: non-blank unique string
+query: non-blank string
+chunks: unique chunk_id records
+relevance_by_chunk_id: mapping[chunk_id, non-negative integer grade]
+vector_ranked_chunk_ids: unique chunk_id list
+```
+
+- qrel 和 vector ranking 中的 ID 必须存在于本 case chunks；未知或重复 ID 使 fixture 校验失败。
+- grade `> 0` 视为 Recall/Precision/MRR 的相关结果；grade `0` 仅用于显式非相关标注。
+- lexical ranking 由真实离线 lexical candidate 函数产生；vector ranking 由 fixture 的确定性列表适配成 fake vector source；hybrid 使用二者的真实 RRF 实现。
+- 每次 evaluation 使用一个正整数 K，默认取 `RETRIEVAL_TOP_K`；输出必须记录 K。
+- 每个 mode 先计算逐 case 指标，再做等权 macro mean；空 case 集合的汇总指标为 `0.0`。
+- nDCG 使用非负整数 grade；未出现在 relevance mapping 的 chunk grade 视为 0。
+- baseline 测试数量在交付报告中记录实际值，不把固定数量作为长期规格契约。
+
+### 15.7 配置措辞
+
+`auto` 只能在请求前判断 API Key 是否“已配置且非空”，不能声称 Key 已验证有效。Key 的认证失败按 15.2 作为不可降级配置错误处理。
