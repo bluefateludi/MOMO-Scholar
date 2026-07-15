@@ -328,3 +328,35 @@ vector_ranked_chunk_ids: unique chunk_id list
 ### 15.7 配置措辞
 
 `auto` 只能在请求前判断 API Key 是否“已配置且非空”，不能声称 Key 已验证有效。Key 的认证失败按 15.2 作为不可降级配置错误处理。
+
+## 16. 第二轮审查澄清
+
+### 16.1 终态事件与失败状态
+
+`EvidenceRetrievalService.retrieve()` 增加可选的 `event_sink: RetrievalEventSink | None`。sink 接收不含原文或秘密的不可变 `RetrievalEvent`。服务维护本次调用的局部计数与阶段，并保证：
+
+- 成功时在返回前发送且只发送一个 `status="ok"` 终态事件。
+- 失败时在重新抛出原异常前发送且只发送一个 `status="error"` 终态事件。
+- pipeline 传入追加写 `logs.jsonl` 的 sink，因此失败日志不依赖成功返回值。
+- 测试可注入 recording sink；未传 sink 时服务仍正常工作。
+- sink 自身写入失败属于本地 I/O 错误，立即传播，不得被检索降级捕获。
+
+`RetrievalSourceUnavailable` 必须携带稳定 `degradation_code`，不得通过异常字符串分类。错误事件至少包含 `failure_stage`（`lexical|vector_index|vector_query|fusion|evidence_conversion`）以及当时已知的候选计数；尚未开始的阶段计数为 0。
+
+factory/configuration failure 发生在 service 构造前，由 pipeline 写一个 `status="error"`、`failure_stage="assembly"`、`vector_attempted=false`、各计数为 0 的终态事件，然后重新抛出原配置错误。日志不得包含异常正文。
+
+成功返回的 diagnostics 与终态事件字段一致，便于调用方检查；pipeline 的日志正确性以 event sink 为准。
+
+### 16.2 空输入优先级
+
+空 chunks 短路优先于强制 hybrid 的 vector 配置校验。pipeline 必须在 `build_retrieval_service()` 之前完成文本加载与 chunking：
+
+1. 如果 chunks 为空，直接产生空 Evidence 与 `actual_mode="lexical"` 的成功事件，不调用 factory，也不验证或初始化 vector 配置。
+2. 如果 chunks 非空，才组装 service；此时强制 `hybrid` 缺少配置必须失败并记录 assembly error event。
+3. 注入的 retrieval service 收到空 chunks 时也必须按 §15.3 短路，不调用任何 source。
+
+因此 `RETRIEVAL_MODE=hybrid`、vector 未配置、chunks 为空的规范结果是成功空输出；相同配置在 chunks 非空时是明确配置失败。
+
+### 16.3 MRR@K
+
+本阶段指标名称统一为 `MRR@K`。它只检查截断到 K 的候选排名：首个相关 chunk 位于 Top-K 的 rank `r` 时得分 `1/r`，Top-K 内无相关结果时为 `0.0`。评测输出和函数命名不得使用容易被理解为全排名 MRR 的无后缀名称。
