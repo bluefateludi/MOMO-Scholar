@@ -1,7 +1,7 @@
 # Hybrid Retrieval Design
 
-日期：2026-07-15  
-状态：用户已批准，待规格审查  
+日期：2026-07-15
+状态：用户已批准，待规格审查
 阶段：Vector Retrieval Infrastructure 之后，Bailian Rerank 之前
 
 ## 1. 决策摘要
