@@ -3,7 +3,14 @@ from collections.abc import Callable
 import httpx
 import pytest
 
+from paper_agent.vector import EmbeddingResponseError
 from paper_agent.vector.bailian import (
+    EmbeddingAuthenticationError,
+    EmbeddingConfigurationError,
+    EmbeddingNetworkError,
+    EmbeddingRateLimitError,
+    EmbeddingRequestError,
+    EmbeddingServerError,
     EmbeddingTimeoutError,
     EmbeddingTransportError,
     HttpxEmbeddingTransport,
@@ -97,19 +104,41 @@ def test_httpx_timeout_is_mapped_without_leaking_key() -> None:
     assert "sentinel-key" not in str(exc_info.value)
 
 
-@pytest.mark.parametrize("status", [400, 401, 500, 503])
-def test_http_errors_are_mapped(status: int) -> None:
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (400, EmbeddingRequestError),
+        (401, EmbeddingAuthenticationError),
+        (403, EmbeddingAuthenticationError),
+        (429, EmbeddingRateLimitError),
+        (500, EmbeddingServerError),
+        (503, EmbeddingServerError),
+    ],
+)
+def test_http_status_maps_to_typed_sanitized_error(
+    status: int, error_type: type[Exception]
+) -> None:
     transport = _transport(
         lambda _: httpx.Response(status, json={"message": "sentinel-key"})
     )
 
-    with pytest.raises(EmbeddingTransportError) as exc_info:
+    with pytest.raises(error_type) as exc_info:
         _embed(transport)
 
     assert "sentinel-key" not in str(exc_info.value)
 
 
-def test_api_error_payload_is_mapped() -> None:
+def test_network_failure_maps_to_network_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("sentinel-key", request=request)
+
+    with pytest.raises(EmbeddingNetworkError) as exc_info:
+        _embed(_transport(handler))
+
+    assert "sentinel-key" not in str(exc_info.value)
+
+
+def test_api_error_payload_is_response_error() -> None:
     transport = _transport(
         lambda _: httpx.Response(
             200,
@@ -117,18 +146,18 @@ def test_api_error_payload_is_mapped() -> None:
         )
     )
 
-    with pytest.raises(EmbeddingTransportError) as exc_info:
+    with pytest.raises(EmbeddingResponseError) as exc_info:
         _embed(transport)
 
     assert "sentinel-key" not in str(exc_info.value)
 
 
-def test_non_json_response_is_mapped() -> None:
+def test_malformed_success_payload_is_response_error() -> None:
     transport = _transport(
         lambda _: httpx.Response(200, content=b"not-json")
     )
 
-    with pytest.raises(EmbeddingTransportError, match="response"):
+    with pytest.raises(EmbeddingResponseError, match="response"):
         _embed(transport)
 
 
@@ -146,23 +175,16 @@ def test_non_json_response_is_mapped() -> None:
         {"data": [{"index": 0, "embedding": [1.0]}, {"index": 0, "embedding": [2.0]}]},
     ],
 )
-def test_missing_fields_and_invalid_rows_are_mapped(payload: object) -> None:
+def test_invalid_success_payload_is_response_error(payload: object) -> None:
     transport = _transport(lambda _: httpx.Response(200, json=payload))
 
-    with pytest.raises(EmbeddingTransportError, match="response"):
+    with pytest.raises(EmbeddingResponseError, match="response"):
         _embed(transport)
 
 
-def test_unsupported_region_is_rejected_without_request() -> None:
-    called = False
-
-    def handler(_: httpx.Request) -> httpx.Response:
-        nonlocal called
-        called = True
-        return httpx.Response(200, json={"data": []})
-
-    transport = _transport(handler)
-    with pytest.raises(EmbeddingTransportError, match="region"):
+def test_unsupported_region_is_configuration_error() -> None:
+    transport = _transport(lambda _: pytest.fail("request must not run"))
+    with pytest.raises(EmbeddingConfigurationError, match="region"):
         transport.embed(
             texts=["text"],
             model="text-embedding-v4",
@@ -171,7 +193,19 @@ def test_unsupported_region_is_rejected_without_request() -> None:
             timeout=30.0,
         )
 
-    assert called is False
+
+
+def test_new_transport_errors_keep_compatibility_base() -> None:
+    error_types = [
+        EmbeddingNetworkError,
+        EmbeddingRateLimitError,
+        EmbeddingServerError,
+        EmbeddingAuthenticationError,
+        EmbeddingRequestError,
+        EmbeddingConfigurationError,
+    ]
+    assert all(issubclass(item, EmbeddingTransportError) for item in error_types)
+
 
 def test_default_owned_client_can_be_closed_and_used_as_context_manager() -> None:
     transport = HttpxEmbeddingTransport()
