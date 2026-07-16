@@ -19,8 +19,9 @@ from .models import (
     RetrievalOutcome,
     RetrievalSource,
 )
-from .retriever import retrieve_lexical_candidates
-from .vector_source import VectorCandidateSource
+from .hybrid import HybridEvidenceRetriever
+from .retriever import LexicalCandidateSource, retrieve_lexical_candidates
+from .vector_source import VectorCandidateSource, VectorSourceExecutionError
 
 __all__ = [
     "CandidateSource",
@@ -29,6 +30,8 @@ __all__ = [
     "EventStatus",
     "EvidenceRetrievalService",
     "FailureStage",
+    "HybridEvidenceRetriever",
+    "LexicalCandidateSource",
     "RetrievalCandidate",
     "RetrievalCounts",
     "RetrievalDiagnostics",
@@ -38,6 +41,7 @@ __all__ = [
     "RetrievalSource",
     "RetrievalSourceUnavailable",
     "VectorCandidateSource",
+    "VectorSourceExecutionError",
     "VectorFailureStage",
     "retrieve_lexical_candidates",
 ]
