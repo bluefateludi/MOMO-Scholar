@@ -14,14 +14,30 @@ ENVIRONMENT_VARIABLES = (
     "BAILIAN_EMBEDDING_MODEL",
     "VECTOR_COLLECTION",
     "RETRIEVAL_CANDIDATE_K",
+    "RETRIEVAL_MODE",
+    "RETRIEVAL_TOP_K",
+    "RETRIEVAL_RRF_K",
 )
 
 
-def test_load_settings_uses_safe_defaults(monkeypatch):
+def _clear_settings_environment(monkeypatch) -> None:
     for variable in ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(variable, raising=False)
 
+
+def test_load_settings_uses_safe_defaults(monkeypatch):
+    _clear_settings_environment(monkeypatch)
+
     assert load_settings() == Settings()
+
+
+def test_load_settings_uses_hybrid_retrieval_defaults(monkeypatch) -> None:
+    _clear_settings_environment(monkeypatch)
+    settings = load_settings()
+    assert settings.retrieval_mode == "auto"
+    assert settings.retrieval_candidate_k == 30
+    assert settings.retrieval_top_k == 8
+    assert settings.retrieval_rrf_k == 60
 
 
 def test_load_settings_reads_environment(monkeypatch):
@@ -36,6 +52,9 @@ def test_load_settings_reads_environment(monkeypatch):
         "BAILIAN_EMBEDDING_MODEL": "  custom-embedding  ",
         "VECTOR_COLLECTION": "  custom-chunks  ",
         "RETRIEVAL_CANDIDATE_K": "  42  ",
+        "RETRIEVAL_MODE": " hybrid ",
+        "RETRIEVAL_TOP_K": " 9 ",
+        "RETRIEVAL_RRF_K": " 61 ",
     }
     for variable, value in values.items():
         monkeypatch.setenv(variable, value)
@@ -51,7 +70,47 @@ def test_load_settings_reads_environment(monkeypatch):
         bailian_embedding_model="custom-embedding",
         vector_collection="custom-chunks",
         retrieval_candidate_k=42,
+        retrieval_mode="hybrid",
+        retrieval_top_k=9,
+        retrieval_rrf_k=61,
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("AUTO", "auto"), (" lexical ", "lexical"), ("Hybrid", "hybrid")],
+)
+def test_load_settings_normalizes_retrieval_mode(
+    monkeypatch, raw: str, expected: str
+) -> None:
+    monkeypatch.setenv("RETRIEVAL_MODE", raw)
+    assert load_settings().retrieval_mode == expected
+
+
+@pytest.mark.parametrize("raw", ["unknown", "", "vector"])
+def test_load_settings_rejects_unknown_retrieval_mode(
+    monkeypatch, raw: str
+) -> None:
+    monkeypatch.setenv("RETRIEVAL_MODE", raw)
+    with pytest.raises(ValueError, match="RETRIEVAL_MODE"):
+        load_settings()
+
+
+@pytest.mark.parametrize(
+    ("name", "raw", "message"),
+    [
+        ("RETRIEVAL_TOP_K", "0", "must be at least 1"),
+        ("RETRIEVAL_RRF_K", "-1", "must be at least 1"),
+        ("RETRIEVAL_TOP_K", "1.5", "must be an integer"),
+        ("RETRIEVAL_RRF_K", "not-an-int", "must be an integer"),
+    ],
+)
+def test_load_settings_rejects_invalid_retrieval_k(
+    monkeypatch, name: str, raw: str, message: str
+) -> None:
+    monkeypatch.setenv(name, raw)
+    with pytest.raises(ValueError, match=rf"{name} {message}"):
+        load_settings()
 
 
 def test_settings_repr_hides_api_keys():

@@ -1,5 +1,15 @@
 import os
 from dataclasses import dataclass, field
+from typing import Literal
+
+
+RetrievalMode = Literal["auto", "lexical", "hybrid"]
+
+_VALID_RETRIEVAL_MODES: tuple[RetrievalMode, ...] = (
+    "auto",
+    "lexical",
+    "hybrid",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +24,9 @@ class Settings:
     bailian_embedding_model: str = "text-embedding-v4"
     vector_collection: str = "momo_scholar_chunks_v1"
     retrieval_candidate_k: int = 30
+    retrieval_mode: RetrievalMode = "auto"
+    retrieval_top_k: int = 8
+    retrieval_rrf_k: int = 60
 
 
 def _optional_string(value: str | None) -> str | None:
@@ -27,16 +40,23 @@ def _string_with_default(value: str | None, default: str) -> str:
     return _optional_string(value) or default
 
 
-def _candidate_k(value: str | None) -> int:
+def _positive_int(name: str, value: str | None, default: int) -> int:
     if value is None:
-        return 30
+        return default
     try:
-        candidate_k = int(value.strip())
+        parsed = int(value.strip())
     except ValueError as exc:
-        raise ValueError("RETRIEVAL_CANDIDATE_K must be an integer") from exc
-    if candidate_k < 1:
-        raise ValueError("RETRIEVAL_CANDIDATE_K must be at least 1")
-    return candidate_k
+        raise ValueError(f"{name} must be an integer") from exc
+    if parsed < 1:
+        raise ValueError(f"{name} must be at least 1")
+    return parsed
+
+
+def _retrieval_mode(value: str | None) -> RetrievalMode:
+    normalized = "auto" if value is None else value.strip().lower()
+    if normalized not in _VALID_RETRIEVAL_MODES:
+        raise ValueError("RETRIEVAL_MODE must be auto, lexical, or hybrid")
+    return normalized  # type: ignore[return-value]
 
 
 def load_settings() -> Settings:
@@ -60,7 +80,16 @@ def load_settings() -> Settings:
         vector_collection=_string_with_default(
             os.environ.get("VECTOR_COLLECTION"), "momo_scholar_chunks_v1"
         ),
-        retrieval_candidate_k=_candidate_k(
-            os.environ.get("RETRIEVAL_CANDIDATE_K")
+        retrieval_candidate_k=_positive_int(
+            "RETRIEVAL_CANDIDATE_K",
+            os.environ.get("RETRIEVAL_CANDIDATE_K"),
+            30,
+        ),
+        retrieval_mode=_retrieval_mode(os.environ.get("RETRIEVAL_MODE")),
+        retrieval_top_k=_positive_int(
+            "RETRIEVAL_TOP_K", os.environ.get("RETRIEVAL_TOP_K"), 8
+        ),
+        retrieval_rrf_k=_positive_int(
+            "RETRIEVAL_RRF_K", os.environ.get("RETRIEVAL_RRF_K"), 60
         ),
     )
