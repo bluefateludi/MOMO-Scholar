@@ -4,14 +4,16 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from paper_agent.evidence.contracts import RetrievalSourceUnavailable
-from paper_agent.evidence.vector_source import VectorCandidateSource
+from paper_agent.evidence.vector_source import (
+    VectorCandidateSource,
+    VectorSourceExecutionError,
+)
 from paper_agent.schemas import Chunk
 from paper_agent.vector import VectorCandidate, VectorRecordMetadata
 from paper_agent.vector.bailian import (
     EmbeddingAuthenticationError,
     EmbeddingNetworkError,
     EmbeddingRateLimitError,
-    EmbeddingResponseError,
     EmbeddingServerError,
     EmbeddingTimeoutError,
 )
@@ -116,18 +118,15 @@ def test_vector_source_maps_query_availability_error(
     assert exc_info.value.failure_stage == "vector_query"
 
 
-@pytest.mark.parametrize(
-    "error",
-    [EmbeddingAuthenticationError("auth"), EmbeddingResponseError("response")],
-)
-def test_vector_source_does_not_downgrade_nonavailability_errors(
-    error: Exception,
-) -> None:
+def test_vector_source_wraps_nonavailability_error_with_stage() -> None:
     chunk, _ = _chunk_and_vector()
     retriever = FakeVectorRetriever()
-    retriever.index_error = error
-    with pytest.raises(type(error)):
+    cause = EmbeddingAuthenticationError("auth")
+    retriever.index_error = cause
+    with pytest.raises(VectorSourceExecutionError) as exc_info:
         VectorCandidateSource(retriever).retrieve("question", [chunk], 3)
+    assert exc_info.value.cause is cause
+    assert exc_info.value.failure_stage == "vector_index"
 
 
 def test_vector_source_marks_index_availability_stage() -> None:

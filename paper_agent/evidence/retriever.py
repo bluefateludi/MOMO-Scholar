@@ -7,6 +7,13 @@ from paper_agent.evidence.models import RetrievalCandidate
 from paper_agent.schemas import Chunk, Evidence
 
 
+class LexicalCandidateSource:
+    def retrieve(
+        self, question: str, chunks: Sequence[Chunk], limit: int
+    ) -> list[RetrievalCandidate]:
+        return retrieve_lexical_candidates(question, chunks, limit)
+
+
 def _terms(text: str) -> set[str]:
     return {
         term
