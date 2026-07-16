@@ -65,3 +65,14 @@ def test_retrieve_evidence_sorts_equal_scores_by_chunk_id():
 def test_retrieve_evidence_rejects_blank_run_id():
     with pytest.raises(ValueError, match="run_id must not be empty"):
         retrieve_evidence("paper", [], run_id="  ")
+
+
+def test_retrieve_evidence_preserves_four_decimal_lexical_score() -> None:
+    evidence = retrieve_evidence(
+        "alpha beta gamma",
+        [_chunk("p1:chunk:001", "alpha beta")],
+        run_id="run-a",
+        top_k=1,
+    )
+    assert len(evidence) == 1
+    assert evidence[0].relevance_score == 0.6667
