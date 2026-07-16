@@ -19,6 +19,7 @@ from .models import (
     RetrievalOutcome,
     RetrievalSource,
 )
+from .vector_source import VectorCandidateSource
 
 __all__ = [
     "CandidateSource",
@@ -35,5 +36,6 @@ __all__ = [
     "RetrievalOutcome",
     "RetrievalSource",
     "RetrievalSourceUnavailable",
+    "VectorCandidateSource",
     "VectorFailureStage",
 ]
