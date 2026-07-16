@@ -1,7 +1,11 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
-from paper_agent.evidence.contracts import RetrievalSourceUnavailable
+from paper_agent.evidence.contracts import (
+    RetrievalSourceUnavailable,
+    VectorFailureStage,
+)
 from paper_agent.evidence.models import DegradationCode, RetrievalCandidate
 from paper_agent.schemas import Chunk
 from paper_agent.vector import VectorCandidate
@@ -27,6 +31,15 @@ _AVAILABILITY_ERRORS = (
     EmbeddingRateLimitError,
     EmbeddingServerError,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class VectorSourceExecutionError(RuntimeError):
+    cause: Exception
+    failure_stage: VectorFailureStage
+
+    def __post_init__(self) -> None:
+        RuntimeError.__init__(self, "vector source execution failed")
 
 
 def _degradation_code(error: Exception) -> DegradationCode:
@@ -63,12 +76,16 @@ class VectorCandidateSource:
             raise RetrievalSourceUnavailable(
                 _degradation_code(error), "vector_index"
             ) from None
+        except Exception as cause:
+            raise VectorSourceExecutionError(cause, "vector_index") from cause
         try:
             candidates = self._retriever.retrieve(question, limit)
         except _AVAILABILITY_ERRORS as error:
             raise RetrievalSourceUnavailable(
                 _degradation_code(error), "vector_query"
             ) from None
+        except Exception as cause:
+            raise VectorSourceExecutionError(cause, "vector_query") from cause
         return [
             RetrievalCandidate(
                 chunk_id=item.chunk_id,
