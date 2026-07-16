@@ -5,7 +5,10 @@ from typing import Protocol
 
 import httpx
 
-from paper_agent.vector.embedding import _validate_embedding_batch
+from paper_agent.vector.embedding import (
+    EmbeddingResponseError,
+    _validate_embedding_batch,
+)
 
 # Official synchronous API: https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api
 _BEIJING_EMBEDDINGS_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
@@ -27,6 +30,30 @@ class EmbeddingTimeoutError(TimeoutError):
 
 class EmbeddingTransportError(RuntimeError):
     """Raised when an embedding provider request or response is invalid."""
+
+
+class EmbeddingNetworkError(EmbeddingTransportError):
+    pass
+
+
+class EmbeddingRateLimitError(EmbeddingTransportError):
+    pass
+
+
+class EmbeddingServerError(EmbeddingTransportError):
+    pass
+
+
+class EmbeddingAuthenticationError(EmbeddingTransportError):
+    pass
+
+
+class EmbeddingRequestError(EmbeddingTransportError):
+    pass
+
+
+class EmbeddingConfigurationError(EmbeddingTransportError):
+    pass
 
 
 class EmbeddingTransport(Protocol):
@@ -71,7 +98,7 @@ class HttpxEmbeddingTransport:
     ) -> list[list[float]]:
         _validate_timeout(timeout)
         if region != "beijing":
-            raise EmbeddingTransportError("unsupported Bailian region")
+            raise EmbeddingConfigurationError("unsupported Bailian region")
         try:
             response = self.client.post(
                 _BEIJING_EMBEDDINGS_URL,
@@ -79,24 +106,32 @@ class HttpxEmbeddingTransport:
                 json={"model": model, "input": list(texts)},
                 timeout=timeout,
             )
-            response.raise_for_status()
         except httpx.TimeoutException:
             raise EmbeddingTimeoutError("embedding request timed out") from None
-        except httpx.HTTPError:
-            raise EmbeddingTransportError("embedding HTTP request failed") from None
+        except httpx.RequestError:
+            raise EmbeddingNetworkError("embedding network request failed") from None
+
+        if response.status_code in (401, 403):
+            raise EmbeddingAuthenticationError("embedding authentication failed")
+        if response.status_code == 429:
+            raise EmbeddingRateLimitError("embedding rate limit exceeded")
+        if 500 <= response.status_code <= 599:
+            raise EmbeddingServerError("embedding server request failed")
+        if 400 <= response.status_code <= 499:
+            raise EmbeddingRequestError("embedding request was rejected")
 
         try:
             payload = response.json()
         except ValueError:
-            raise EmbeddingTransportError("invalid embedding response") from None
+            raise EmbeddingResponseError("invalid embedding response") from None
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-            raise EmbeddingTransportError("invalid embedding response")
+            raise EmbeddingResponseError("invalid embedding response")
 
         indexed_vectors: list[tuple[int, list[float]]] = []
         seen_indices: set[int] = set()
         for item in payload["data"]:
             if not isinstance(item, dict):
-                raise EmbeddingTransportError("invalid embedding response row")
+                raise EmbeddingResponseError("invalid embedding response row")
             index = item.get("index")
             embedding = item.get("embedding")
             if (
@@ -105,13 +140,13 @@ class HttpxEmbeddingTransport:
                 or not isinstance(embedding, list)
                 or index in seen_indices
             ):
-                raise EmbeddingTransportError("invalid embedding response row")
+                raise EmbeddingResponseError("invalid embedding response row")
             seen_indices.add(index)
             indexed_vectors.append((index, embedding))
 
         indexed_vectors.sort(key=lambda item: item[0])
         if [index for index, _ in indexed_vectors] != list(range(len(indexed_vectors))):
-            raise EmbeddingTransportError("invalid embedding response indices")
+            raise EmbeddingResponseError("invalid embedding response indices")
         return [embedding for _, embedding in indexed_vectors]
 
 

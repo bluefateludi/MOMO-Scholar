@@ -2,12 +2,13 @@ from collections.abc import Sequence
 
 import pytest
 
+from paper_agent.vector import EmbeddingResponseError
 from paper_agent.vector.bailian import (
     BailianTextEmbedder,
+    EmbeddingNetworkError,
     EmbeddingTimeoutError,
     EmbeddingTransportError,
 )
-from paper_agent.vector.embedding import EmbeddingResponseError
 
 
 class FakeTransport:
@@ -100,7 +101,11 @@ def test_custom_model_region_and_timeout_are_forwarded() -> None:
 
 @pytest.mark.parametrize(
     "error",
-    [EmbeddingTimeoutError("timed out"), EmbeddingTransportError("failed")],
+    [
+        EmbeddingTimeoutError("timed out"),
+        EmbeddingNetworkError("network failed"),
+        EmbeddingTransportError("failed"),
+    ],
 )
 def test_domain_transport_errors_propagate(error: Exception) -> None:
     embedder = BailianTextEmbedder(
