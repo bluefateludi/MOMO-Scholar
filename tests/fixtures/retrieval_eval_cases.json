@@ -1,0 +1,71 @@
+[
+  {
+    "case_id": "complementary-results",
+    "query": "exact kinase",
+    "chunks": [
+      {"chunk_id":"c-lex","paper_id":"p-1","section":null,"page":1,"text":"exact kinase marker","token_count":3},
+      {"chunk_id":"c-vec","paper_id":"p-2","section":null,"page":2,"text":"semantic pathway neighbor","token_count":3}
+    ],
+    "relevance_by_chunk_id": {"c-lex":2,"c-vec":1},
+    "vector_ranked_chunk_ids": ["c-vec"]
+  },
+  {
+    "case_id": "lexical-only-hit",
+    "query": "rare acronym xyz",
+    "chunks": [
+      {"chunk_id":"c-lex-only","paper_id":"p-3","section":null,"page":1,"text":"rare acronym xyz","token_count":3},
+      {"chunk_id":"c-noise-a","paper_id":"p-4","section":null,"page":1,"text":"unrelated passage","token_count":2}
+    ],
+    "relevance_by_chunk_id": {"c-lex-only":1},
+    "vector_ranked_chunk_ids": []
+  },
+  {
+    "case_id": "vector-only-hit",
+    "query": "surface words",
+    "chunks": [
+      {"chunk_id":"c-false-lex","paper_id":"p-5","section":null,"page":1,"text":"surface words","token_count":2},
+      {"chunk_id":"c-vec-only","paper_id":"p-6","section":null,"page":1,"text":"semantic meaning","token_count":2}
+    ],
+    "relevance_by_chunk_id": {"c-false-lex":0,"c-vec-only":1},
+    "vector_ranked_chunk_ids": ["c-vec-only"]
+  },
+  {
+    "case_id": "duplicate-hit",
+    "query": "shared retrieval",
+    "chunks": [
+      {"chunk_id":"c-shared","paper_id":"p-7","section":null,"page":1,"text":"shared retrieval","token_count":2}
+    ],
+    "relevance_by_chunk_id": {"c-shared":1},
+    "vector_ranked_chunk_ids": ["c-shared"]
+  },
+  {
+    "case_id": "no-relevant-result",
+    "query": "alpha query",
+    "chunks": [
+      {"chunk_id":"c-alpha","paper_id":"p-8","section":null,"page":1,"text":"alpha query","token_count":2},
+      {"chunk_id":"c-zero","paper_id":"p-9","section":null,"page":1,"text":"other text","token_count":2}
+    ],
+    "relevance_by_chunk_id": {"c-alpha":0,"c-zero":0},
+    "vector_ranked_chunk_ids": ["c-zero"]
+  },
+  {
+    "case_id": "graded-relevance",
+    "query": "ranking evidence",
+    "chunks": [
+      {"chunk_id":"c-grade-high","paper_id":"p-10","section":null,"page":1,"text":"ranking evidence strong","token_count":3},
+      {"chunk_id":"c-grade-low","paper_id":"p-11","section":null,"page":1,"text":"ranking evidence weak","token_count":3}
+    ],
+    "relevance_by_chunk_id": {"c-grade-high":3,"c-grade-low":1},
+    "vector_ranked_chunk_ids": ["c-grade-low","c-grade-high"]
+  },
+  {
+    "case_id": "lexical-tie",
+    "query": "tie token",
+    "chunks": [
+      {"chunk_id":"c-tie-b","paper_id":"p-12","section":null,"page":1,"text":"tie token beta","token_count":3},
+      {"chunk_id":"c-tie-a","paper_id":"p-13","section":null,"page":1,"text":"tie token alpha","token_count":3}
+    ],
+    "relevance_by_chunk_id": {"c-tie-a":1,"c-tie-b":1},
+    "vector_ranked_chunk_ids": []
+  }
+]
