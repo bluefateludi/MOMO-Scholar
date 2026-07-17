@@ -69,6 +69,14 @@ class HybridEvidenceRetriever:
         self._top_k = top_k
         self._rrf_k = rrf_k
 
+    @property
+    def requested_mode(self) -> RetrievalMode:
+        return self._requested_mode
+
+    @property
+    def vector_source(self) -> CandidateSource | None:
+        return self._vector_source
+
     def retrieve(
         self,
         question: str,
