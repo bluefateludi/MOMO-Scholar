@@ -38,8 +38,6 @@ def _service(
         top_k=settings.retrieval_top_k,
         rrf_k=settings.retrieval_rrf_k,
     )
-    service.requested_mode = settings.retrieval_mode
-    service.vector_source = vector_source
     return service
 
 

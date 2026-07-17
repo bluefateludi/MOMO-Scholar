@@ -57,6 +57,23 @@ def test_lexical_with_key_never_touches_any_transport(monkeypatch) -> None:
     assert borrowed.closed is False
 
 
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [
+        ("requested_mode", "hybrid"),
+        ("vector_source", object()),
+    ],
+)
+def test_factory_service_configuration_observation_is_read_only(
+    attribute, value
+) -> None:
+    with build_retrieval_service(
+        Settings(retrieval_mode="lexical")
+    ) as service:
+        with pytest.raises(AttributeError):
+            setattr(service, attribute, value)
+
+
 @pytest.mark.parametrize("key", [None, "", "   "])
 def test_forced_hybrid_without_nonblank_key_is_configuration_error(key) -> None:
     with pytest.raises(
