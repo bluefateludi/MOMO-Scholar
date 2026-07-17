@@ -20,6 +20,7 @@ from .models import (
     RetrievalSource,
 )
 from .hybrid import HybridEvidenceRetriever
+from .factory import RetrievalConfigurationError, build_retrieval_service
 from .retriever import LexicalCandidateSource, retrieve_lexical_candidates
 from .vector_source import VectorCandidateSource, VectorSourceExecutionError
 
@@ -33,6 +34,7 @@ __all__ = [
     "HybridEvidenceRetriever",
     "LexicalCandidateSource",
     "RetrievalCandidate",
+    "RetrievalConfigurationError",
     "RetrievalCounts",
     "RetrievalDiagnostics",
     "RetrievalEvent",
@@ -43,5 +45,6 @@ __all__ = [
     "VectorCandidateSource",
     "VectorSourceExecutionError",
     "VectorFailureStage",
+    "build_retrieval_service",
     "retrieve_lexical_candidates",
 ]
