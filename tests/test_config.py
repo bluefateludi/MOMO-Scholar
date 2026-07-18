@@ -1,9 +1,11 @@
+import os
+
 import pytest
 
 from paper_agent.config import Settings, load_settings
 
 
-ENVIRONMENT_VARIABLES = (
+SUPPORTED_SETTING_NAMES = (
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
     "PAPER_AGENT_MODEL",
@@ -20,19 +22,18 @@ ENVIRONMENT_VARIABLES = (
 )
 
 
-def _clear_settings_environment(monkeypatch) -> None:
-    for variable in ENVIRONMENT_VARIABLES:
+@pytest.fixture(autouse=True)
+def isolated_settings_environment(tmp_path, monkeypatch) -> None:
+    for variable in SUPPORTED_SETTING_NAMES:
         monkeypatch.delenv(variable, raising=False)
+    monkeypatch.chdir(tmp_path)
 
 
 def test_load_settings_uses_safe_defaults(monkeypatch):
-    _clear_settings_environment(monkeypatch)
-
     assert load_settings() == Settings()
 
 
 def test_load_settings_uses_hybrid_retrieval_defaults(monkeypatch) -> None:
-    _clear_settings_environment(monkeypatch)
     settings = load_settings()
     assert settings.retrieval_mode == "auto"
     assert settings.retrieval_candidate_k == 30
@@ -142,4 +143,112 @@ def test_load_settings_rejects_candidate_k_less_than_one(monkeypatch, value):
     monkeypatch.setenv("RETRIEVAL_CANDIDATE_K", value)
 
     with pytest.raises(ValueError, match="RETRIEVAL_CANDIDATE_K must be at least 1"):
+        load_settings()
+
+
+def test_load_settings_reads_dotenv_from_current_directory(tmp_path) -> None:
+    (tmp_path / ".env").write_text(
+        "DASHSCOPE_API_KEY=file-key\nRETRIEVAL_MODE=hybrid\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings()
+
+    assert settings.dashscope_api_key == "file-key"
+    assert settings.retrieval_mode == "hybrid"
+
+
+def test_process_environment_takes_precedence_over_dotenv(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / ".env").write_text(
+        "DASHSCOPE_API_KEY=file-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "process-key")
+
+    assert load_settings().dashscope_api_key == "process-key"
+
+
+def test_load_settings_ignores_parent_dotenv(tmp_path, monkeypatch) -> None:
+    (tmp_path / ".env").write_text(
+        "DASHSCOPE_API_KEY=parent-key\n",
+        encoding="utf-8",
+    )
+    child = tmp_path / "child"
+    child.mkdir()
+    monkeypatch.chdir(child)
+
+    assert load_settings().dashscope_api_key is None
+
+
+def test_consecutive_loads_from_different_directories_do_not_leak(
+    tmp_path, monkeypatch
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / ".env").write_text(
+        "DASHSCOPE_API_KEY=first-key\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(first)
+    first_settings = load_settings()
+    monkeypatch.chdir(second)
+    second_settings = load_settings()
+
+    assert first_settings.dashscope_api_key == "first-key"
+    assert second_settings.dashscope_api_key is None
+
+
+def test_load_settings_does_not_mutate_process_environment(tmp_path) -> None:
+    (tmp_path / ".env").write_text(
+        "DASHSCOPE_API_KEY=file-key\n",
+        encoding="utf-8",
+    )
+    before = os.environ.copy()
+
+    load_settings()
+
+    assert os.environ == before
+
+
+def test_blank_dotenv_strings_preserve_optional_and_default_behavior(
+    tmp_path,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "OPENAI_API_KEY=\nBAILIAN_REGION=\nVECTOR_COLLECTION=\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings()
+
+    assert settings.openai_api_key is None
+    assert settings.bailian_region == "beijing"
+    assert settings.vector_collection == "momo_scholar_chunks_v1"
+
+
+def test_blank_dotenv_retrieval_mode_preserves_validation(tmp_path) -> None:
+    (tmp_path / ".env").write_text("RETRIEVAL_MODE=\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="RETRIEVAL_MODE"):
+        load_settings()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "RETRIEVAL_CANDIDATE_K",
+        "RETRIEVAL_TOP_K",
+        "RETRIEVAL_RRF_K",
+    ],
+)
+def test_blank_dotenv_retrieval_k_preserves_validation(
+    tmp_path, name: str
+) -> None:
+    (tmp_path / ".env").write_text(f"{name}=\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=rf"{name} must be an integer"):
         load_settings()
