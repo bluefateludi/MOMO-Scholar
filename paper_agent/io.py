@@ -27,6 +27,13 @@ def write_json(path: Path, data: Any) -> None:
     )
 
 
+def append_json_line(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open(mode="a", encoding="utf-8") as file:
+        line = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        file.write(line + "\n")
+
+
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

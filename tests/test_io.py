@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 
 import paper_agent.io as io_module
-from paper_agent.io import create_run_dir, write_json
+from paper_agent.io import append_json_line, create_run_dir, write_json
 
 
 def test_create_run_dir_uses_slug_and_timestamp(tmp_path):
@@ -49,3 +49,21 @@ def test_write_json_round_trips_data(tmp_path):
     write_json(path, {"hello": "world"})
 
     assert json.loads(path.read_text(encoding="utf-8")) == {"hello": "world"}
+
+
+def test_append_json_line_writes_one_compact_utf8_object_per_line(tmp_path) -> None:
+    path = tmp_path / "logs.jsonl"
+    message = "\u4e2d\u6587"
+
+    append_json_line(path, {"event": "retrieval", "message": message})
+    append_json_line(path, {"event": "second"})
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert lines == [
+        f'{{"event":"retrieval","message":"{message}"}}',
+        '{"event":"second"}',
+    ]
+    assert [json.loads(line) for line in lines] == [
+        {"event": "retrieval", "message": message},
+        {"event": "second"},
+    ]

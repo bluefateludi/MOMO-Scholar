@@ -29,6 +29,13 @@ def test_pipeline_writes_consistent_evidence_trace(tmp_path):
     evidence = json.loads((run_dir / "evidence.json").read_text(encoding="utf-8"))
     report = (run_dir / "report.md").read_text(encoding="utf-8")
 
+    logs = (run_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(logs) == 1
+    retrieval_event = json.loads(logs[0])
+    assert retrieval_event["status"] == "ok"
+    assert retrieval_event["requested_mode"] == "auto"
+    assert retrieval_event["actual_mode"] == "lexical"
+
     assert evidence
     assert evidence[0]["evidence_id"].startswith(f"{run_dir.name}:ev_")
     assert evidence[0]["paper_id"] == "p1"
