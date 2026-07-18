@@ -1,6 +1,8 @@
 import os
+from pathlib import Path
 
 import pytest
+from dotenv import dotenv_values
 
 from paper_agent.config import Settings, load_settings
 
@@ -252,3 +254,22 @@ def test_blank_dotenv_retrieval_k_preserves_validation(
 
     with pytest.raises(ValueError, match=rf"{name} must be an integer"):
         load_settings()
+
+
+def test_dotenv_example_is_safe_and_documents_retrieval_defaults() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    example_path = repository_root / ".env.example"
+
+    assert example_path.exists()
+
+    values = dotenv_values(example_path)
+    assert values["DASHSCOPE_API_KEY"] == ""
+    assert values["RETRIEVAL_MODE"] == "auto"
+    assert values["RETRIEVAL_CANDIDATE_K"] == "30"
+    assert values["RETRIEVAL_TOP_K"] == "8"
+    assert values["RETRIEVAL_RRF_K"] == "60"
+    assert not any(
+        value
+        for name, value in values.items()
+        if name.endswith("API_KEY")
+    )
