@@ -273,3 +273,16 @@ def test_dotenv_example_is_safe_and_documents_retrieval_defaults() -> None:
         for name, value in values.items()
         if name.endswith("API_KEY")
     )
+
+
+def test_gitignore_protects_dotenv_without_ignoring_example() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    gitignore_path = repository_root / ".gitignore"
+    rules = {
+        line.strip()
+        for line in gitignore_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert ".env" in rules
+    assert ".env.example" not in rules
