@@ -139,7 +139,7 @@ if ($LASTEXITCODE -ne 0) { throw '.env must be ignored' }
 
 git check-ignore -q .env.example
 if ($LASTEXITCODE -ne 1) { throw '.env.example must not be ignored' }
-``` 
+```
 
 Expected: `.env` is ignored and `.env.example` is not ignored. Inspect the diff to confirm no secret appears and rely on the focused cross-cwd test for isolation.
 
