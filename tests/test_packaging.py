@@ -1,9 +1,14 @@
 import shutil
 import subprocess
 import sys
-import tomllib
 import zipfile
 from pathlib import Path
+
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 
 def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
@@ -20,6 +25,10 @@ def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
         "requires": ["setuptools>=61"],
         "build-backend": "setuptools.build_meta",
     }
+    assert (
+        "tomli>=2; python_version < '3.11'"
+        in pyproject["project"]["optional-dependencies"]["dev"]
+    )
 
 
 def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
