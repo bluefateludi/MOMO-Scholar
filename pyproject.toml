@@ -26,6 +26,9 @@ llm = [
 [project.scripts]
 paper-agent = "paper_agent.cli:app"
 
+[tool.setuptools.packages.find]
+include = ["paper_agent*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
