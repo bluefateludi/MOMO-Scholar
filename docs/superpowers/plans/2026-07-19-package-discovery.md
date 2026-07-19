@@ -33,6 +33,7 @@ subprocess.run(
         str(project),
         "--no-deps",
         "--no-build-isolation",
+        "--no-index",
         "--disable-pip-version-check",
         "--wheel-dir",
         str(wheel_dir),
@@ -71,9 +72,11 @@ Expected: PASS.
 
 - [ ] **Step 5: Reproduce the user's original editable-install scenario**
 
-Create an empty `outputs/` only inside the isolated worktree if it does not already
-exist, run `python -m pip install -e ".[dev]"`, and remove only the temporary empty
-directory created by this step. Never modify or delete a pre-existing `outputs/`.
+Only if the isolated worktree has no `outputs/`, create
+`outputs/package-discovery-sentinel/result.txt`, record that this step owns the new
+tree, and run `python -m pip install -e ".[dev]"`. Use `try/finally` semantics and
+remove only the tree created by this step. If `outputs/` already exists, stop rather
+than modifying or deleting it.
 
 Expected: editable installation succeeds.
 
