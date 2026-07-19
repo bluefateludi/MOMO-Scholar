@@ -258,6 +258,11 @@ The returned object contains the evaluated `k`, ordered per-case results, and
 the three-mode macro summary. These ranking metrics complement rather than
 change the Evaluation v1 report, Evidence, and citation contracts above.
 
+`evaluate_retrieval_fixture` defaults `k` to `8`, while its hybrid ranking
+hardcodes the RRF constant to `60`. The evaluator does not read `.env` or
+runtime `RETRIEVAL_*` settings, so changing runtime retrieval or RRF settings
+does not affect this offline evaluation.
+
 ## Future evaluation layers
 
 A future public retrieval benchmark may convert a licensed subset of a scientific

@@ -17,7 +17,7 @@ process environment variables taking precedence.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DASHSCOPE_API_KEY` | none | DashScope credential used by the embedding client. Keep it outside source control and logs. |
-| `BAILIAN_REGION` | `beijing` | Bailian endpoint region used by the embedding client. |
+| `BAILIAN_REGION` | `beijing` | Bailian endpoint region. Currently only `beijing` is supported. |
 | `BAILIAN_EMBEDDING_MODEL` | `text-embedding-v4` | Embedding model identity used by the embedder and vector store. |
 | `RETRIEVAL_MODE` | `auto` | Requested mode: `auto`, `lexical`, or `hybrid`. |
 | `RETRIEVAL_CANDIDATE_K` | `30` | Maximum candidates requested from each active source before fusion. |
@@ -27,6 +27,9 @@ process environment variables taking precedence.
 All three `K` settings must be positive integers. If candidate K is smaller
 than Top K, the application returns only the candidates that are available; it
 does not rewrite either setting.
+
+On a vector-enabled path, a `BAILIAN_REGION` value other than `beijing` fails
+configuration without lexical fallback.
 
 ### Offline lexical example
 
@@ -60,6 +63,7 @@ RETRIEVAL_RRF_K=60
 
 Do not commit a real key. Configuration only establishes that a non-blank key
 is present; authentication is checked by the provider when a request is made.
+`<set-in-shell>` is a documentation placeholder, not a literal credential.
 
 ## Failure and fallback behavior
 
@@ -115,14 +119,14 @@ Important fields are:
   text.
 
 Successful events serialize `failure_stage` and `error_code` as `null`.
-Error events retain the counts known when the failure occurred; stages that have not started remain
-zero.
+Error events retain the counts known when the failure occurred; stages that
+have not started remain zero.
 
 ## Current limits
 
-The vector path currently uses `InMemoryVectorStore`. Its index is process-local
-and is not persisted, so separate runs may embed and index the same chunks
-again.
+The standard pipeline constructs a new retrieval service and
+`InMemoryVectorStore` for each run. Every non-empty vector-enabled run therefore
+embeds and indexes its chunks again; no index is persisted between runs.
 
 This stage does not provide reranking, a persistent vector database, source
 weight or fusion-weight tuning, retry loops, or CLI flags for selecting the
