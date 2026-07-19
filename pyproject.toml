@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "paper-agent"
 version = "0.1.0"
@@ -27,7 +31,7 @@ llm = [
 paper-agent = "paper_agent.cli:app"
 
 [tool.setuptools.packages.find]
-include = ["paper_agent*"]
+include = ["paper_agent", "paper_agent.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,8 +1,25 @@
 import shutil
 import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
+
+
+def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads(
+        (repository_root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert pyproject["tool"]["setuptools"]["packages"]["find"]["include"] == [
+        "paper_agent",
+        "paper_agent.*",
+    ]
+    assert pyproject["build-system"] == {
+        "requires": ["setuptools>=61"],
+        "build-backend": "setuptools.build_meta",
+    }
 
 
 def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
@@ -34,11 +51,21 @@ def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        timeout=60,
     )
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    wheels = list(wheel_dir.glob("*.whl"))
-    assert len(wheels) == 1
+    diagnostics = (
+        f"command: {' '.join(result.args)}\n"
+        f"exit code: {result.returncode}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert result.returncode == 0, diagnostics
+    wheels = sorted(wheel_dir.glob("*.whl"))
+    assert len(wheels) == 1, (
+        f"expected exactly one wheel, found {[wheel.name for wheel in wheels]}\n"
+        f"{diagnostics}"
+    )
     with zipfile.ZipFile(wheels[0]) as wheel:
         members = wheel.namelist()
     assert any(member.startswith("paper_agent/") for member in members)
