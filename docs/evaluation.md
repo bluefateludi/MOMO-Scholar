@@ -198,13 +198,78 @@ This version has no pipeline integration, database persistence, runtime network
 downloads, model or LLM-judge calls, HTML reporting, vector-retrieval changes, or
 reranking behavior.
 
+## Retrieval ranking evaluation
+
+The retrieval ranking evaluator is a separate deterministic, offline layer. It
+compares the real lexical ranking, a fixture-provided deterministic vector
+ranking, and the real RRF hybrid ranking for the same cases. It does not call an
+embedding provider, model API, database, pipeline, or network service.
+
+It reports four metrics for a positive integer K:
+
+- Recall@K is the number of unique relevant chunk IDs returned in the Top-K
+  divided by the number of unique relevant chunk IDs. A grade greater than zero
+  is relevant.
+- Precision@K is the number of relevant Top-K results divided by the number of
+  results actually returned, not by K. An empty returned ranking scores `0.0`.
+- MRR@K is `1 / rank` for the first relevant result within the Top-K. It is
+  `0.0` when no Top-K result is relevant.
+- Graded nDCG@K uses gain `2^grade - 1` and discount `log2(rank + 1)`, normalized
+  by the ideal ranking of the case's grades. It is `0.0` when ideal DCG is zero.
+
+The fixture top level is a list. Every case has these required fields:
+
+- `case_id`: a non-blank string that is unique across the fixture;
+- `query`: a non-blank string;
+- `chunks`: records accepted by the `Chunk` schema, with unique `chunk_id`
+  values;
+- `relevance_by_chunk_id`: an object mapping known chunk IDs to non-negative
+  integer grades;
+- `vector_ranked_chunk_ids`: a unique ordered list of known chunk IDs.
+
+Unknown chunk IDs in relevance judgments or vector rankings are invalid.
+Duplicate chunk IDs in `chunks` or `vector_ranked_chunk_ids` are invalid.
+Boolean, negative, or non-integer grades are invalid. A grade greater than zero
+counts as relevant for Recall@K, Precision@K, and MRR@K; grade zero is an
+explicit non-relevant judgment. Chunks omitted from the relevance mapping have
+grade zero.
+
+For each case, the evaluator produces `lexical`, `vector`, and `hybrid`
+rankings and metric dictionaries. The lexical mode runs the production offline
+lexical candidate source. The vector mode preserves
+`vector_ranked_chunk_ids`. The hybrid mode fuses both rankings with the
+production RRF implementation. Summary values are equal-weight macro averages
+of per-case metrics, so each case contributes equally. An empty fixture returns
+no cases and `0.0` for every summary metric in every mode.
+
+Run the versioned fixture as follows:
+
+```python
+from pathlib import Path
+
+from paper_agent.eval.retrieval_runner import evaluate_retrieval_fixture
+
+result = evaluate_retrieval_fixture(
+    Path("tests/fixtures/retrieval_eval_cases.json"), k=8
+)
+```
+
+The returned object contains the evaluated `k`, ordered per-case results, and
+the three-mode macro summary. These ranking metrics complement rather than
+change the Evaluation v1 report, Evidence, and citation contracts above.
+
+`evaluate_retrieval_fixture` defaults `k` to `8`, while its hybrid ranking
+hardcodes the RRF constant to `60`. The evaluator does not read `.env` or
+runtime `RETRIEVAL_*` settings, so changing runtime retrieval or RRF settings
+does not affect this offline evaluation.
+
 ## Future evaluation layers
 
 A future public retrieval benchmark may convert a licensed subset of a scientific
 retrieval dataset into the same local JSON format. Converted cases should be
-version-pinned and stored locally so normal tests remain offline. That layer may
-add Precision@K, Recall@K, MRR, and nDCG@K after dataset selection, licensing
-review, and conversion are completed.
+version-pinned and stored locally so normal tests remain offline. It may broaden
+coverage beyond the current deterministic ranking fixtures after dataset
+selection, licensing review, and conversion are completed.
 
 A later semantic layer may add human-labeled reference claims and supporting
 passages to evaluate claim-Evidence entailment, answer correctness, completeness,
