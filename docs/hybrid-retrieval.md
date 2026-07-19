@@ -29,7 +29,7 @@ than Top K, the application returns only the candidates that are available; it
 does not rewrite either setting.
 
 On a vector-enabled path, a `BAILIAN_REGION` value other than `beijing` fails
-configuration without lexical fallback.
+the run without lexical fallback.
 
 ### Offline lexical example
 
@@ -126,7 +126,8 @@ have not started remain zero.
 
 The standard pipeline constructs a new retrieval service and
 `InMemoryVectorStore` for each run. Every non-empty vector-enabled run therefore
-embeds and indexes its chunks again; no index is persisted between runs.
+attempts to embed and index its chunks again; no index is persisted between
+runs.
 
 This stage does not provide reranking, a persistent vector database, source
 weight or fusion-weight tuning, retry loops, or CLI flags for selecting the
