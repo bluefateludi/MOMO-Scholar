@@ -105,8 +105,10 @@ Important fields are:
 - `lexical_candidate_count` and `vector_candidate_count`: source candidates
   after each source's candidate-K truncation and before cross-source
   deduplication.
-- `fused_candidate_count`: unique candidates after merging by `chunk_id` and
-  before Top-K truncation.
+- `fused_candidate_count`: in hybrid mode, unique cross-source candidates after
+  fusion and before Top-K truncation. On lexical paths (`lexical`, `auto`
+  without a key, or degraded `auto`), no fusion runs and this equals
+  `lexical_candidate_count`.
 - `returned_evidence_count`: final Evidence count after Top-K truncation.
 - `vector_attempted`: whether vector indexing or querying was attempted.
 - `degraded`: whether `auto` fell back from a vector attempt to lexical.
@@ -124,10 +126,10 @@ have not started remain zero.
 
 ## Current limits
 
-The standard pipeline constructs a new retrieval service and
-`InMemoryVectorStore` for each run. Every non-empty vector-enabled run therefore
-attempts to embed and index its chunks again; no index is persisted between
-runs.
+For each non-empty vector-enabled run, the standard pipeline constructs a new
+retrieval service and `InMemoryVectorStore`. That run attempts to embed and
+index its chunks again; no index is persisted between runs. `lexical` and
+`auto` without a key do not construct a vector store.
 
 This stage does not provide reranking, a persistent vector database, source
 weight or fusion-weight tuning, retry loops, or CLI flags for selecting the
