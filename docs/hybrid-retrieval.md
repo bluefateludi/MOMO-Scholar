@@ -95,8 +95,9 @@ Important fields are:
 
 - `status`: `ok` or `error`.
 - `requested_mode`: the configured `auto`, `lexical`, or `hybrid` mode.
-- `actual_mode`: the executed `lexical` or `hybrid` path. It is `null` for an
-  assembly failure that occurs before a retrieval service exists.
+- `actual_mode`: the selected `lexical` or `hybrid` path for the terminal
+  event. On validation failures, this is the planned path even though no source
+  ran. It is `null` for an assembly failure before service creation.
 - `lexical_candidate_count` and `vector_candidate_count`: source candidates
   after each source's candidate-K truncation and before cross-source
   deduplication.
