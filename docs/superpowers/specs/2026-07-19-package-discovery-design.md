@@ -17,8 +17,11 @@ than risk packaging unrelated files.
 ## Design
 
 - Configure setuptools package discovery explicitly in `pyproject.toml`.
-- Include only `paper_agent*`, covering the main package and all current or future
-  subpackages.
+- Include only `paper_agent` and `paper_agent.*`, covering the main package and all
+  current or future subpackages without matching sibling names such as
+  `paper_agent_backup`.
+- Declare setuptools as the PEP 517 build backend so clean environments have an
+  explicit, reproducible backend contract.
 - Do not enumerate exclusion rules for runtime or documentation directories.
 - Do not move the project to a `src/` layout in this fix.
 - Preserve project metadata, CLI entry points, dependencies, and runtime behavior.

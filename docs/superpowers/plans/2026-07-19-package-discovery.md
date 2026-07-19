@@ -4,7 +4,7 @@
 
 **Goal:** Make editable and wheel builds succeed when a root `outputs/` directory exists.
 
-**Architecture:** Setuptools discovery will be constrained to `paper_agent*` in the authoritative `pyproject.toml`. A subprocess integration test will build a temporary project copy containing `outputs/`, then inspect the wheel to prove application packages are included and runtime output is excluded.
+**Architecture:** Setuptools discovery will be constrained to `paper_agent` and `paper_agent.*` in the authoritative `pyproject.toml`, with an explicit PEP 517 setuptools backend. A subprocess integration test will build a temporary project copy containing `outputs/`, then inspect the wheel to prove application packages are included and runtime output is excluded.
 
 **Tech Stack:** Python 3.10+, setuptools, pip wheel, pytest, zipfile
 
@@ -60,8 +60,12 @@ Expected: FAIL because setuptools reports multiple top-level packages
 Append to `pyproject.toml`:
 
 ```toml
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
-include = ["paper_agent*"]
+include = ["paper_agent", "paper_agent.*"]
 ```
 
 - [ ] **Step 4: Run the focused test and confirm GREEN**
