@@ -1,6 +1,9 @@
 import os
 from dataclasses import dataclass, field
-from typing import Literal
+from pathlib import Path
+from typing import Literal, Mapping
+
+from dotenv import dotenv_values
 
 
 RetrievalMode = Literal["auto", "lexical", "hybrid"]
@@ -59,37 +62,44 @@ def _retrieval_mode(value: str | None) -> RetrievalMode:
     return normalized  # type: ignore[return-value]
 
 
+def _setting(name: str, dotenv: Mapping[str, str | None]) -> str | None:
+    if name in os.environ:
+        return os.environ[name]
+    return dotenv.get(name)
+
+
 def load_settings() -> Settings:
+    dotenv = dotenv_values(Path.cwd() / ".env")
     return Settings(
-        openai_api_key=_optional_string(os.environ.get("OPENAI_API_KEY")),
-        openai_base_url=_optional_string(os.environ.get("OPENAI_BASE_URL")),
-        paper_agent_model=_optional_string(os.environ.get("PAPER_AGENT_MODEL")),
+        openai_api_key=_optional_string(_setting("OPENAI_API_KEY", dotenv)),
+        openai_base_url=_optional_string(_setting("OPENAI_BASE_URL", dotenv)),
+        paper_agent_model=_optional_string(_setting("PAPER_AGENT_MODEL", dotenv)),
         semantic_scholar_api_key=_optional_string(
-            os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
+            _setting("SEMANTIC_SCHOLAR_API_KEY", dotenv)
         ),
         openalex_mail_address=_optional_string(
-            os.environ.get("OPENALEX_MAIL_ADDRESS")
+            _setting("OPENALEX_MAIL_ADDRESS", dotenv)
         ),
-        dashscope_api_key=_optional_string(os.environ.get("DASHSCOPE_API_KEY")),
+        dashscope_api_key=_optional_string(_setting("DASHSCOPE_API_KEY", dotenv)),
         bailian_region=_string_with_default(
-            os.environ.get("BAILIAN_REGION"), "beijing"
+            _setting("BAILIAN_REGION", dotenv), "beijing"
         ),
         bailian_embedding_model=_string_with_default(
-            os.environ.get("BAILIAN_EMBEDDING_MODEL"), "text-embedding-v4"
+            _setting("BAILIAN_EMBEDDING_MODEL", dotenv), "text-embedding-v4"
         ),
         vector_collection=_string_with_default(
-            os.environ.get("VECTOR_COLLECTION"), "momo_scholar_chunks_v1"
+            _setting("VECTOR_COLLECTION", dotenv), "momo_scholar_chunks_v1"
         ),
         retrieval_candidate_k=_positive_int(
             "RETRIEVAL_CANDIDATE_K",
-            os.environ.get("RETRIEVAL_CANDIDATE_K"),
+            _setting("RETRIEVAL_CANDIDATE_K", dotenv),
             30,
         ),
-        retrieval_mode=_retrieval_mode(os.environ.get("RETRIEVAL_MODE")),
+        retrieval_mode=_retrieval_mode(_setting("RETRIEVAL_MODE", dotenv)),
         retrieval_top_k=_positive_int(
-            "RETRIEVAL_TOP_K", os.environ.get("RETRIEVAL_TOP_K"), 8
+            "RETRIEVAL_TOP_K", _setting("RETRIEVAL_TOP_K", dotenv), 8
         ),
         retrieval_rrf_k=_positive_int(
-            "RETRIEVAL_RRF_K", os.environ.get("RETRIEVAL_RRF_K"), 60
+            "RETRIEVAL_RRF_K", _setting("RETRIEVAL_RRF_K", dotenv), 60
         ),
     )
