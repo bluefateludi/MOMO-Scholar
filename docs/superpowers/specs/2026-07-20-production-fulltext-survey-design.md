@@ -1,7 +1,7 @@
 # Production Full-Text Survey Design
 
-**Date:** 2026-07-20  
-**Status:** Approved in conversation; pending written-spec review  
+**Date:** 2026-07-20
+**Status:** Approved in conversation; pending written-spec review
 **Scope:** Production-oriented local CLI vertical slice for public arXiv papers
 
 ## 1. Context
@@ -681,4 +681,3 @@ The implementation plan should split this design into small test-driven tasks:
 
 Later phases add caching/persistence, broader sources, CI/CD, and operational
 hardening only after this vertical slice works end to end.
-
