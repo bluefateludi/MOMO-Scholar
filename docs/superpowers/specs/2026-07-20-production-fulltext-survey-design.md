@@ -177,6 +177,7 @@ class StrictModel(BaseModel):
 This includes `Paper`, `DocumentPage`, `PaperDocument`, `DocumentRecord`,
 `Evidence`, `GroundedFinding`, `PaperAnalysis`, `SurveyDraft`,
 `CheckedFinding`, `CheckedPaperAnalysis`, `CheckedClaim`,
+`RejectedCriticalClaim`, `RetrievalRecord`,
 `CheckedSurveyReport`, and `RunManifest`. `Chunk` remains an internal retrieval
 contract in this phase. Persisted JSON uses stable UTF-8 serialization.
 
@@ -281,7 +282,9 @@ page needed for the report trace.
 An evidence item is valid for a paper analysis only when:
 
 - its `paper_id` matches the analysis paper;
-- its `chunk_id` resolves to a persisted chunk from that paper;
+- its `chunk_id` resolves against the in-memory per-paper chunk index before
+  artifact publication; the selected quote and provenance are then persisted in
+  `evidence.json`;
 - its quote equals the normalized chunk text or an explicitly defined,
   deterministic excerpt of that text;
 - its ID belongs to the current run.
@@ -356,6 +359,9 @@ class CheckedClaim(StrictModel):
     evidence_ids: list[str]
     support_status: SupportStatus
 
+class RejectedCriticalClaim(CheckedClaim):
+    source_section: Literal["tldr_claims", "key_findings"]
+
 class CheckedSurveyReport(StrictModel):
     question: str
     tldr_claims: list[CheckedClaim] = Field(default_factory=list)
@@ -364,6 +370,9 @@ class CheckedSurveyReport(StrictModel):
     key_findings: list[CheckedClaim] = Field(default_factory=list)
     limitations: list[CheckedClaim] = Field(default_factory=list)
     open_questions: list[CheckedClaim] = Field(default_factory=list)
+    rejected_critical_claims: list[RejectedCriticalClaim] = Field(
+        default_factory=list
+    )
 ```
 
 The deterministic citation checker converts draft claims into checked claims
@@ -375,9 +384,15 @@ with `supported`, `weakly_supported`, or `unsupported` status.
   at least one valid and at least one invalid reference. It is never treated as
   fully supported in critical sections.
 
-Unknown IDs are removed. Unsupported and weakly supported claims may be shown in
-an audit/limitations section, but cannot appear in TL;DR or key findings.
-`report.json` is exactly one `CheckedSurveyReport`.
+Unknown IDs are removed. Citation checking relocates every weakly supported or
+unsupported TL;DR/key-finding claim into `rejected_critical_claims`, preserving
+its original section, and leaves only `supported` claims in `tldr_claims` and
+`key_findings`. Other category arrays may retain checked statuses for explicit
+rendering in limitations/audit content. Both `report.json` and `report.md` consume
+these already-sanitized arrays; the renderer does not independently filter them.
+`report.json` is exactly one `CheckedSurveyReport`. A model-level validator
+requires every item in the two critical arrays to be `supported` and every
+rejected critical claim to be weak or unsupported.
 
 A report is publishable only if, after citation checking, it contains at least
 one supported TL;DR claim and at least one supported key finding. Failure to meet
@@ -450,7 +465,8 @@ headings and canonical names (`Abstract`, `Introduction`, `Methods`, `Results`,
 - If no reliable section is recognized, chunking falls back to page-aware fixed
   windows and records `section_detection_failed`.
 - Reference-list chunks are excluded from analysis retrieval by default after a
-  reliable `References` heading, but remain auditable in document diagnostics.
+  reliable `References` heading. The corresponding `DocumentRecord.warnings`
+  contains the stable code `reference_section_excluded`.
 
 No LLM is used for parsing, heading detection, or chunking.
 
@@ -635,9 +651,21 @@ class RunCounts(StrictModel):
     selected_papers: int
     pdf_documents: int
     abstract_documents: int
+    explicit_abstract_documents: int
+    pdf_fallback_documents: int
     excluded_papers: int
     successful_analyses: int
     evidence_items: int
+
+`RunCounts` validates that
+`abstract_documents == explicit_abstract_documents + pdf_fallback_documents`.
+
+class RetrievalRecord(StrictModel):
+    paper_id: str
+    requested_mode: RetrievalMode
+    actual_mode: Literal["lexical", "hybrid"]
+    degraded: bool
+    degradation_code: str | None = None
 
 class UsageTotals(StrictModel):
     operations: int
@@ -665,6 +693,7 @@ class RunManifest(StrictModel):
     stage_elapsed_seconds: dict[str, float]
     usage: UsageTotals
     component_versions: dict[str, str]
+    retrieval_outcomes: list[RetrievalRecord] = Field(default_factory=list)
     degradations: list[RunIssue] = Field(default_factory=list)
     errors: list[RunIssue] = Field(default_factory=list)
 
@@ -678,6 +707,11 @@ class RunEvent(StrictModel):
     code: str | None = None
     attributes: dict[str, JsonValue] = Field(default_factory=dict)
 ```
+
+Before constructing `RunIssue` or `RunEvent`, one centralized sanitizer rejects
+credential-like keys and raw provider request/response bodies, and redacts known
+secret values from messages and attributes. Flexible message/attribute fields
+may contain only the sanitized result.
 
 Timestamps are UTC ISO-8601 values. `run_manifest.json` is exactly one
 `RunManifest`; it is first written with `running` and atomically replaced with a
@@ -711,7 +745,9 @@ redacts all secrets. At minimum it includes:
 - retrieval requested/actual modes and model;
 - generation provider, endpoint host, and model;
 - PDF byte/page limits and chunk settings;
-- selected, parsed, fallback, excluded, and analyzed paper counts;
+- selected, PDF, explicit/fallback abstract, excluded, and analyzed paper counts;
+- one `RetrievalRecord` per successful paper retrieval, including requested and
+  actual mode; failed retrievals are represented by `RunIssue` errors;
 - per-stage elapsed time;
 - generation attempts and token usage when supplied by DashScope;
 - terminal status and structured degradation/error codes;
@@ -831,7 +867,8 @@ Using a deterministic fake `GenerationProvider`:
 One integration test fakes only arXiv HTTP, PDF HTTP, embedding transport, and
 generation provider. It exercises real normalization, parsing, chunking,
 retrieval/fusion, evidence packing, validation, artifact persistence, and
-rendering.
+rendering. A two-paper case asserts the second paper's vector outcome cannot
+contain any chunk indexed for the first paper.
 
 Live tests are separate manual smoke checks and are not part of normal `pytest`.
 
