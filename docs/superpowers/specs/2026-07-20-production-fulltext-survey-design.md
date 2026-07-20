@@ -148,7 +148,7 @@ After the minimum number of paper analyses succeeds:
 1. Ask `qwen3.7-plus` for a schema-valid cross-paper survey.
 2. Resolve every model-produced Evidence ID against the run evidence index.
 3. Remove unknown references and mark the affected claims unsupported.
-4. Exclude unsupported claims from TL;DR, key findings, and conclusions.
+4. Exclude unsupported and weak claims from TL;DR and key findings.
 5. Persist structured artifacts and render the formal report.
 6. Write the terminal run status last.
 
@@ -157,26 +157,52 @@ Safe intermediate artifacts and structured error events remain available after a
 failure. `report.json` and `report.md` are published only after synthesis and
 citation validation succeed.
 
+The pipeline creates a fresh retrieval service and therefore a fresh
+`InMemoryVectorStore` for each paper. A shared HTTP embedding transport may live
+for the whole run, but no vector store or indexed chunks may cross the per-paper
+service boundary. The pipeline owns the shared transport and closes it once;
+each per-paper service owns and releases only its local retrieval resources.
+This prevents a later paper query from returning chunks indexed for an earlier
+paper.
+
 ## 5. Domain Contracts
 
-All persisted contracts use Pydantic models with `extra="forbid"` for generated
-or terminal data. Persisted JSON uses stable UTF-8 serialization.
+All new or migrated persisted, generated, and terminal contracts inherit:
+
+```python
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+```
+
+This includes `Paper`, `DocumentPage`, `PaperDocument`, `DocumentRecord`,
+`Evidence`, `GroundedFinding`, `PaperAnalysis`, `SurveyDraft`,
+`CheckedFinding`, `CheckedPaperAnalysis`, `CheckedClaim`,
+`CheckedSurveyReport`, and `RunManifest`. `Chunk` remains an internal retrieval
+contract in this phase. Persisted JSON uses stable UTF-8 serialization.
 
 ### 5.1 Documents
 
 ```python
 ContentSource = Literal["pdf", "abstract"]
 
-class DocumentPage(BaseModel):
+class DocumentPage(StrictModel):
     page_number: int
     text: str
 
-class PaperDocument(BaseModel):
+class PaperDocument(StrictModel):
     paper_id: str
     content_source: ContentSource
     pages: list[DocumentPage]
     content_sha256: str
-    warnings: list[str] = []
+    warnings: list[str] = Field(default_factory=list)
+
+class DocumentRecord(StrictModel):
+    paper_id: str
+    content_source: ContentSource
+    content_sha256: str
+    page_count: int
+    warnings: list[str] = Field(default_factory=list)
+    fallback_code: str | None = None
 ```
 
 Rules:
@@ -187,8 +213,9 @@ Rules:
   normalized UTF-8 abstract for abstract documents.
 - An empty `pages` list or pages containing no meaningful text is invalid.
 - Raw PDF bytes and full extracted page text are internal transient data.
-  `documents.json` contains provenance, page counts, hashes, content source, and
-  warnings, but not the `pages[*].text` payload.
+  `documents.json` is exactly `list[DocumentRecord]`; it contains provenance,
+  page counts, hashes, content source, warnings, and fallback code, but not the
+  `pages[*].text` payload.
 - Chunks and evidence are the persisted textual audit surface.
 
 ### 5.2 Chunks and evidence
@@ -232,6 +259,25 @@ evidence positions. `EvidencePackBuilder` preserves retrieval order, removes
 duplicate chunk references, and caps the result at
 `ANALYSIS_EVIDENCE_PER_PAPER`.
 
+The implementation migrates `Evidence` to retain the provenance already present
+on `RetrievalCandidate`:
+
+```python
+class Evidence(StrictModel):
+    evidence_id: str
+    paper_id: str
+    chunk_id: str
+    section: str | None = None
+    page: int | None = None
+    claim_type: str
+    quote: str
+    relevance_score: float = Field(ge=0.0, le=1.0)
+```
+
+`evidence.json` is exactly `list[Evidence]`. Chunks are not separately persisted
+because each evidence record contains the selected chunk ID, quote, section, and
+page needed for the report trace.
+
 An evidence item is valid for a paper analysis only when:
 
 - its `paper_id` matches the analysis paper;
@@ -243,17 +289,30 @@ An evidence item is valid for a paper analysis only when:
 ### 5.3 Grounded analyses
 
 ```python
-class GroundedFinding(BaseModel):
+class GroundedFinding(StrictModel):
     text: str
     evidence_ids: list[str]
 
-class PaperAnalysis(BaseModel):
+class PaperAnalysis(StrictModel):
     paper_id: str
-    contributions: list[GroundedFinding] = []
-    methods: list[GroundedFinding] = []
-    experiments: list[GroundedFinding] = []
-    results: list[GroundedFinding] = []
-    limitations: list[GroundedFinding] = []
+    contributions: list[GroundedFinding] = Field(default_factory=list)
+    methods: list[GroundedFinding] = Field(default_factory=list)
+    experiments: list[GroundedFinding] = Field(default_factory=list)
+    results: list[GroundedFinding] = Field(default_factory=list)
+    limitations: list[GroundedFinding] = Field(default_factory=list)
+
+class CheckedFinding(StrictModel):
+    text: str
+    evidence_ids: list[str]
+    support_status: SupportStatus
+
+class CheckedPaperAnalysis(StrictModel):
+    paper_id: str
+    contributions: list[CheckedFinding] = Field(default_factory=list)
+    methods: list[CheckedFinding] = Field(default_factory=list)
+    experiments: list[CheckedFinding] = Field(default_factory=list)
+    results: list[CheckedFinding] = Field(default_factory=list)
+    limitations: list[CheckedFinding] = Field(default_factory=list)
 ```
 
 Every finding must contain at least one Evidence ID. IDs must belong to the
@@ -262,20 +321,49 @@ The current singular field names (`contribution`, `method`, `experiment`,
 `limitation`) are migrated deliberately rather than kept as ambiguous aliases.
 Tests and renderers move to the new contract in the same change set.
 
+The citation checker sanitizes every generated finding before persistence:
+
+- valid same-paper IDs are retained;
+- unknown, foreign-paper, foreign-run, and duplicate IDs are removed;
+- a finding with only valid IDs is `supported`;
+- a finding with at least one valid and at least one removed ID is
+  `weakly_supported`;
+- a finding with no valid ID after sanitization is removed entirely.
+
+`analyses.json` is exactly `list[CheckedPaperAnalysis]`, so every persisted
+finding retains at least one resolvable same-paper ID. A paper analysis counts as
+successful only when it retains at least one `supported` finding. Only supported
+findings are supplied to cross-paper synthesis; weak findings remain available
+for audit but cannot ground survey claims.
+
 ### 5.4 Survey draft and checked report
 
 ```python
-class GroundedClaim(BaseModel):
+class GroundedClaim(StrictModel):
     text: str
     evidence_ids: list[str]
 
-class SurveyDraft(BaseModel):
+class SurveyDraft(StrictModel):
     tldr_claims: list[GroundedClaim]
     method_taxonomy: list[GroundedClaim]
     comparisons: list[GroundedClaim]
     key_findings: list[GroundedClaim]
     limitations: list[GroundedClaim]
     open_questions: list[GroundedClaim]
+
+class CheckedClaim(StrictModel):
+    text: str
+    evidence_ids: list[str]
+    support_status: SupportStatus
+
+class CheckedSurveyReport(StrictModel):
+    question: str
+    tldr_claims: list[CheckedClaim] = Field(default_factory=list)
+    method_taxonomy: list[CheckedClaim] = Field(default_factory=list)
+    comparisons: list[CheckedClaim] = Field(default_factory=list)
+    key_findings: list[CheckedClaim] = Field(default_factory=list)
+    limitations: list[CheckedClaim] = Field(default_factory=list)
+    open_questions: list[CheckedClaim] = Field(default_factory=list)
 ```
 
 The deterministic citation checker converts draft claims into checked claims
@@ -288,8 +376,14 @@ with `supported`, `weakly_supported`, or `unsupported` status.
   fully supported in critical sections.
 
 Unknown IDs are removed. Unsupported and weakly supported claims may be shown in
-an audit/limitations section, but cannot appear in TL;DR, key findings, or the
-report conclusion.
+an audit/limitations section, but cannot appear in TL;DR or key findings.
+`report.json` is exactly one `CheckedSurveyReport`.
+
+A report is publishable only if, after citation checking, it contains at least
+one supported TL;DR claim and at least one supported key finding. Failure to meet
+either minimum is `insufficient_supported_report` and makes the run `failed`;
+the pipeline does not publish `report.json` or `report.md`. The first version has
+no separate generated conclusion field.
 
 ## 6. PDF Acquisition and Parsing
 
@@ -298,8 +392,13 @@ report conclusion.
 `FullTextDownloader` accepts only HTTPS arXiv PDF URLs derived from normalized
 arXiv metadata. It does not accept an arbitrary user URL.
 
-- Allowed hosts are explicit arXiv hosts required by normalized search results.
-- Every redirect hop is revalidated for scheme and host.
+- The downloader extracts the canonical, optionally versioned arXiv identifier
+  from normalized metadata and constructs
+  `https://arxiv.org/pdf/{arxiv_id}` itself; it never fetches the raw feed URL.
+- The exact allowed hosts are `arxiv.org` and `export.arxiv.org`.
+- The path must remain under `/pdf/`, contain the same canonical arXiv ID, and
+  have no query string. An optional `.pdf` suffix is accepted.
+- Every redirect hop is revalidated for scheme, host, path, and arXiv ID.
 - Userinfo, fragments, localhost names, private/link-local IP targets, and
   non-HTTPS schemes are rejected.
 - Connect/read/write/pool timeouts are explicit.
@@ -327,9 +426,12 @@ Using PyMuPDF, it:
 - normalizes line endings, whitespace, repeated blank lines, and obvious control
   characters;
 - preserves page boundaries;
+- treats the first and last three non-empty lines as page-edge candidates and
+  removes one only when the same normalized line occurs on more than half of all
+  pages;
 - records warnings for pages with no extractable text;
-- rejects documents whose normalized text is empty or below a conservative
-  useful-text threshold.
+- rejects documents whose normalized text has fewer than 200 non-whitespace
+  characters; this fixed v1 threshold is not user-configurable.
 
 Complex reading-order reconstruction and OCR are out of scope. Text-native arXiv
 PDFs are the supported input class.
@@ -343,9 +445,8 @@ headings and canonical names (`Abstract`, `Introduction`, `Methods`, `Results`,
 
 - A recognized heading applies until the next heading.
 - Chunk windows do not intentionally cross section boundaries.
-- Long sections are divided into bounded, overlapping word windows.
+- Long sections use fixed v1 windows of 180 words with 30 words of overlap.
 - Page boundaries and the starting page are retained.
-- Repeated headers/footers may be removed only by deterministic repetition rules.
 - If no reliable section is recognized, chunking falls back to page-aware fixed
   windows and records `section_detection_failed`.
 - Reference-list chunks are excluded from analysis retrieval by default after a
@@ -370,7 +471,7 @@ class GenerationProvider(Protocol):
 ```
 
 ```python
-class StructuredGeneration(BaseModel, Generic[ModelT]):
+class StructuredGeneration(StrictModel, Generic[ModelT]):
     result: ModelT
     model: str
     prompt_tokens: int | None
@@ -406,18 +507,28 @@ The base URL must be HTTPS. Error messages, event payloads, exceptions, and
 - Successful content is decoded as JSON and validated with the supplied Pydantic
   schema.
 - HTTP 401/403 and invalid model/configuration errors fail immediately.
-- Timeout, HTTP 429, and HTTP 5xx receive at most one retry.
-- `Retry-After` is respected when valid and bounded; otherwise a small fixed
-  delay is used.
-- Invalid JSON or schema failure triggers one repair request using the same
-  `qwen3.7-plus` model and the validation error summary.
-- Repair is not an unbounded retry loop.
+- One logical generation operation starts with one original HTTP request.
+- Timeout, HTTP 429, and HTTP 5xx permit one transport retry, so an original or
+  repair request has at most two HTTP attempts.
+- `Retry-After` is capped at 10 seconds. Missing, invalid, negative, or larger
+  values use a one-second delay or the 10-second cap as applicable.
+- Invalid JSON or schema failure after a successful original response permits
+  exactly one repair request using `qwen3.7-plus` and a safe validation-error
+  summary. The repair request has the same one-transport-retry rule.
+- If both original HTTP attempts fail, no repair request is made.
+- Therefore one logical generation operation sends at most four HTTP attempts:
+  two for the original request and two for the optional repair request.
+- `StructuredGeneration.attempts` is the total number of HTTP sends, including
+  transport failures and repair sends. `elapsed_seconds` covers sends, retry
+  waits, validation, and repair.
+- Usage fields aggregate every HTTP response that supplies usage, including an
+  invalid-content original response followed by repair. Missing usage remains
+  `None`; available counts are summed once and never inferred.
+- The configured timeout applies per HTTP attempt. With the defaults, the hard
+  design upper bound is four 60-second attempts plus two 10-second waits.
 - The original prompt, raw model response, and API key are not persisted in
   normal logs. Safe operation names, counts, latency, attempts, model, and usage
   are persisted.
-
-Transport retry and schema repair are independent causes but the total behavior
-remains bounded: one transport retry per request and one repair request.
 
 ## 8. Failure and Degradation Contract
 
@@ -428,10 +539,12 @@ RunStatus = Literal["completed", "completed_with_degradation", "failed"]
 ```
 
 - `completed`: all selected papers used their requested source mode, required
-  generation succeeded, and critical report claims passed citation validation.
-- `completed_with_degradation`: a permitted per-paper fallback or retrieval
-  degradation occurred, but the minimum analysis threshold and report integrity
-  rules still passed.
+  generation succeeded, every retained generated reference was valid, and the
+  minimum supported critical content passed citation validation.
+- `completed_with_degradation`: a permitted per-paper fallback, retrieval
+  degradation, skipped paper analysis, or citation-reference sanitization
+  occurred, but the minimum analysis threshold and report integrity rules still
+  passed.
 - `failed`: the pipeline cannot truthfully produce the formal report.
 
 The manifest is created with an internal `running` lifecycle value and finalized
@@ -478,7 +591,8 @@ A failed paper analysis may be skipped if the number of successful analyses is:
 - one when exactly one paper was retrieved.
 
 If the minimum is not met, the run fails. A survey synthesis failure, exhausted
-repair, authentication failure, or unusable citation-checked result is terminal.
+repair, or authentication failure is terminal. A citation-checked result below the
+minimum defined in Section 5.4 fails with `insufficient_supported_report`.
 
 ## 9. Artifacts and Observability
 
@@ -496,18 +610,92 @@ outputs/<run-id>/
   logs.jsonl
 ```
 
+### Persisted manifest and event contracts
+
+```python
+ManifestStatus = Literal[
+    "running", "completed", "completed_with_degradation", "failed"
+]
+
+class SafeRunSettings(StrictModel):
+    retrieval_mode: RetrievalMode
+    embedding_model: str
+    generation_provider: Literal["dashscope"]
+    generation_endpoint_host: str
+    generation_model: str
+    generation_timeout_seconds: float
+    pdf_download_timeout_seconds: float
+    pdf_max_bytes: int
+    pdf_max_pages: int
+    analysis_evidence_per_paper: int
+    chunk_max_words: int
+    chunk_overlap_words: int
+
+class RunCounts(StrictModel):
+    selected_papers: int
+    pdf_documents: int
+    abstract_documents: int
+    excluded_papers: int
+    successful_analyses: int
+    evidence_items: int
+
+class UsageTotals(StrictModel):
+    operations: int
+    http_attempts: int
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+class RunIssue(StrictModel):
+    stage: str
+    code: str
+    paper_id: str | None = None
+    message: str | None = None
+
+class RunManifest(StrictModel):
+    run_id: str
+    status: ManifestStatus
+    question: str
+    requested_limit: int
+    no_pdf: bool
+    started_at: datetime
+    finished_at: datetime | None = None
+    settings: SafeRunSettings
+    counts: RunCounts
+    stage_elapsed_seconds: dict[str, float]
+    usage: UsageTotals
+    component_versions: dict[str, str]
+    degradations: list[RunIssue] = Field(default_factory=list)
+    errors: list[RunIssue] = Field(default_factory=list)
+
+class RunEvent(StrictModel):
+    timestamp: datetime
+    run_id: str
+    stage: str
+    operation: str
+    status: Literal["started", "ok", "degraded", "error"]
+    paper_id: str | None = None
+    code: str | None = None
+    attributes: dict[str, JsonValue] = Field(default_factory=dict)
+```
+
+Timestamps are UTC ISO-8601 values. `run_manifest.json` is exactly one
+`RunManifest`; it is first written with `running` and atomically replaced with a
+terminal value. Every line of `logs.jsonl` is exactly one `RunEvent`. Existing
+`RetrievalEvent` fields are nested into safe event `attributes` together with the
+paper operation context.
+
 ### Artifact meanings
 
-- `papers.json`: normalized search metadata.
+- `papers.json`: exactly `list[Paper]` of normalized search metadata.
 - `documents.json`: content source, hash, page count, warnings, and fallback
   reason; no raw page text.
 - `evidence.json`: evidence plus paper/chunk/section/page provenance.
 - `analyses.json`: checked per-paper structured analyses.
 - `report.json`: checked structured survey used by the renderer.
 - `report.md`: human-facing formal literature review.
-- `run_manifest.json`: inputs, safe settings, component/model versions, status,
-  counts, timings, degradations, errors, and usage totals.
-- `logs.jsonl`: append-only structured events for stages and attempts.
+- `run_manifest.json`: the exact `RunManifest` contract above.
+- `logs.jsonl`: append-only `RunEvent` records for stages and attempts.
 
 On failure, the manifest, log, and any already completed safe intermediate
 artifacts remain. A failed run must not contain a newly published `report.md`
@@ -526,7 +714,8 @@ redacts all secrets. At minimum it includes:
 - selected, parsed, fallback, excluded, and analyzed paper counts;
 - per-stage elapsed time;
 - generation attempts and token usage when supplied by DashScope;
-- terminal status and structured degradation/error codes.
+- terminal status and structured degradation/error codes;
+- `paper-agent`, PyMuPDF, and embedded MuPDF versions.
 
 ## 10. Formal Report
 
@@ -656,7 +845,7 @@ The phase is complete when:
 - every per-paper finding has at least one valid same-paper Evidence ID;
 - every critical report claim resolves to paper, section if known, page, chunk,
   and quote;
-- unsupported/weak claims cannot enter TL;DR, key findings, or conclusion;
+- unsupported/weak claims cannot enter TL;DR or key findings;
 - failures and fallbacks produce the documented terminal status and codes;
 - network calls have explicit timeouts, bounded retries, and byte/page limits;
 - logs and artifacts contain no secret;
