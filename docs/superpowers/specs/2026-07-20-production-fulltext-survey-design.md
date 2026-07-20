@@ -217,7 +217,8 @@ Rules:
   `documents.json` is exactly `list[DocumentRecord]`; it contains provenance,
   page counts, hashes, content source, warnings, and fallback code, but not the
   `pages[*].text` payload.
-- Chunks and evidence are the persisted textual audit surface.
+- Selected evidence is the persisted textual audit surface; unselected chunks remain
+  internal.
 
 ### 5.2 Chunks and evidence
 
@@ -657,8 +658,6 @@ class RunCounts(StrictModel):
     successful_analyses: int
     evidence_items: int
 
-`RunCounts` validates that
-`abstract_documents == explicit_abstract_documents + pdf_fallback_documents`.
 
 class RetrievalRecord(StrictModel):
     paper_id: str
@@ -707,6 +706,12 @@ class RunEvent(StrictModel):
     code: str | None = None
     attributes: dict[str, JsonValue] = Field(default_factory=dict)
 ```
+
+`RunCounts` validates all three relationships:
+
+- `abstract_documents == explicit_abstract_documents + pdf_fallback_documents`;
+- `selected_papers == pdf_documents + abstract_documents + excluded_papers`;
+- `0 <= successful_analyses <= pdf_documents + abstract_documents`.
 
 Before constructing `RunIssue` or `RunEvent`, one centralized sanitizer rejects
 credential-like keys and raw provider request/response bodies, and redacts known
