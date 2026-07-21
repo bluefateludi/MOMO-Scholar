@@ -11,11 +11,15 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 
-def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
+def _load_pyproject() -> dict:
     repository_root = Path(__file__).resolve().parents[1]
-    pyproject = tomllib.loads(
+    return tomllib.loads(
         (repository_root / "pyproject.toml").read_text(encoding="utf-8")
     )
+
+
+def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
+    pyproject = _load_pyproject()
 
     assert pyproject["tool"]["setuptools"]["packages"]["find"]["include"] == [
         "paper_agent",
@@ -29,6 +33,24 @@ def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
         "tomli>=2; python_version < '3.11'"
         in pyproject["project"]["optional-dependencies"]["dev"]
     )
+
+
+def test_pdf_runtime_and_agpl_metadata_are_declared() -> None:
+    pyproject = _load_pyproject()
+    assert "pymupdf>=1.24,<2" in pyproject["project"]["dependencies"]
+    assert "pdf" not in pyproject["project"].get("optional-dependencies", {})
+    assert pyproject["project"]["license"] == {"file": "LICENSE"}
+
+
+def test_agpl_and_pymupdf_notices_are_present() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert "GNU AFFERO GENERAL PUBLIC LICENSE" in (
+        root / "LICENSE"
+    ).read_text(encoding="utf-8")
+    notices = (root / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+    assert "PyMuPDF" in notices
+    assert "MuPDF" in notices
+    assert "AGPL" in notices
 
 
 def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
