@@ -49,8 +49,14 @@ def test_synthesis_uses_analysis_contribution_and_evidence_ids():
     analysis = analyze_paper(paper, evidence)
     claims = synthesize_claims("grounded agents", [paper], [analysis], evidence)
     assert len(claims) == 1
-    assert analysis.contribution[0] in claims[0].claim
-    assert claims[0].evidence_ids == analysis.evidence_ids
+    assert analysis.contributions[0].text in claims[0].claim
+    assert claims[0].evidence_ids == analysis.contributions[0].evidence_ids
+
+
+def test_analysis_does_not_create_abstract_finding_without_evidence():
+    analysis = analyze_paper(_paper(), [])
+
+    assert analysis.contributions == []
 
 
 def test_synthesis_skips_paper_without_evidence():
