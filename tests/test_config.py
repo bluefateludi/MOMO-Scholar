@@ -16,6 +16,13 @@ SUPPORTED_SETTING_NAMES = (
     "DASHSCOPE_API_KEY",
     "BAILIAN_REGION",
     "BAILIAN_EMBEDDING_MODEL",
+    "DASHSCOPE_GENERATION_MODEL",
+    "DASHSCOPE_GENERATION_BASE_URL",
+    "DASHSCOPE_GENERATION_TIMEOUT_SECONDS",
+    "PDF_DOWNLOAD_TIMEOUT_SECONDS",
+    "PDF_MAX_BYTES",
+    "PDF_MAX_PAGES",
+    "ANALYSIS_EVIDENCE_PER_PAPER",
     "VECTOR_COLLECTION",
     "RETRIEVAL_CANDIDATE_K",
     "RETRIEVAL_MODE",
@@ -43,6 +50,20 @@ def test_load_settings_uses_hybrid_retrieval_defaults(monkeypatch) -> None:
     assert settings.retrieval_rrf_k == 60
 
 
+def test_fulltext_generation_defaults() -> None:
+    settings = Settings()
+    assert settings.bailian_embedding_model == "text-embedding-v4"
+    assert settings.dashscope_generation_model == "qwen3.7-plus"
+    assert settings.dashscope_generation_base_url == (
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    assert settings.dashscope_generation_timeout_seconds == 60.0
+    assert settings.pdf_download_timeout_seconds == 30.0
+    assert settings.pdf_max_bytes == 25_000_000
+    assert settings.pdf_max_pages == 200
+    assert settings.analysis_evidence_per_paper == 6
+
+
 def test_load_settings_reads_environment(monkeypatch):
     values = {
         "OPENAI_API_KEY": "openai-key",
@@ -53,6 +74,13 @@ def test_load_settings_reads_environment(monkeypatch):
         "DASHSCOPE_API_KEY": "  dashscope-key  ",
         "BAILIAN_REGION": "  shanghai  ",
         "BAILIAN_EMBEDDING_MODEL": "  custom-embedding  ",
+        "DASHSCOPE_GENERATION_MODEL": "  custom-generation  ",
+        "DASHSCOPE_GENERATION_BASE_URL": "  https://example.test/v2  ",
+        "DASHSCOPE_GENERATION_TIMEOUT_SECONDS": " 45.5 ",
+        "PDF_DOWNLOAD_TIMEOUT_SECONDS": " 12.25 ",
+        "PDF_MAX_BYTES": " 123456 ",
+        "PDF_MAX_PAGES": " 99 ",
+        "ANALYSIS_EVIDENCE_PER_PAPER": " 4 ",
         "VECTOR_COLLECTION": "  custom-chunks  ",
         "RETRIEVAL_CANDIDATE_K": "  42  ",
         "RETRIEVAL_MODE": " hybrid ",
@@ -71,6 +99,13 @@ def test_load_settings_reads_environment(monkeypatch):
         dashscope_api_key="dashscope-key",
         bailian_region="shanghai",
         bailian_embedding_model="custom-embedding",
+        dashscope_generation_model="custom-generation",
+        dashscope_generation_base_url="https://example.test/v2",
+        dashscope_generation_timeout_seconds=45.5,
+        pdf_download_timeout_seconds=12.25,
+        pdf_max_bytes=123456,
+        pdf_max_pages=99,
+        analysis_evidence_per_paper=4,
         vector_collection="custom-chunks",
         retrieval_candidate_k=42,
         retrieval_mode="hybrid",
@@ -114,6 +149,54 @@ def test_load_settings_rejects_invalid_retrieval_k(
     monkeypatch.setenv(name, raw)
     with pytest.raises(ValueError, match=rf"{name} {message}"):
         load_settings()
+
+
+@pytest.mark.parametrize("name", [
+    "DASHSCOPE_GENERATION_TIMEOUT_SECONDS",
+    "PDF_DOWNLOAD_TIMEOUT_SECONDS",
+])
+@pytest.mark.parametrize("raw", ["0", "-1", "nan", "inf", "word"])
+def test_timeouts_reject_invalid_values(name, raw, monkeypatch) -> None:
+    monkeypatch.setenv(name, raw)
+    with pytest.raises(ValueError, match=rf"{name} must be positive finite"):
+        load_settings()
+
+
+@pytest.mark.parametrize("name", [
+    "PDF_MAX_BYTES",
+    "PDF_MAX_PAGES",
+    "ANALYSIS_EVIDENCE_PER_PAPER",
+])
+@pytest.mark.parametrize("raw", ["0", "-1", "1.5", "word"])
+def test_fulltext_limits_reject_invalid_values(name, raw, monkeypatch) -> None:
+    monkeypatch.setenv(name, raw)
+    with pytest.raises(ValueError, match=rf"{name} must"):
+        load_settings()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "http://example.test/v1",
+        "https://user:password@example.test/v1",
+        "https://example.test/v1?mode=test",
+        "https://example.test/v1#fragment",
+        "https:///v1",
+    ],
+)
+def test_generation_base_url_rejects_invalid_values(raw, monkeypatch) -> None:
+    monkeypatch.setenv("DASHSCOPE_GENERATION_BASE_URL", raw)
+    with pytest.raises(ValueError, match="DASHSCOPE_GENERATION_BASE_URL"):
+        load_settings()
+
+
+def test_generation_base_url_allows_configured_https_host(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "DASHSCOPE_GENERATION_BASE_URL", "https://gateway.example.test/v1"
+    )
+    assert load_settings().dashscope_generation_base_url == (
+        "https://gateway.example.test/v1"
+    )
 
 
 def test_settings_repr_hides_api_keys():
@@ -170,6 +253,22 @@ def test_process_environment_takes_precedence_over_dotenv(
     monkeypatch.setenv("DASHSCOPE_API_KEY", "process-key")
 
     assert load_settings().dashscope_api_key == "process-key"
+
+
+def test_fulltext_settings_load_from_dotenv_with_environment_precedence(
+    tmp_path, monkeypatch
+) -> None:
+    (tmp_path / ".env").write_text(
+        "DASHSCOPE_GENERATION_MODEL=file-model\n"
+        "PDF_MAX_PAGES=150\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PDF_MAX_PAGES", "175")
+
+    settings = load_settings()
+
+    assert settings.dashscope_generation_model == "file-model"
+    assert settings.pdf_max_pages == 175
 
 
 def test_load_settings_ignores_parent_dotenv(tmp_path, monkeypatch) -> None:
@@ -264,6 +363,16 @@ def test_dotenv_example_is_safe_and_documents_retrieval_defaults() -> None:
 
     values = dotenv_values(example_path)
     assert values["DASHSCOPE_API_KEY"] == ""
+    assert values["BAILIAN_EMBEDDING_MODEL"] == "text-embedding-v4"
+    assert values["DASHSCOPE_GENERATION_MODEL"] == "qwen3.7-plus"
+    assert values["DASHSCOPE_GENERATION_BASE_URL"] == (
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    assert values["DASHSCOPE_GENERATION_TIMEOUT_SECONDS"] == "60"
+    assert values["PDF_DOWNLOAD_TIMEOUT_SECONDS"] == "30"
+    assert values["PDF_MAX_BYTES"] == "25000000"
+    assert values["PDF_MAX_PAGES"] == "200"
+    assert values["ANALYSIS_EVIDENCE_PER_PAPER"] == "6"
     assert values["RETRIEVAL_MODE"] == "auto"
     assert values["RETRIEVAL_CANDIDATE_K"] == "30"
     assert values["RETRIEVAL_TOP_K"] == "8"
