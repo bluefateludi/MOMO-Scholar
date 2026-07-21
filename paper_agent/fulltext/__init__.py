@@ -5,6 +5,7 @@ from paper_agent.fulltext.downloader import (
     canonical_pdf_url,
 )
 from paper_agent.fulltext.models import DocumentPage, DocumentRecord, PaperDocument
+from paper_agent.fulltext.parser import PdfParseError, PdfParser
 
 __all__ = [
     "DocumentPage",
@@ -13,5 +14,7 @@ __all__ = [
     "FullTextDownloader",
     "PaperDocument",
     "PdfDownloadError",
+    "PdfParseError",
+    "PdfParser",
     "canonical_pdf_url",
 ]
