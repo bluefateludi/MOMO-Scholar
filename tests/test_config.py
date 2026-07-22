@@ -8,9 +8,6 @@ from paper_agent.config import Settings, load_settings
 
 
 SUPPORTED_SETTING_NAMES = (
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "PAPER_AGENT_MODEL",
     "SEMANTIC_SCHOLAR_API_KEY",
     "OPENALEX_MAIL_ADDRESS",
     "DASHSCOPE_API_KEY",
@@ -66,9 +63,6 @@ def test_fulltext_generation_defaults() -> None:
 
 def test_load_settings_reads_environment(monkeypatch):
     values = {
-        "OPENAI_API_KEY": "openai-key",
-        "OPENAI_BASE_URL": "https://example.test/v1",
-        "PAPER_AGENT_MODEL": "example-model",
         "SEMANTIC_SCHOLAR_API_KEY": "semantic-scholar-key",
         "OPENALEX_MAIL_ADDRESS": "researcher@example.test",
         "DASHSCOPE_API_KEY": "  dashscope-key  ",
@@ -91,9 +85,6 @@ def test_load_settings_reads_environment(monkeypatch):
         monkeypatch.setenv(variable, value)
 
     assert load_settings() == Settings(
-        openai_api_key="openai-key",
-        openai_base_url="https://example.test/v1",
-        paper_agent_model="example-model",
         semantic_scholar_api_key="semantic-scholar-key",
         openalex_mail_address="researcher@example.test",
         dashscope_api_key="dashscope-key",
@@ -201,18 +192,14 @@ def test_generation_base_url_allows_configured_https_host(monkeypatch) -> None:
 
 def test_settings_repr_hides_api_keys():
     settings = Settings(
-        openai_api_key="sentinel-openai-secret",
-        paper_agent_model="example-model",
         semantic_scholar_api_key="sentinel-semantic-scholar-secret",
         dashscope_api_key="sentinel-dashscope-secret",
     )
 
     representation = repr(settings)
 
-    assert "sentinel-openai-secret" not in representation
     assert "sentinel-semantic-scholar-secret" not in representation
     assert "sentinel-dashscope-secret" not in representation
-    assert "example-model" in representation
 
 
 @pytest.mark.parametrize("value", ["not-an-integer", "1.5", ""])
@@ -320,13 +307,12 @@ def test_blank_dotenv_strings_preserve_optional_and_default_behavior(
     tmp_path,
 ) -> None:
     (tmp_path / ".env").write_text(
-        "OPENAI_API_KEY=\nBAILIAN_REGION=\nVECTOR_COLLECTION=\n",
+        "DASHSCOPE_API_KEY=\nBAILIAN_REGION=\nVECTOR_COLLECTION=\n",
         encoding="utf-8",
     )
 
     settings = load_settings()
 
-    assert settings.openai_api_key is None
     assert settings.bailian_region == "beijing"
     assert settings.vector_collection == "momo_scholar_chunks_v1"
 
@@ -382,6 +368,12 @@ def test_dotenv_example_is_safe_and_documents_retrieval_defaults() -> None:
         for name, value in values.items()
         if name.endswith("API_KEY")
     )
+    assert not {"OPENAI_API_KEY", "OPENAI_BASE_URL", "PAPER_AGENT_MODEL"} & set(values)
+
+
+def test_obsolete_openai_settings_are_not_part_of_settings() -> None:
+    fields = Settings.__dataclass_fields__
+    assert not {"openai_api_key", "openai_base_url", "paper_agent_model"} & set(fields)
 
 
 def test_gitignore_protects_dotenv_without_ignoring_example() -> None:

@@ -19,9 +19,6 @@ _VALID_RETRIEVAL_MODES: tuple[RetrievalMode, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    openai_api_key: str | None = field(default=None, repr=False)
-    openai_base_url: str | None = None
-    paper_agent_model: str | None = None
     semantic_scholar_api_key: str | None = field(default=None, repr=False)
     openalex_mail_address: str | None = None
     dashscope_api_key: str | None = field(default=None, repr=False)
@@ -111,9 +108,6 @@ def _setting(name: str, dotenv: Mapping[str, str | None]) -> str | None:
 def load_settings() -> Settings:
     dotenv = dotenv_values(Path.cwd() / ".env")
     return Settings(
-        openai_api_key=_optional_string(_setting("OPENAI_API_KEY", dotenv)),
-        openai_base_url=_optional_string(_setting("OPENAI_BASE_URL", dotenv)),
-        paper_agent_model=_optional_string(_setting("PAPER_AGENT_MODEL", dotenv)),
         semantic_scholar_api_key=_optional_string(
             _setting("SEMANTIC_SCHOLAR_API_KEY", dotenv)
         ),

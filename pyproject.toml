@@ -23,15 +23,14 @@ dev = [
   "pytest-cov>=5",
   "tomli>=2; python_version < '3.11'",
 ]
-llm = [
-  "openai>=1.0",
-]
-
 [project.scripts]
 paper-agent = "paper_agent.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["paper_agent", "paper_agent.*"]
+
+[tool.setuptools]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
