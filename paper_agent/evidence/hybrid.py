@@ -43,6 +43,8 @@ def _candidates_to_evidence(
                 evidence_id=f"{run_id}:ev_{index:03d}",
                 paper_id=item.paper_id,
                 chunk_id=item.chunk_id,
+                section=item.section,
+                page=item.page,
                 claim_type="retrieved",
                 quote=item.text,
                 relevance_score=round(min(raw_score, 1.0), 4),
