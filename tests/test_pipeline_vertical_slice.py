@@ -1,31 +1,14 @@
+from paper_agent.config import Settings
 from paper_agent.pipeline import run_pipeline
-from paper_agent.schemas import Paper
+from tests.test_pipeline_fulltext_integration import Provider, _dependencies
 
 
-def test_pipeline_writes_papers_and_report(tmp_path):
-    def fake_search(query: str, limit: int):
-        return [
-            Paper(
-                paper_id="arxiv:2401.00001",
-                title="Example Paper Agent Study",
-                authors=["Alice Researcher"],
-                year=2024,
-                abstract="This paper studies retrieval augmented paper agents.",
-                url="https://arxiv.org/abs/2401.00001",
-                pdf_url=None,
-                source="arxiv",
-            )
-        ]
-
-    run_dir = run_pipeline(
-        question="LLM agents for scientific literature review",
-        output_base=tmp_path,
-        limit=1,
-        no_pdf=True,
-        search_fn=fake_search,
-    )
-    assert (run_dir / "papers.json").exists()
-    assert (run_dir / "evidence.json").exists()
-    report = (run_dir / "report.md").read_text(encoding="utf-8")
-    assert "# Mini Survey" in report
-    assert "Example Paper Agent Study" in report
+def test_pipeline_writes_all_success_artifacts_in_abstract_mode(tmp_path):
+    import httpx
+    settings = Settings(dashscope_api_key="offline", retrieval_mode="hybrid")
+    provider = Provider()
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: (_ for _ in ()).throw(AssertionError("no PDF request"))))
+    result = run_pipeline("LLM agents for scientific literature review", output_base=tmp_path, no_pdf=True, settings=settings, dependencies=_dependencies(settings, provider, client))
+    assert result.status == "completed"
+    assert (result.run_dir / "papers.json").exists()
+    assert "# Formal Survey:" in (result.run_dir / "report.md").read_text(encoding="utf-8")
