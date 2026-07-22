@@ -170,6 +170,18 @@ class RunRecorder:
                 secrets=(),
             )
         )
+        self.emit(
+            RunEvent(
+                timestamp=self._clock(),
+                run_id=self.run_id,
+                stage=stage,
+                operation="finalize_run",
+                status="error",
+                paper_id=paper_id,
+                code=code,
+                attributes={},
+            )
+        )
         self._transition(
             status="failed",
             counts=counts,
