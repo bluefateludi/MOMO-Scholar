@@ -21,6 +21,13 @@ from paper_agent.fulltext import DocumentAcquirer, FullTextDownloader, PdfParser
 from paper_agent.fulltext.models import DocumentRecord
 from paper_agent.generation.dashscope import DashScopeGenerationProvider
 from paper_agent.generation.dashscope_transport import DashScopeChatTransport
+from paper_agent.generation import (
+    GenerationProviderError,
+    GenerationRateLimitError,
+    GenerationResponseError,
+    GenerationServerError,
+    GenerationTimeoutError,
+)
 from paper_agent.observability import (
     RunCounts,
     RunEvent,
@@ -71,6 +78,13 @@ class PipelineResult:
     status: Literal["completed", "completed_with_degradation"]
 
 
+class PipelineRunFailed(RuntimeError):
+    def __init__(self, run_dir: Path, code: str) -> None:
+        self.run_dir = run_dir
+        self.code = code
+        super().__init__(code)
+
+
 def _versions() -> dict[str, str]:
     return {
         "paper-agent": "0.1.0",
@@ -89,6 +103,25 @@ def _add_usage(total: UsageTotals, generation: object) -> UsageTotals:
             values[field] = supplied if values[field] is None else values[field] + supplied
     return UsageTotals.model_validate(values)
 
+
+def _add_failure_usage(total: UsageTotals, error: GenerationProviderError) -> UsageTotals:
+    metadata = error.metadata
+    values = total.model_dump()
+    values["operations"] += 1
+    values["http_attempts"] += metadata.attempts
+    for field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        supplied = getattr(metadata, field)
+        if supplied is not None:
+            values[field] = supplied if values[field] is None else values[field] + supplied
+    return UsageTotals.model_validate(values)
+
+
+_SKIPPABLE_ANALYSIS_ERRORS = (
+    GenerationTimeoutError,
+    GenerationRateLimitError,
+    GenerationServerError,
+    GenerationResponseError,
+)
 
 def _counts(
     papers: Sequence[Paper],
@@ -203,89 +236,106 @@ def run_pipeline(
             component_versions=_versions(),
         )
         timings: dict[str, float] = {}
-
-        def timed(stage: str, operation: Callable[[], object]) -> object:
-            started = time.monotonic()
-            try:
-                return operation()
-            finally:
-                timings[stage] = timings.get(stage, 0.0) + max(0.0, time.monotonic() - started)
-
-        papers = timed(
-            "search", lambda: dedupe_papers(deps.search(question, limit))[:limit]
-        )
-        recorder.write_papers(papers)
-        acquirer = DocumentAcquirer(downloader=deps.downloader, parser=deps.parser)
+        papers: list[Paper] = []
         records: list[DocumentRecord] = []
         evidence: list[Evidence] = []
         analyses: list[CheckedPaperAnalysis] = []
         retrievals = []
-        degradations = []
+        degradations: list[RunIssue] = []
         usage = UsageTotals(operations=0, http_attempts=0)
+        failure_stage = "pipeline"
 
-        for paper in papers:
-            outcome = timed(
-                "acquisition",
-                lambda paper=paper: acquire_paper_document(
-                    acquirer, paper, no_pdf=no_pdf
-                ),
+        def timed(stage: str, operation: Callable[[], object]) -> object:
+            nonlocal failure_stage
+            started = time.monotonic()
+            try:
+                return operation()
+            except Exception:
+                failure_stage = stage
+                raise
+            finally:
+                timings[stage] = timings.get(stage, 0.0) + max(0.0, time.monotonic() - started)
+
+        try:
+            papers = timed(
+                "search", lambda: dedupe_papers(deps.search(question, limit))[:limit]
             )
-            degradations.extend(outcome.degradations)
-            if outcome.document is None or outcome.record is None:
-                continue
-            chunked = timed("chunking", lambda document=outcome.document: chunk_document(document))
-            record = outcome.record.model_copy(
-                update={
-                    "warnings": list(
-                        dict.fromkeys([*outcome.record.warnings, *chunked.warnings])
-                    )
-                }
-            )
-            records.append(record)
+            recorder.write_papers(papers)
+            acquirer = DocumentAcquirer(downloader=deps.downloader, parser=deps.parser)
 
-            def retrieval_event(event: object, paper_id: str = paper.paper_id) -> None:
-                recorder.emit(
-                    RunEvent(
-                        timestamp=utc_now(),
-                        run_id=recorder.run_id,
-                        stage="retrieval",
-                        operation="retrieve_evidence",
-                        status=event.status,
-                        paper_id=paper_id,
-                        code=event.degradation_code or event.error_code,
-                        attributes=event.model_dump(mode="json"),
-                    )
+            for paper in papers:
+                outcome = timed(
+                    "acquisition",
+                    lambda paper=paper: acquire_paper_document(
+                        acquirer, paper, no_pdf=no_pdf
+                    ),
                 )
-
-            pack = timed("retrieval", lambda paper=paper, chunked=chunked: deps.evidence_packs.build(question=question, paper_id=paper.paper_id, chunks=chunked.chunks, run_id=recorder.run_id, event_sink=retrieval_event))
-            evidence.extend(pack.evidence)
-            retrievals.append(pack.retrieval)
-            if pack.retrieval.degraded:
-                degradations.append(
-                    RunIssue(
-                        stage="retrieval",
-                        code=pack.retrieval.degradation_code or "retrieval_degraded",
-                        paper_id=paper.paper_id,
-                    )
+                degradations.extend(outcome.degradations)
+                if outcome.document is None or outcome.record is None:
+                    continue
+                chunked = timed("chunking", lambda document=outcome.document: chunk_document(document))
+                record = outcome.record.model_copy(
+                    update={"warnings": list(dict.fromkeys([*outcome.record.warnings, *chunked.warnings]))}
                 )
-            generated = timed("analysis", lambda paper=paper, pack=pack: deps.analyzer.analyze(paper=paper, evidence_pack=pack, timeout=active_settings.dashscope_generation_timeout_seconds))
-            usage = _add_usage(usage, generated)
-            checked = check_paper_analysis(generated.result, pack.evidence, run_id=recorder.run_id)
-            if checked.has_supported_finding:
-                analyses.append(checked.analysis)
+                records.append(record)
 
-        minimum = 2 if len(papers) >= 2 else 1
-        if len(analyses) < minimum:
-            raise ValueError("insufficient_successful_analyses")
-        survey = timed("synthesis", lambda: deps.synthesizer.synthesize(question=question, analyses=analyses, evidence=evidence, timeout=active_settings.dashscope_generation_timeout_seconds))
-        usage = _add_usage(usage, survey)
-        report = check_survey_draft(question, survey.result, evidence, run_id=recorder.run_id)
-        require_publishable_report(report)
-        status: Literal["completed", "completed_with_degradation"] = "completed_with_degradation" if degradations else "completed"
-        markdown = render_formal_report(status=status, papers=[paper for paper in papers if any(record.paper_id == paper.paper_id for record in records)], documents=records, evidence=evidence, report=report)
-        recorder.write_documents(records)
-        recorder.write_evidence(evidence)
-        recorder.write_analyses(analyses)
-        recorder.publish_report(report, markdown)
-        recorder.complete(status=status, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
-        return PipelineResult(run_dir=recorder.run_dir, status=status)
+                def retrieval_event(event: object, paper_id: str = paper.paper_id) -> None:
+                    recorder.emit(RunEvent(timestamp=utc_now(), run_id=recorder.run_id, stage="retrieval", operation="retrieve_evidence", status=event.status, paper_id=paper_id, code=event.degradation_code or event.error_code, attributes=event.model_dump(mode="json")))
+
+                pack = timed("retrieval", lambda paper=paper, chunked=chunked: deps.evidence_packs.build(question=question, paper_id=paper.paper_id, chunks=chunked.chunks, run_id=recorder.run_id, event_sink=retrieval_event))
+                evidence.extend(pack.evidence)
+                retrievals.append(pack.retrieval)
+                if pack.retrieval.degraded:
+                    degradations.append(RunIssue(stage="retrieval", code=pack.retrieval.degradation_code or "retrieval_degraded", paper_id=paper.paper_id))
+                try:
+                    generated = timed("analysis", lambda paper=paper, pack=pack: deps.analyzer.analyze(paper=paper, evidence_pack=pack, timeout=active_settings.dashscope_generation_timeout_seconds))
+                except _SKIPPABLE_ANALYSIS_ERRORS as error:
+                    usage = _add_failure_usage(usage, error)
+                    degradations.append(RunIssue(stage="analysis", code=error.code, paper_id=paper.paper_id))
+                    continue
+                usage = _add_usage(usage, generated)
+                checked = check_paper_analysis(generated.result, pack.evidence, run_id=recorder.run_id)
+                if checked.sanitized_reference_count or checked.dropped_finding_count:
+                    degradations.append(RunIssue(stage="citation_check", code="citation_references_sanitized", paper_id=paper.paper_id, message=f"sanitized={checked.sanitized_reference_count};dropped={checked.dropped_finding_count}"))
+                if checked.has_supported_finding:
+                    analyses.append(checked.analysis)
+                else:
+                    degradations.append(RunIssue(stage="analysis", code="analysis_without_supported_finding", paper_id=paper.paper_id))
+
+            recorder.write_documents(records)
+            recorder.write_evidence(evidence)
+            recorder.write_analyses(analyses)
+            minimum = 2 if len(papers) >= 2 else 1
+            if len(analyses) < minimum:
+                raise ValueError("insufficient_successful_analyses")
+            survey = timed("synthesis", lambda: deps.synthesizer.synthesize(question=question, analyses=analyses, evidence=evidence, timeout=active_settings.dashscope_generation_timeout_seconds))
+            usage = _add_usage(usage, survey)
+            report = check_survey_draft(question, survey.result, evidence, run_id=recorder.run_id)
+            sanitized = sum(claim.support_status != "supported" for claim in [*report.method_taxonomy, *report.comparisons, *report.limitations, *report.open_questions, *report.rejected_critical_claims])
+            if sanitized:
+                degradations.append(RunIssue(stage="citation_check", code="citation_references_sanitized", message=f"sanitized_claims={sanitized}"))
+            require_publishable_report(report)
+            status: Literal["completed", "completed_with_degradation"] = "completed_with_degradation" if degradations else "completed"
+            markdown = render_formal_report(status=status, papers=[paper for paper in papers if any(record.paper_id == paper.paper_id for record in records)], documents=records, evidence=evidence, report=report)
+            recorder.publish_report(report, markdown)
+            recorder.complete(status=status, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
+            return PipelineResult(run_dir=recorder.run_dir, status=status)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except GenerationProviderError as error:
+            usage = _add_failure_usage(usage, error)
+            code = error.code
+            recorder.fail(stage="generation", code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
+            raise PipelineRunFailed(recorder.run_dir, code) from error
+        except ValueError as error:
+            message = str(error)
+            if failure_stage == "retrieval":
+                code = getattr(error, "error_code", "retrieval_failure")
+            else:
+                code = message if message in {"insufficient_successful_analyses", "insufficient_supported_report"} else "pipeline_validation_error"
+            recorder.fail(stage=failure_stage, code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
+            raise PipelineRunFailed(recorder.run_dir, code) from error
+        except Exception as error:
+            code = "retrieval_failure" if failure_stage == "retrieval" else "unexpected_pipeline_error"
+            recorder.fail(stage=failure_stage, code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
+            raise PipelineRunFailed(recorder.run_dir, code) from error

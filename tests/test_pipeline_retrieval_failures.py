@@ -33,6 +33,7 @@ def test_service_error_is_rethrown_without_duplicate_event(tmp_path):
         run_pipeline(question="question", output_base=tmp_path, no_pdf=True, search_fn=_fake_search, retrieval_service=service)
     assert exc_info.value is sentinel
     run_dir = next(tmp_path.iterdir())
+    assert run_dir.is_dir()
     lines = (run_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     event = json.loads(lines[0])
