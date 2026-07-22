@@ -1,4 +1,7 @@
+from paper_agent.fulltext.models import DocumentRecord
+from paper_agent.rendering.markdown import render_formal_report
 from paper_agent.schemas import Evidence, Paper
+from paper_agent.synthesis.models import CheckedClaim, CheckedSurveyReport
 from paper_agent.synthesis.paper_reader import analyze_paper
 from paper_agent.synthesis.survey import synthesize_claims
 
@@ -63,3 +66,40 @@ def test_synthesis_skips_paper_without_evidence():
     paper = _paper()
     analysis = analyze_paper(paper, [])
     assert synthesize_claims("grounded agents", [paper], [analysis], []) == []
+
+
+def test_checked_synthesis_inputs_render_deterministically():
+    paper = _paper()
+    evidence = _evidence()
+    report = CheckedSurveyReport(
+        question="grounded agents",
+        tldr_claims=[
+            CheckedClaim(
+                text="Agents remain grounded.",
+                evidence_ids=[evidence[0].evidence_id],
+                support_status="supported",
+            )
+        ],
+        key_findings=[
+            CheckedClaim(
+                text="Evidence tracing supports auditability.",
+                evidence_ids=[evidence[0].evidence_id],
+                support_status="supported",
+            )
+        ],
+    )
+    document = DocumentRecord(
+        paper_id=paper.paper_id,
+        content_source="abstract",
+        content_sha256="a" * 64,
+        page_count=1,
+    )
+    inputs = dict(
+        status="completed",
+        papers=[paper],
+        documents=[document],
+        evidence=evidence,
+        report=report,
+    )
+
+    assert render_formal_report(**inputs) == render_formal_report(**inputs)
