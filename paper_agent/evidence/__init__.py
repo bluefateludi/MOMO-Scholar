@@ -21,6 +21,7 @@ from .models import (
 )
 from .hybrid import HybridEvidenceRetriever
 from .factory import RetrievalConfigurationError, build_retrieval_service
+from .packs import EvidencePack, EvidencePackBuilder, RetrievalServiceFactory
 from .retriever import LexicalCandidateSource, retrieve_lexical_candidates
 from .vector_source import VectorCandidateSource, VectorSourceExecutionError
 
@@ -30,6 +31,8 @@ __all__ = [
     "ErrorCode",
     "EventStatus",
     "EvidenceRetrievalService",
+    "EvidencePack",
+    "EvidencePackBuilder",
     "FailureStage",
     "HybridEvidenceRetriever",
     "LexicalCandidateSource",
@@ -42,6 +45,7 @@ __all__ = [
     "RetrievalOutcome",
     "RetrievalSource",
     "RetrievalSourceUnavailable",
+    "RetrievalServiceFactory",
     "VectorCandidateSource",
     "VectorSourceExecutionError",
     "VectorFailureStage",

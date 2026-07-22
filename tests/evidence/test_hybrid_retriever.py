@@ -1,5 +1,6 @@
 import pytest
 
+from paper_agent.evidence.models import RetrievalCandidate
 from paper_agent.evidence.models import RetrievalEvent
 from tests.evidence.hybrid_fakes import (
     FakeSource,
@@ -75,6 +76,26 @@ def test_evidence_ids_are_assigned_after_final_top_k() -> None:
     assert [(item.evidence_id, item.chunk_id) for item in outcome.evidence] == [
         ("run-z:ev_001", "a")
     ]
+
+
+def test_evidence_copies_candidate_section_and_page_provenance() -> None:
+    candidate = RetrievalCandidate(
+        chunk_id="methods-1",
+        paper_id="p1",
+        text="method details",
+        section="Methods",
+        page=3,
+        retrieval_sources=("lexical",),
+        lexical_score=0.9,
+        lexical_rank=1,
+    )
+
+    outcome = _service("lexical", FakeSource([candidate]), None).retrieve(
+        "question", [_chunk("methods-1")], "run-provenance"
+    )
+
+    assert outcome.evidence[0].section == "Methods"
+    assert outcome.evidence[0].page == 3
 
 
 def test_auto_without_vector_source_is_lexical() -> None:
