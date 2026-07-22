@@ -14,9 +14,11 @@ from paper_agent.generation.contracts import (
     StructuredGeneration,
 )
 from paper_agent.generation.dashscope_transport import DashScopeChatTransport
+from paper_agent.generation.dashscope import DashScopeGenerationProvider
 
 __all__ = [
     "DashScopeChatTransport",
+    "DashScopeGenerationProvider",
     "GenerationAuthenticationError",
     "GenerationConfigurationError",
     "GenerationFailureMetadata",
