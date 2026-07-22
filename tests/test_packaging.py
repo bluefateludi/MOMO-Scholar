@@ -40,6 +40,11 @@ def test_pdf_runtime_and_agpl_metadata_are_declared() -> None:
     assert "pymupdf>=1.24,<2" in pyproject["project"]["dependencies"]
     assert "pdf" not in pyproject["project"].get("optional-dependencies", {})
     assert pyproject["project"]["license"] == {"file": "LICENSE"}
+    assert "llm" not in pyproject["project"].get("optional-dependencies", {})
+    assert not any("openai" in dependency.lower() for dependency in pyproject["project"]["dependencies"])
+    assert pyproject["tool"]["setuptools"]["license-files"] == [
+        "LICENSE", "THIRD_PARTY_NOTICES.md"
+    ]
 
 
 def test_agpl_and_pymupdf_notices_are_present() -> None:
@@ -61,6 +66,11 @@ def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
     wheel_dir.mkdir()
 
     shutil.copy2(repository_root / "pyproject.toml", project / "pyproject.toml")
+    shutil.copy2(repository_root / "LICENSE", project / "LICENSE")
+    shutil.copy2(
+        repository_root / "THIRD_PARTY_NOTICES.md",
+        project / "THIRD_PARTY_NOTICES.md",
+    )
     shutil.copytree(repository_root / "paper_agent", project / "paper_agent")
     outputs = project / "outputs"
     outputs.mkdir()
@@ -100,4 +110,6 @@ def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheels[0]) as wheel:
         members = wheel.namelist()
     assert any(member.startswith("paper_agent/") for member in members)
+    assert any(member.endswith("licenses/LICENSE") for member in members)
+    assert any(member.endswith("licenses/THIRD_PARTY_NOTICES.md") for member in members)
     assert not any(member.startswith("outputs/") for member in members)
