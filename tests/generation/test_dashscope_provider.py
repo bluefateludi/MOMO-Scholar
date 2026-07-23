@@ -115,6 +115,19 @@ def test_one_send_success_preserves_timeout_and_usage():
     assert clock.sleeps == []
 
 
+def test_original_request_includes_exact_target_json_schema():
+    instance, transport, _ = provider([response()])
+
+    generate(instance)
+
+    schema_message = transport.calls[0]["messages"][-1]
+    assert schema_message.role == "user"
+    schema_text = schema_message.content.split(
+        "TARGET_JSON_SCHEMA_BEGIN\n", 1
+    )[1].split("\nTARGET_JSON_SCHEMA_END", 1)[0]
+    assert json.loads(schema_text) == Answer.model_json_schema()
+
+
 @pytest.mark.parametrize(
     "error_type",
     [
@@ -181,14 +194,19 @@ def test_invalid_json_is_repaired_once_with_original_grounding_and_safe_delimite
     assert result.attempts == 2
     repair_messages = transport.calls[1]["messages"]
     assert tuple(repair_messages[:2]) == MESSAGES
-    assert repair_messages[2].role == "assistant"
-    assert "UNTRUSTED_INVALID_RESPONSE_BEGIN" in repair_messages[2].content
-    assert "UNTRUSTED_INVALID_RESPONSE_END" in repair_messages[2].content
+    assert "TARGET_JSON_SCHEMA_BEGIN" in repair_messages[2].content
+    assert repair_messages[3].role == "assistant"
+    assert "UNTRUSTED_INVALID_RESPONSE_BEGIN" in repair_messages[3].content
+    assert "UNTRUSTED_INVALID_RESPONSE_END" in repair_messages[3].content
     assert len(invalid[:MAX_REPAIR_CONTENT_CHARS]) == 20_000
-    assert invalid[:MAX_REPAIR_CONTENT_CHARS] in repair_messages[2].content
-    assert invalid not in repair_messages[2].content
-    assert repair_messages[3].role == "user"
-    assert "Answer" in repair_messages[3].content
+    assert invalid[:MAX_REPAIR_CONTENT_CHARS] in repair_messages[3].content
+    assert invalid not in repair_messages[3].content
+    assert repair_messages[4].role == "user"
+    assert "Answer" in repair_messages[4].content
+    repair_schema_text = repair_messages[4].content.split(
+        "TARGET_JSON_SCHEMA_BEGIN\n", 1
+    )[1].split("\nTARGET_JSON_SCHEMA_END", 1)[0]
+    assert json.loads(repair_schema_text) == Answer.model_json_schema()
 
 
 def test_schema_repair_summary_has_only_five_location_and_type_entries_and_is_capped():

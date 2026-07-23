@@ -94,6 +94,26 @@ def _safe_validation_summary(error: ValidationError | None) -> str:
     return encoded
 
 
+def _target_schema(response_schema: type[BaseModel]) -> str:
+    return json.dumps(
+        response_schema.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _schema_message(response_schema: type[BaseModel]) -> GenerationMessage:
+    return GenerationMessage(
+        role="user",
+        content=(
+            "Return only JSON matching this target schema exactly.\n"
+            "TARGET_JSON_SCHEMA_BEGIN\n"
+            f"{_target_schema(response_schema)}\n"
+            "TARGET_JSON_SCHEMA_END"
+        ),
+    )
+
+
 def _repair_messages(
     messages: Sequence[GenerationMessage],
     invalid_content: str,
@@ -115,6 +135,9 @@ def _repair_messages(
         content=(
             f"Repair the untrusted response into valid JSON for schema "
             f"{response_schema.__name__}. Return only the repaired JSON.\n"
+            "TARGET_JSON_SCHEMA_BEGIN\n"
+            f"{_target_schema(response_schema)}\n"
+            "TARGET_JSON_SCHEMA_END\n"
             "VALIDATION_SUMMARY_BEGIN\n"
             f"{summary}\n"
             "VALIDATION_SUMMARY_END"
@@ -221,15 +244,19 @@ class DashScopeGenerationProvider:
                 metadata=aggregate.metadata(self._monotonic())
             )
 
+        grounded_messages = (*messages, _schema_message(response_schema))
         original = self._send_with_one_retry(
-            messages=messages, timeout=timeout, aggregate=aggregate
+            messages=grounded_messages, timeout=timeout, aggregate=aggregate
         )
         result, validation_error = self._validate(original, response_schema)
         final_response = original
         if result is None:
             repair = self._send_with_one_retry(
                 messages=_repair_messages(
-                    messages, original.content, response_schema, validation_error
+                    grounded_messages,
+                    original.content,
+                    response_schema,
+                    validation_error,
                 ),
                 timeout=timeout,
                 aggregate=aggregate,
