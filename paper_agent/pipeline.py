@@ -331,6 +331,8 @@ def run_pipeline(
             message = str(error)
             if failure_stage == "retrieval":
                 code = getattr(error, "error_code", "retrieval_failure")
+            elif failure_stage == "search" and hasattr(error, "error_code"):
+                code = error.error_code
             else:
                 code = message if message in {"insufficient_successful_analyses", "insufficient_supported_report"} else "pipeline_validation_error"
             recorder.fail(stage=failure_stage, code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)

@@ -13,6 +13,7 @@ from paper_agent.generation import (
 )
 from paper_agent.observability import RetrievalRecord, RunManifest
 from paper_agent.pipeline import PipelineDependencies, run_pipeline
+from paper_agent.retrieval.arxiv import ArxivSearchError
 from paper_agent.schemas import Evidence, Paper
 from paper_agent.synthesis.models import GroundedClaim, GroundedFinding, PaperAnalysis, SurveyDraft
 
@@ -143,3 +144,29 @@ def test_unexpected_exception_is_safely_finalized_and_chained(tmp_path):
     assert isinstance(caught.value.__cause__, RuntimeError)
     persisted = (caught.value.run_dir / "run_manifest.json").read_text() + (caught.value.run_dir / "logs.jsonl").read_text()
     assert secret not in persisted
+
+
+def test_arxiv_search_error_preserves_specific_terminal_code(tmp_path):
+    deps = _deps()
+    failure = ArxivSearchError("arxiv_search_rate_limited")
+    deps = PipelineDependencies(
+        search=lambda q, l: (_ for _ in ()).throw(failure),
+        downloader=deps.downloader,
+        parser=deps.parser,
+        evidence_packs=deps.evidence_packs,
+        analyzer=deps.analyzer,
+        synthesizer=deps.synthesizer,
+    )
+
+    with pytest.raises(Exception) as caught:
+        run_pipeline(
+            "question",
+            output_base=tmp_path,
+            settings=Settings(dashscope_api_key="offline", retrieval_mode="hybrid"),
+            dependencies=deps,
+        )
+
+    manifest = _manifest(caught.value.run_dir)
+    assert caught.value.code == "arxiv_search_rate_limited"
+    assert manifest.errors[0].stage == "search"
+    assert manifest.errors[0].code == "arxiv_search_rate_limited"
