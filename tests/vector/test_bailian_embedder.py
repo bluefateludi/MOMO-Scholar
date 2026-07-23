@@ -63,6 +63,53 @@ def test_defaults_and_batch_order_are_forwarded() -> None:
     ]
 
 
+def test_text_embedding_v4_batches_large_inputs_and_preserves_order() -> None:
+    class EchoTransport(FakeTransport):
+        def embed(
+            self,
+            *,
+            texts: Sequence[str],
+            model: str,
+            api_key: str,
+            region: str,
+            timeout: float,
+        ) -> list[list[float]]:
+            super().embed(
+                texts=texts,
+                model=model,
+                api_key=api_key,
+                region=region,
+                timeout=timeout,
+            )
+            return [[float(text.removeprefix("text-"))] for text in texts]
+
+    transport = EchoTransport()
+    embedder = BailianTextEmbedder(api_key="key", transport=transport)
+    texts = [f"text-{index}" for index in range(23)]
+
+    assert embedder.embed(texts) == [[float(index)] for index in range(23)]
+    assert [call["texts"] for call in transport.calls] == [
+        texts[:10],
+        texts[10:20],
+        texts[20:],
+    ]
+    assert all(
+        {
+            "model": call["model"],
+            "api_key": call["api_key"],
+            "region": call["region"],
+            "timeout": call["timeout"],
+        }
+        == {
+            "model": "text-embedding-v4",
+            "api_key": "key",
+            "region": "beijing",
+            "timeout": 30.0,
+        }
+        for call in transport.calls
+    )
+
+
 def test_empty_input_does_not_require_key_or_call_transport() -> None:
     transport = FakeTransport()
     embedder = BailianTextEmbedder(api_key=None, transport=transport)

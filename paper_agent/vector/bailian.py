@@ -12,6 +12,7 @@ from paper_agent.vector.embedding import (
 
 # Official synchronous API: https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api
 _BEIJING_EMBEDDINGS_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+_TEXT_EMBEDDING_V4_BATCH_SIZE = 10
 
 
 def _validate_timeout(timeout: float) -> None:
@@ -169,11 +170,20 @@ class BailianTextEmbedder:
         if not self.api_key or not self.api_key.strip():
             raise ValueError("Bailian API key is required")
 
-        vectors = self.transport.embed(
-            texts=texts,
-            model=self.model,
-            api_key=self.api_key,
-            region=self.region,
-            timeout=self.timeout,
+        batch_size = (
+            _TEXT_EMBEDDING_V4_BATCH_SIZE
+            if self.model == "text-embedding-v4"
+            else len(texts)
         )
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            vectors.extend(
+                self.transport.embed(
+                    texts=texts[start : start + batch_size],
+                    model=self.model,
+                    api_key=self.api_key,
+                    region=self.region,
+                    timeout=self.timeout,
+                )
+            )
         return _validate_embedding_batch(texts, vectors)
