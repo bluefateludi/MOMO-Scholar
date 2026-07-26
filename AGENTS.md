@@ -57,6 +57,7 @@ Do not interrupt implementation with long conceptual explanations unless the use
 ## Git and Delivery
 
 - Check the working tree before editing and distinguish current Task changes from pre-existing user work.
-- Do not stage, commit, push, merge, reset, or delete work unless the user explicitly requests it or the active plan explicitly requires it.
+- Do not stage, commit, push, create or update a pull request, merge, reset, or delete work unless the user explicitly requests it or the active plan explicitly requires it.
+- A request that combines commit or push with review authorizes staging the Task changes, committing, pushing, and opening a draft pull request for review unless the user explicitly excludes one of those actions.
 - Before handoff, summarize changed files, verification commands and results, and known remaining limitations.
 - Keep interview preparation and learning documentation separate from development delivery unless the user explicitly requests both.
