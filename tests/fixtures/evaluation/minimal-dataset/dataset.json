@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "momo-rag-eval-minimal",
+  "dataset_version": "2026-07-23",
+  "sources": [
+    {
+      "name": "SciFact",
+      "upstream_version": "2020-05-01",
+      "assets": [
+        {
+          "asset_type": "claims-evidence",
+          "source_url": "https://github.com/allenai/scifact/blob/master/data/claims_dev.jsonl",
+          "license_id": "CC-BY-4.0",
+          "redistribution": "minimal-derived-annotations-with-attribution"
+        },
+        {
+          "asset_type": "abstracts",
+          "source_url": "https://github.com/allenai/scifact/blob/master/data/corpus.jsonl",
+          "license_id": "ODC-By-1.0",
+          "redistribution": "minimal-derived-records-with-attribution"
+        }
+      ]
+    },
+    {
+      "name": "QASPER",
+      "upstream_version": "1.0.0",
+      "assets": [
+        {
+          "asset_type": "questions-answers",
+          "source_url": "https://github.com/allenai/qasper-led-baseline/tree/main/qasper-dataset",
+          "license_id": "CC-BY-4.0",
+          "redistribution": "minimal-derived-annotations-with-attribution"
+        }
+      ]
+    }
+  ],
+  "splits": {
+    "development": {"path": "development.jsonl", "count": 2},
+    "validation": {"path": "validation.jsonl", "count": 2},
+    "test": {"path": "test.jsonl", "count": 2}
+  },
+  "source_split_counts": [
+    {"source": "SciFact", "development": 1, "validation": 1, "test": 1},
+    {"source": "QASPER", "development": 1, "validation": 1, "test": 1}
+  ],
+  "conversion_version": "rag-eval-converter/1.0"
+}
