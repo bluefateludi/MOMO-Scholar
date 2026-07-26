@@ -456,3 +456,29 @@ Report RED/GREEN evidence, focused/full counts, changed files, remaining executi
 7. Curated 90-case materialization and 60-case validation baseline.
 
 No deferred plan may treat a gold-ordered paper list as retrieval output or collapse `execution_id` into `scoring_attempt_id`.
+
+## Post-Merge Baseline Addendum (2026-07-26)
+
+Tasks 1-8 above are complete on `origin/master` and remain authoritative. Do not
+reopen their frozen contract, selected-split isolation, path-safety, or loader
+tests merely to support benchmark execution.
+
+The retrieval and citation baseline plans may make only these additive changes:
+
+- add benchmark-specific manifests that reference an
+  `EvaluationDataset.fingerprint_sha256` and the ordered selected case IDs;
+- add optional benchmark annotation models in new modules rather than widening
+  the existing five-task `EvalCase` contract without a migration;
+- load `development` and `validation` through the existing public Loader and
+  preserve explicit authorization for test labels;
+- store corpus/chunk hashes, Gold Evidence judgments, resolved runtime config,
+  and model versions in experiment artifacts, not in Loader-owned gold models;
+- keep the minimal licensed fixture and fixture-generated values restricted to
+  offline contract/regression tests. They are never resume evidence.
+
+The follow-on implementation sources are:
+
+1. `docs/superpowers/plans/2026-07-26-rag-retrieval-benchmark.md` for the 40-case
+   real retrieval quick baseline.
+2. `docs/superpowers/plans/2026-07-26-rag-citation-quality-baseline.md` for the
+   20-case citation quick baseline and the combined 60-case Validation seal.

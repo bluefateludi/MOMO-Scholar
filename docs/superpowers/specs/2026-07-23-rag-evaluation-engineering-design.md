@@ -614,7 +614,108 @@ contents, and unsanitized exceptions are forbidden. Existing artifact sanitation
 is supplemented by an experiment-level secret scan. Raw model request/response
 capture is off by default and is never part of a baseline.
 
-## 17. Delivery chunks
+## 17. Real baseline tracks and resume evidence
+
+The first publishable measurements are two deliberately narrow tracks rather
+than numbers derived from the deterministic fixtures used by unit tests.
+
+### 17.1 Retrieval benchmark
+
+The retrieval track evaluates the production Keyword candidate source, an
+actual Vector-only path that embeds and searches the frozen chunks, and the
+production Hybrid+RRF path. All three modes receive the same ordered cases,
+query text, frozen corpus/chunk identities, candidate budget, timeout policy,
+and Top-K cutoffs. Hybrid may only fuse the Keyword and Vector-only rankings
+recorded for that same case and configuration. A fixture-provided vector
+ranking is useful for regression tests but is not an actual Vector-only run and
+cannot contribute a baseline or resume claim.
+
+Every case reports Recall, Precision, MRR, and graded nDCG at
+`K={1,3,5,8,10}`. `K=8` is the primary resume comparison; the other cutoffs are
+diagnostics and must not be selected after observing results. Aggregates are
+equal-weight case macro means. Comparisons are paired by case and report the
+Hybrid-minus-Keyword and Hybrid-minus-Vector deltas. A deterministic seeded
+case bootstrap produces percentile 95% confidence intervals from at least
+10,000 paired resamples. The report also includes end-to-end and retrieval-only
+latency distributions, attempted/completed/failed case counts, and failure
+rate. Failed cases remain in failure-rate denominators and are not silently
+converted to zero-quality observations.
+
+The resume quick baseline contains exactly 40 retrieval cases. The final
+Validation baseline contains those 40 retrieval cases plus the 20 citation
+cases below, for 60 unique case IDs under one frozen dataset manifest.
+
+### 17.2 Citation-quality baseline
+
+The citation track evaluates three separately named outcomes:
+
+- Citation Coverage: the fraction of atomic, reviewable assertions containing
+  at least one citation occurrence.
+- Citation Validity: the fraction of citation occurrences resolving to a
+  unique Evidence item owned by the evaluated run and, where applicable, the
+  correct paper. This is structural and referential validity only.
+- Unsupported Assertion Rate: the fraction of atomic assertions for which no
+  cited Evidence passage semantically supports the assertion. Lower is better.
+
+Citation Validity never stands in for semantic support. A citation may resolve
+to a real Evidence ID while its passage contradicts, is irrelevant to, or only
+partially supports the assertion. Semantic support uses deterministic Gold
+Evidence matching where the case supplies reference evidence, followed by a
+fixed human-review protocol for ambiguous entailment. Review records preserve
+the assertion boundary, cited IDs, matched gold IDs and match strategy, verdict
+(`supported`, `unsupported`, or `ambiguous`), reason code, reviewer identity
+pseudonym, rubric version, and timestamp. The calibration set and adjudicated
+answers are frozen before scoring; calibration cases are excluded from reported
+test results. A fixed double-reviewed calibration sample establishes agreement
+and resolves rubric drift before the remaining cases are single-reviewed.
+
+The resume quick baseline contains exactly 20 citation cases. It reports metric
+point estimates, per-case outcomes, bootstrap 95% confidence intervals, latency,
+and failure rate. Automated structure checks and human semantic judgments must
+remain separate columns and artifacts so either layer can be recomputed.
+
+### 17.3 Sealed evidence package
+
+No numeric claim is publishable or resume-ready unless it comes from a sealed,
+clean-worktree experiment package. Each package contains at least:
+
+```text
+<experiment>/
+├── dataset-manifest.json
+├── corpus-manifest.json
+├── gold-judgments.jsonl
+├── resolved-config.json
+├── environment.json
+├── raw-rankings.jsonl
+├── case-metrics.jsonl
+├── aggregate.json
+├── confidence-intervals.json
+├── failures.jsonl
+├── logs.jsonl
+├── traces.jsonl
+├── artifact-manifest.json
+├── report.md
+└── resume-evidence.md
+```
+
+`corpus-manifest.json` records every document and chunk hash.
+`environment.json` records Git SHA, dirty state, Python/package versions, and
+the exact embedding, generation, and judge model versions used. The artifact
+manifest records byte length and SHA-256 for every authority and projection,
+then is sealed last. Raw rankings, case metrics, aggregates, confidence
+intervals, failures, logs, and traces are retained even when a report is not
+publishable. `report.md` is the complete engineering report;
+`resume-evidence.md` contains only claims whose numerator, denominator,
+configuration, comparison, and source artifact hashes are stated and
+recomputable.
+
+Synthetic, mocked, hand-authored ranking, and minimal fixture results are test
+evidence only. Their numbers are forbidden in `resume-evidence.md`. A baseline
+blocked by dataset download, model dependency, network, API credentials, or
+cost records the blocker and completes all possible offline validation; it does
+not invent values or substitute fixture metrics.
+
+## 18. Delivery chunks
 
 1. Contracts, manifest loader, strict validation, and filesystem layout.
 2. SciFact/QASPER deterministic converters and provenance/license registry.
@@ -627,7 +728,7 @@ capture is off by default and is never part of a baseline.
 Each chunk follows repository TDD rules: focused failing test, smallest
 implementation, focused tests, broader suite, diff review, and concise handoff.
 
-## 18. Acceptance criteria
+## 19. Acceptance criteria
 
 The stage is complete when:
 
@@ -642,3 +743,12 @@ The stage is complete when:
 - pipeline, case, and experiment artifacts contain no secret;
 - all ordinary tests are offline and the full suite passes;
 - a small explicit live smoke succeeds without becoming baseline authority.
+- the 40-case retrieval quick baseline compares real Keyword, actual
+  Vector-only, and Hybrid+RRF at all five K values with paired deltas,
+  deterministic bootstrap 95% confidence intervals, latency, and failure rate;
+- the 20-case citation quick baseline reports Citation Coverage, structural
+  Citation Validity, and semantically judged Unsupported Assertion Rate with
+  Gold Evidence matches and a frozen human-review calibration record;
+- the final 60-case Validation package contains every required evidence
+  artifact, passes hash/seal verification, records a clean Git state, and is the
+  only source for resume-ready numeric claims.
