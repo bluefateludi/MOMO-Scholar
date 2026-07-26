@@ -54,6 +54,9 @@ Do not interrupt implementation with long conceptual explanations unless the use
 ## Git and Delivery
 
 - Check the working tree before editing and distinguish current Task changes from pre-existing user work.
-- Do not stage, commit, push, merge, reset, or delete work unless the user explicitly requests it or the active plan explicitly requires it.
+- Agents may stage and commit changes that belong to the active Task after relevant verification. Do not stage unrelated user changes.
+- Push, merge, rebase, reset, clean, amend, force operations, pull request creation or updates, and branch or worktree deletion require explicit user authorization.
+- Deleting or renaming source files is allowed when it is a necessary, scoped part of the approved Task and is visible in the final diff.
+- Report created commits during handoff.
 - Before handoff, summarize changed files, verification commands and results, and known remaining limitations.
 - Keep interview preparation and learning documentation separate from development delivery unless the user explicitly requests both.
