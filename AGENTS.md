@@ -8,8 +8,8 @@ Interview preparation, study notes, knowledge reviews, and mock-interview materi
 
 ## Source of Truth
 
-- Read the relevant specification and implementation plan before changing code.
-- Follow the current Chunk and Task boundaries in the active plan.
+- Read relevant specifications or plans when they exist and are needed for the Task.
+- When an active plan applies, follow its current Chunk and Task boundaries.
 - Treat the repository's current package name, structure, and tests as authoritative when older plan examples differ from the implemented project.
 - Do not implement later-Chunk functionality early unless the current Task requires an interface or placeholder for it.
 
@@ -18,9 +18,9 @@ Interview preparation, study notes, knowledge reviews, and mock-interview materi
 For each Task:
 
 1. Inspect the relevant plan section, existing implementation, tests, and current Git changes.
-2. State the Task goal, expected inputs and outputs, and files likely to change.
+2. For non-trivial Tasks, briefly state the goal and files likely to change.
 3. Implement the smallest change that satisfies the Task.
-4. Match verification effort to the risk of the change. By default, run only the necessary tests and perform a brief diff review. Require RED -> GREEN, broader verification, and independent review only for changes involving cross-module contracts, data safety, permissions, concurrency, or major compatibility risks. The user's explicitly requested workflow takes precedence.
+4. Match verification effort to the risk of the change. By default, run only the necessary tests and perform a brief diff review. Use RED -> GREEN and broader verification when justified by risk. Run independent reviews only when the user requests them. The user's explicitly requested workflow takes precedence.
 5. Report what changed, what was verified, and any remaining limitation.
 
 Do not interrupt implementation with long conceptual explanations unless the user asks for them. Keep development updates concise and action-oriented.
@@ -39,7 +39,7 @@ Do not interrupt implementation with long conceptual explanations unless the use
 
 - Use deterministic fixtures or fakes for external services in the normal test suite.
 - Keep live-network tests separate from unit and local integration tests.
-- Cover normal behavior plus important boundaries such as empty input, malformed external data, duplicates, invalid options, and I/O failures when relevant to the Task.
+- Cover the important behavior and boundaries relevant to the change.
 - Test observable behavior and contracts rather than private implementation details.
 - Never claim that work passes without running the relevant verification command and checking its result.
 
