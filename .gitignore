@@ -6,3 +6,14 @@ __pycache__/
 outputs/
 .env
 .worktrees/
+
+# Real evaluation inputs, licensed assets, credentials, caches, and generated
+# experiment artifacts are local-only. Keep this default-deny allowlist exact.
+evaluations/**
+!evaluations/README.md
+!evaluations/templates/
+evaluations/templates/**
+!evaluations/templates/corpus-manifest.template.json
+!evaluations/templates/gold-judgments.template.json
+!evaluations/templates/license-provenance-registry.template.json
+!evaluations/templates/resolved-config.template.json

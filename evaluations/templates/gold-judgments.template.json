@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "contains_real_data": false,
+  "case_contract": "paper_agent.eval.contracts.EvalCase",
+  "judgment_source": "EvalCase.reference",
+  "judgments": []
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "contains_real_data": false,
+  "required_entry_fields": [
+    "source",
+    "asset",
+    "version",
+    "url",
+    "license",
+    "redistribution_decision",
+    "sha256",
+    "reviewer",
+    "review_date"
+  ],
+  "entries": []
+}

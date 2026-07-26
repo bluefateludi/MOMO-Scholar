@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "contains_real_data": false,
+  "config_contract": "paper_agent.eval.retrieval_benchmark.contracts.RetrievalBenchmarkConfig",
+  "resolved_config": null,
+  "case_limit": 2,
+  "timeout_seconds": null,
+  "budget": {
+    "currency": null,
+    "maximum_amount": null
+  },
+  "provider_costs_acknowledged": false
+}

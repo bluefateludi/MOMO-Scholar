@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "contains_real_data": false,
+  "document_contract": "paper_agent.eval.contracts.CorpusPaper",
+  "chunk_contract": "paper_agent.schemas.Chunk",
+  "generated_by": "paper-agent retrieval-benchmark prepare",
+  "documents": [],
+  "chunks": [],
+  "corpus_sha256": null
+}
