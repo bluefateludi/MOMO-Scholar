@@ -5,6 +5,13 @@ def _short(value: object) -> str:
     return str(value)[:12]
 
 
+def _number(value: object, *, digits: int, signed: bool = False) -> str:
+    if not isinstance(value, int | float):
+        return "n/a"
+    sign = "+" if signed else ""
+    return format(value, f"{sign}.{digits}f")
+
+
 def _publishable(metadata: dict[str, object]) -> tuple[bool, list[str]]:
     failures = []
     if metadata.get("data_kind") != "real":
@@ -17,6 +24,8 @@ def _publishable(metadata: dict[str, object]) -> tuple[bool, list[str]]:
         failures.append("evidence package is not sealed")
     if metadata.get("recomputed") is not True:
         failures.append("offline recomputation is incomplete")
+    if metadata.get("complete", True) is not True:
+        failures.append("one or more benchmark modes failed")
     return not failures, failures
 
 
@@ -44,7 +53,7 @@ def render_retrieval_reports(
     ]
     for mode in ("keyword", "vector", "hybrid_rrf"):
         value = aggregate[mode]["8"]["recall_at_k"]
-        lines.append(f"| {mode} | {value:.6f} |")
+        lines.append(f"| {mode} | {_number(value, digits=6)} |")
     lines.extend(["", "## Paired comparisons", ""])
     for comparison in (
         "hybrid_rrf_minus_keyword",
@@ -52,8 +61,9 @@ def render_retrieval_reports(
     ):
         value = paired[comparison]["8"]["recall_at_k"]
         lines.append(
-            f"- {comparison}: {value['mean_delta']:+.6f}, "
-            f"95% CI [{value['ci_95_low']:.6f}, {value['ci_95_high']:.6f}], "
+            f"- {comparison}: {_number(value['mean_delta'], digits=6, signed=True)}, "
+            f"95% CI [{_number(value['ci_95_low'], digits=6)}, "
+            f"{_number(value['ci_95_high'], digits=6)}], "
             f"n={value['paired_case_count']}"
         )
     lines.extend(
@@ -68,9 +78,10 @@ def render_retrieval_reports(
     for mode in ("keyword", "vector", "hybrid_rrf"):
         value = operations[mode]
         lines.append(
-            f"| {mode} | {value['latency_ms_p50']:.3f} | "
-            f"{value['latency_ms_p95']:.3f} | {value['failed']}/{value['attempted']} | "
-            f"{value['failure_rate']:.6f} |"
+            f"| {mode} | {_number(value['latency_ms_p50'], digits=3)} | "
+            f"{_number(value['latency_ms_p95'], digits=3)} | "
+            f"{value['failed']}/{value['attempted']} | "
+            f"{_number(value['failure_rate'], digits=6)} |"
         )
     lines.extend(["", "## Limitations", ""])
     lines.extend(f"- {item}" for item in metadata.get("limitations", []))
