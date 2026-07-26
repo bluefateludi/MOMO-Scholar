@@ -19,12 +19,9 @@ For each Task:
 
 1. Inspect the relevant plan section, existing implementation, tests, and current Git changes.
 2. State the Task goal, expected inputs and outputs, and files likely to change.
-3. Add or update a focused failing test before implementation when the change affects behavior.
-4. Run the focused test and confirm that it fails for the expected reason.
-5. Implement the smallest change that satisfies the Task.
-6. Run the focused tests, then the broader relevant test suite.
-7. Review the diff for unintended changes, stale names, debug code, and formatting problems.
-8. Report what changed, what was verified, and any remaining limitation.
+3. Implement the smallest change that satisfies the Task.
+4. Match verification effort to the risk of the change. By default, run only the necessary tests and perform a brief diff review. Require RED -> GREEN, broader verification, and independent review only for changes involving cross-module contracts, data safety, permissions, concurrency, or major compatibility risks. The user's explicitly requested workflow takes precedence.
+5. Report what changed, what was verified, and any remaining limitation.
 
 Do not interrupt implementation with long conceptual explanations unless the user asks for them. Keep development updates concise and action-oriented.
 
