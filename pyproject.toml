@@ -23,6 +23,11 @@ dev = [
   "pytest-cov>=5",
   "tomli>=2; python_version < '3.11'",
 ]
+observability = [
+  "opentelemetry-api>=1.38,<2",
+  "opentelemetry-sdk>=1.38,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.38,<2",
+]
 [project.scripts]
 paper-agent = "paper_agent.cli:app"
 

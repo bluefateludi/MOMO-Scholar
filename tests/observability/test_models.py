@@ -7,6 +7,7 @@ from paper_agent.config import Settings
 from paper_agent.observability.models import (
     RunCounts,
     RunEvent,
+    RunIssue,
     RunManifest,
     SafeRunSettings,
     UsageTotals,
@@ -34,6 +35,58 @@ def _safe_settings() -> SafeRunSettings:
         chunk_max_words=180,
         chunk_overlap_words=30,
     )
+
+
+def _manifest_values() -> dict[str, object]:
+    return {
+        'run_id': 'run-1',
+        'execution_id': 'exec-1',
+        'status': 'running',
+        'question': 'grounded review',
+        'requested_limit': 3,
+        'no_pdf': False,
+        'started_at': datetime(2026, 7, 21, tzinfo=timezone.utc),
+        'finished_at': None,
+        'settings': _safe_settings(),
+        'counts': _counts(),
+        'stage_elapsed_seconds': {},
+        'usage': UsageTotals(operations=0, http_attempts=0),
+        'component_versions': {},
+    }
+
+
+def test_manifest_trace_metadata_follows_terminal_authority() -> None:
+    running = RunManifest.model_validate(_manifest_values())
+    assert running.execution_id == 'exec-1'
+    assert running.trace_sha256 is None
+
+    completed_values = _manifest_values()
+    completed_values.update(
+        status='completed',
+        finished_at=datetime(2026, 7, 21, 1, tzinfo=timezone.utc),
+    )
+    with pytest.raises(ValidationError, match='trace metadata'):
+        RunManifest.model_validate(completed_values)
+
+    completed_values.update(
+        trace_schema_version='1.0',
+        trace_root_trace_id='1' * 32,
+        trace_root_span_id='2' * 16,
+        trace_sha256='a' * 64,
+    )
+    assert RunManifest.model_validate(completed_values).status == 'completed'
+
+
+def test_trace_persistence_failure_allows_null_trace_metadata() -> None:
+    values = _manifest_values()
+    values.update(
+        status='failed',
+        finished_at=datetime(2026, 7, 21, 1, tzinfo=timezone.utc),
+        errors=[
+            RunIssue(stage='observability', code='trace_persistence_failed')
+        ],
+    )
+    assert RunManifest.model_validate(values).trace_sha256 is None
 
 
 def test_run_counts_require_consistent_document_partition() -> None:
@@ -94,6 +147,11 @@ def test_run_event_requires_utc_aware_timestamp(timestamp: datetime) -> None:
 
 def test_run_manifest_requires_utc_finished_at_and_rejects_extra_fields() -> None:
     values = {
+        'execution_id': 'exec-1',
+        'trace_schema_version': '1.0',
+        'trace_root_trace_id': '1' * 32,
+        'trace_root_span_id': '2' * 16,
+        'trace_sha256': 'a' * 64,
         "run_id": "run-1",
         "status": "completed",
         "question": "grounded review",
@@ -118,6 +176,7 @@ def test_run_manifest_requires_utc_finished_at_and_rejects_extra_fields() -> Non
 
 def test_manifest_status_and_finished_at_are_consistent() -> None:
     values = {
+        'execution_id': 'exec-1',
         "run_id": "run-1",
         "status": "running",
         "question": "grounded review",

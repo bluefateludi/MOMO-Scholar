@@ -47,6 +47,18 @@ def test_pdf_runtime_and_agpl_metadata_are_declared() -> None:
     ]
 
 
+def test_observability_extra_is_optional() -> None:
+    pyproject = _load_pyproject()
+    extra = pyproject['project']['optional-dependencies']['observability']
+    assert 'opentelemetry-api>=1.38,<2' in extra
+    assert 'opentelemetry-sdk>=1.38,<2' in extra
+    assert 'opentelemetry-exporter-otlp-proto-http>=1.38,<2' in extra
+    assert not any(
+        dependency.startswith('opentelemetry')
+        for dependency in pyproject['project']['dependencies']
+    )
+
+
 def test_agpl_and_pymupdf_notices_are_present() -> None:
     root = Path(__file__).resolve().parents[1]
     assert "GNU AFFERO GENERAL PUBLIC LICENSE" in (

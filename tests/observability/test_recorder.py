@@ -1,4 +1,5 @@
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from paper_agent.observability.models import (
     UsageTotals,
 )
 from paper_agent.observability.recorder import RunRecorder
+from paper_agent.observability.trace_store import TracePersistenceError
+from paper_agent.observability.trace_validation import validate_pipeline_trace
 from paper_agent.schemas import Paper
 from paper_agent.synthesis.models import CheckedSurveyReport
 
@@ -48,7 +51,7 @@ def _read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _start(tmp_path: Path) -> RunRecorder:
+def _start(tmp_path: Path, **kwargs: object) -> RunRecorder:
     return RunRecorder.start(
         output_base=tmp_path,
         question="grounded review",
@@ -61,6 +64,7 @@ def _start(tmp_path: Path) -> RunRecorder:
             "mupdf": "1.28.0",
         },
         clock=FIXED_CLOCK,
+        **kwargs,
     )
 
 
@@ -81,6 +85,10 @@ def test_recorder_writes_running_then_one_terminal_manifest(tmp_path) -> None:
     terminal = _read_json(recorder.run_dir / "run_manifest.json")
     assert terminal["status"] == "completed"
     assert terminal["finished_at"] == "2026-07-21T12:30:00Z"
+    trace_bytes = (recorder.run_dir / 'traces.jsonl').read_bytes()
+    assert terminal['trace_schema_version'] == '1.0'
+    assert terminal['trace_sha256'] == hashlib.sha256(trace_bytes).hexdigest()
+    assert json.loads(trace_bytes.splitlines()[-1])['record_type'] == 'trace_seal'
 
     recorder.complete(
         status="completed",
@@ -223,7 +231,7 @@ def test_report_preparation_failure_publishes_nothing_and_cleans_temporary_files
     assert list(recorder.run_dir.glob(".*.tmp")) == []
 
 
-def test_terminal_manifest_write_failure_does_not_consume_transition(
+def test_terminal_manifest_write_failure_does_not_repeat_trace_terminalization(
     tmp_path, monkeypatch
 ) -> None:
     recorder = _start(tmp_path)
@@ -243,12 +251,89 @@ def test_terminal_manifest_write_failure_does_not_consume_transition(
         )
 
     monkeypatch.setattr(recorder, "_write_manifest", original_write)
-    recorder.fail(
-        stage="publication",
-        code="manifest_write_failed",
+    with pytest.raises(RuntimeError, match='already terminalized'):
+        recorder.fail(
+            stage='publication',
+            code='manifest_write_failed',
+            counts=COUNTS,
+            retrieval_outcomes=(),
+            stage_elapsed_seconds={},
+            usage=USAGE,
+        )
+    assert _read_json(recorder.run_dir / 'run_manifest.json')['status'] == 'running'
+
+
+def test_exporter_failure_cannot_mutate_terminal_artifacts(tmp_path) -> None:
+    snapshots: dict[str, bytes] = {}
+
+    def fail_exporter() -> None:
+        snapshots['trace'] = (recorder.run_dir / 'traces.jsonl').read_bytes()
+        snapshots['manifest'] = (
+            recorder.run_dir / 'run_manifest.json'
+        ).read_bytes()
+        raise RuntimeError('private exporter detail')
+
+    recorder = _start(tmp_path, exporter_close=fail_exporter)
+    recorder.complete(
+        status='completed',
         counts=COUNTS,
         retrieval_outcomes=(),
         stage_elapsed_seconds={},
         usage=USAGE,
     )
-    assert _read_json(recorder.run_dir / "run_manifest.json")["status"] == "failed"
+
+    assert (recorder.run_dir / 'traces.jsonl').read_bytes() == snapshots['trace']
+    assert (
+        recorder.run_dir / 'run_manifest.json'
+    ).read_bytes() == snapshots['manifest']
+    logs = (recorder.run_dir / 'logs.jsonl').read_text(encoding='utf-8')
+    assert 'otlp_export_failed' in logs
+    assert 'private exporter detail' not in logs
+
+
+def test_trace_persistence_failure_writes_best_effort_failed_manifest(
+    tmp_path, monkeypatch
+) -> None:
+    recorder = _start(tmp_path)
+    assert recorder._trace is not None
+
+    def fail_trace(*args: object) -> str:
+        raise TracePersistenceError('private persistence detail')
+
+    monkeypatch.setattr(recorder._trace, 'finish', fail_trace)
+    with pytest.raises(TracePersistenceError):
+        recorder.complete(
+            status='completed',
+            counts=COUNTS,
+            retrieval_outcomes=(),
+            stage_elapsed_seconds={},
+            usage=USAGE,
+        )
+
+    manifest = _read_json(recorder.run_dir / 'run_manifest.json')
+    assert manifest['status'] == 'failed'
+    assert manifest['errors'][-1]['code'] == 'trace_persistence_failed'
+    assert manifest['trace_sha256'] is None
+    assert 'private persistence detail' not in json.dumps(manifest)
+
+
+def test_trace_disabled_creates_no_trace_and_is_explicitly_validated(
+    tmp_path,
+) -> None:
+    recorder = _start(tmp_path, trace_enabled=False)
+    recorder.trace_event('paper_agent.pipeline.run.started', {})
+    recorder.complete(
+        status='completed',
+        counts=COUNTS,
+        retrieval_outcomes=(),
+        stage_elapsed_seconds={},
+        usage=USAGE,
+    )
+
+    assert not (recorder.run_dir / 'traces.jsonl').exists()
+    manifest = _read_json(recorder.run_dir / 'run_manifest.json')
+    assert not manifest['trace_enabled']
+    assert manifest['trace_sha256'] is None
+    result = validate_pipeline_trace(recorder.run_dir)
+    assert not result.enabled
+    assert result.valid

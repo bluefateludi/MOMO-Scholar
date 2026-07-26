@@ -121,6 +121,8 @@ class RunIssue(StrictModel):
 
 class RunManifest(StrictModel):
     run_id: str
+    execution_id: str = Field(min_length=1)
+    trace_enabled: bool = True
     status: ManifestStatus
     question: str
     requested_limit: int
@@ -135,6 +137,14 @@ class RunManifest(StrictModel):
     retrieval_outcomes: list[RetrievalRecord] = Field(default_factory=list)
     degradations: list[RunIssue] = Field(default_factory=list)
     errors: list[RunIssue] = Field(default_factory=list)
+    trace_schema_version: Literal['1.0'] | None = None
+    trace_root_trace_id: str | None = Field(
+        default=None, pattern=r'^[0-9a-f]{32}$'
+    )
+    trace_root_span_id: str | None = Field(
+        default=None, pattern=r'^[0-9a-f]{16}$'
+    )
+    trace_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
 
     _started_at_utc = field_validator("started_at")(_require_utc)
     _finished_at_utc = field_validator("finished_at")(_require_utc)
@@ -145,6 +155,40 @@ class RunManifest(StrictModel):
             raise ValueError("running manifest must not have a finished timestamp")
         if self.status != "running" and self.finished_at is None:
             raise ValueError("terminal manifest requires a finished timestamp")
+        return self
+
+
+    @model_validator(mode='after')
+    def validate_trace_metadata(self) -> RunManifest:
+        trace_values = (
+            self.trace_schema_version,
+            self.trace_root_trace_id,
+            self.trace_root_span_id,
+            self.trace_sha256,
+        )
+        if self.status == 'running':
+            if any(value is not None for value in trace_values):
+                raise ValueError('running manifest forbids terminal trace metadata')
+            return self
+        if not self.trace_enabled:
+            if any(value is not None for value in trace_values):
+                raise ValueError('disabled trace requires null trace metadata')
+            return self
+        persistence_failed = self.status == 'failed' and any(
+            issue.code == 'trace_persistence_failed' for issue in self.errors
+        )
+        if persistence_failed:
+            if any(value is not None for value in trace_values):
+                raise ValueError(
+                    'trace persistence failure requires null trace metadata'
+                )
+            return self
+        if any(value is None for value in trace_values):
+            raise ValueError('terminal manifest requires trace metadata')
+        if self.trace_root_trace_id == '0' * 32:
+            raise ValueError('trace root trace ID must be non-zero')
+        if self.trace_root_span_id == '0' * 16:
+            raise ValueError('trace root span ID must be non-zero')
         return self
 
 

@@ -29,6 +29,7 @@ from paper_agent.generation import (
     GenerationTimeoutError,
 )
 from paper_agent.observability import (
+    PipelineCorrelationInput,
     RunCounts,
     RunEvent,
     RunIssue,
@@ -37,6 +38,7 @@ from paper_agent.observability import (
     UsageTotals,
 )
 from paper_agent.observability.recorder import utc_now
+from paper_agent.observability.otlp import OtlpTraceExporter, preflight_otlp
 from paper_agent.rendering.markdown import render_formal_report
 from paper_agent.retrieval.arxiv import search_arxiv
 from paper_agent.retrieval.normalize import dedupe_papers
@@ -122,6 +124,31 @@ _SKIPPABLE_ANALYSIS_ERRORS = (
     GenerationServerError,
     GenerationResponseError,
 )
+_FAILURE_TRACE_EVENTS = {
+    'search': 'paper_agent.pipeline.retrieval',
+    'acquisition': 'paper_agent.pipeline.fulltext',
+    'chunking': 'paper_agent.pipeline.fulltext',
+    'retrieval': 'paper_agent.pipeline.retrieval',
+    'analysis': 'paper_agent.pipeline.analysis',
+    'synthesis': 'paper_agent.pipeline.synthesis',
+}
+
+
+def _emit_failure_trace_event(
+    recorder: RunRecorder,
+    *,
+    stage: str,
+    code: str,
+) -> None:
+    event_name = _FAILURE_TRACE_EVENTS.get(stage)
+    if event_name is None:
+        return
+    recorder.trace_event(
+        event_name,
+        {'failure_stage': stage},
+        status='error',
+        code=code,
+    )
 
 def _counts(
     papers: Sequence[Paper],
@@ -191,6 +218,7 @@ def run_pipeline(
     settings: Settings | None = None,
     dependencies: PipelineDependencies | None = None,
     retrieval_service: EvidenceRetrievalService | None = None,
+    correlation: PipelineCorrelationInput | None = None,
 ) -> PipelineResult:
     if retrieval_service is not None:
         papers = dedupe_papers((search_fn or search_arxiv)(question, limit))[:limit]
@@ -216,6 +244,8 @@ def run_pipeline(
         or not active_settings.dashscope_api_key.strip()
     ):
         raise ValueError("DASHSCOPE_API_KEY is required for generation")
+    if active_settings.otlp_enabled:
+        preflight_otlp()
 
     with ExitStack() as stack:
         deps = dependencies or _production_dependencies(active_settings, stack)
@@ -234,6 +264,32 @@ def run_pipeline(
             no_pdf=no_pdf,
             safe_settings=safe_settings,
             component_versions=_versions(),
+            correlation=correlation,
+            trace_secrets=(active_settings.dashscope_api_key,),
+            trace_enabled=active_settings.trace_enabled,
+        )
+        if active_settings.otlp_enabled:
+            assert active_settings.otlp_endpoint is not None
+            trace_exporter = OtlpTraceExporter(
+                endpoint=active_settings.otlp_endpoint,
+                headers=active_settings.otlp_headers,
+                timeout_seconds=active_settings.otlp_timeout_seconds,
+                failure_threshold=active_settings.otlp_failure_threshold,
+                deployment_environment=(
+                    active_settings.deployment_environment
+                ),
+            )
+            recorder.set_exporter_close(
+                lambda: trace_exporter.export_file(
+                    recorder.run_dir / 'traces.jsonl'
+                )
+            )
+        recorder.trace_event(
+            'paper_agent.pipeline.run.started',
+            {
+                'requested_limit': limit,
+                'no_pdf': no_pdf,
+            },
         )
         timings: dict[str, float] = {}
         papers: list[Paper] = []
@@ -260,6 +316,13 @@ def run_pipeline(
             papers = timed(
                 "search", lambda: dedupe_papers(deps.search(question, limit))[:limit]
             )
+            recorder.trace_event(
+                'paper_agent.pipeline.retrieval',
+                {
+                    'operation': 'search',
+                    'returned_paper_count': len(papers),
+                },
+            )
             recorder.write_papers(papers)
             acquirer = DocumentAcquirer(downloader=deps.downloader, parser=deps.parser)
 
@@ -271,11 +334,44 @@ def run_pipeline(
                     ),
                 )
                 degradations.extend(outcome.degradations)
+                acquisition_code = (
+                    (
+                        outcome.record.fallback_code
+                        if outcome.record is not None
+                        else None
+                    )
+                    or (
+                        outcome.degradations[0].code
+                        if outcome.degradations
+                        else None
+                    )
+                    or 'fulltext_degraded'
+                )
+                acquisition_degraded = bool(outcome.degradations)
+                recorder.trace_event(
+                    'paper_agent.pipeline.fulltext',
+                    {
+                        'operation': 'document_acquire',
+                        'paper_id': paper.paper_id,
+                        'document_available': outcome.document is not None,
+                    },
+                    status='degraded' if acquisition_degraded else 'ok',
+                    code=acquisition_code if acquisition_degraded else None,
+                )
                 if outcome.document is None or outcome.record is None:
                     continue
                 chunked = timed("chunking", lambda document=outcome.document: chunk_document(document))
                 record = outcome.record.model_copy(
                     update={"warnings": list(dict.fromkeys([*outcome.record.warnings, *chunked.warnings]))}
+                )
+                recorder.trace_event(
+                    'paper_agent.pipeline.fulltext',
+                    {
+                        'operation': 'document_chunk',
+                        'paper_id': paper.paper_id,
+                        'chunk_count': len(chunked.chunks),
+                        'warning_count': len(chunked.warnings),
+                    },
                 )
                 records.append(record)
 
@@ -283,6 +379,33 @@ def run_pipeline(
                     recorder.emit(RunEvent(timestamp=utc_now(), run_id=recorder.run_id, stage="retrieval", operation="retrieve_evidence", status=event.status, paper_id=paper_id, code=event.degradation_code or event.error_code, attributes=event.model_dump(mode="json")))
 
                 pack = timed("retrieval", lambda paper=paper, chunked=chunked: deps.evidence_packs.build(question=question, paper_id=paper.paper_id, chunks=chunked.chunks, run_id=recorder.run_id, event_sink=retrieval_event))
+                retrieval_code = (
+                    pack.retrieval.degradation_code
+                    if pack.retrieval.degraded
+                    else None
+                )
+                retrieval_attributes = {
+                    'paper_id': paper.paper_id,
+                    'requested_mode': pack.retrieval.requested_mode,
+                    'actual_mode': pack.retrieval.actual_mode,
+                    'evidence_count': len(pack.evidence),
+                }
+                recorder.trace_event(
+                    'paper_agent.pipeline.retrieval',
+                    retrieval_attributes,
+                    status='degraded' if pack.retrieval.degraded else 'ok',
+                    code=retrieval_code,
+                )
+                recorder.trace_event(
+                    'paper_agent.pipeline.rerank',
+                    {
+                        'paper_id': paper.paper_id,
+                        'actual_mode': pack.retrieval.actual_mode,
+                        'returned_evidence_count': len(pack.evidence),
+                    },
+                    status='degraded' if pack.retrieval.degraded else 'ok',
+                    code=retrieval_code,
+                )
                 evidence.extend(pack.evidence)
                 retrievals.append(pack.retrieval)
                 if pack.retrieval.degraded:
@@ -292,9 +415,47 @@ def run_pipeline(
                 except _SKIPPABLE_ANALYSIS_ERRORS as error:
                     usage = _add_failure_usage(usage, error)
                     degradations.append(RunIssue(stage="analysis", code=error.code, paper_id=paper.paper_id))
+                    recorder.trace_event(
+                        'paper_agent.pipeline.analysis',
+                        {
+                            'paper_id': paper.paper_id,
+                            'attempts': error.metadata.attempts,
+                        },
+                        status='degraded',
+                        code=error.code,
+                    )
                     continue
                 usage = _add_usage(usage, generated)
                 checked = check_paper_analysis(generated.result, pack.evidence, run_id=recorder.run_id)
+                recorder.trace_event(
+                    'paper_agent.pipeline.analysis',
+                    {
+                        'paper_id': paper.paper_id,
+                        'attempts': generated.attempts,
+                        'evidence_count': len(pack.evidence),
+                    },
+                )
+                citation_degraded = bool(
+                    checked.sanitized_reference_count
+                    or checked.dropped_finding_count
+                )
+                recorder.trace_event(
+                    'paper_agent.pipeline.citation_validation',
+                    {
+                        'scope': 'paper',
+                        'paper_id': paper.paper_id,
+                        'sanitized_reference_count': (
+                            checked.sanitized_reference_count
+                        ),
+                        'dropped_finding_count': checked.dropped_finding_count,
+                    },
+                    status='degraded' if citation_degraded else 'ok',
+                    code=(
+                        'citation_references_sanitized'
+                        if citation_degraded
+                        else None
+                    ),
+                )
                 if checked.sanitized_reference_count or checked.dropped_finding_count:
                     degradations.append(RunIssue(stage="citation_check", code="citation_references_sanitized", paper_id=paper.paper_id, message=f"sanitized={checked.sanitized_reference_count};dropped={checked.dropped_finding_count}"))
                 if checked.has_supported_finding:
@@ -310,14 +471,56 @@ def run_pipeline(
                 raise ValueError("insufficient_successful_analyses")
             survey = timed("synthesis", lambda: deps.synthesizer.synthesize(question=question, analyses=analyses, evidence=evidence, timeout=active_settings.dashscope_generation_timeout_seconds))
             usage = _add_usage(usage, survey)
+            recorder.trace_event(
+                'paper_agent.pipeline.synthesis',
+                {
+                    'analysis_count': len(analyses),
+                    'evidence_count': len(evidence),
+                    'attempts': survey.attempts,
+                },
+            )
             report = check_survey_draft(question, survey.result, evidence, run_id=recorder.run_id)
             sanitized = sum(claim.support_status != "supported" for claim in [*report.method_taxonomy, *report.comparisons, *report.limitations, *report.open_questions, *report.rejected_critical_claims])
+            recorder.trace_event(
+                'paper_agent.pipeline.citation_validation',
+                {
+                    'scope': 'report',
+                    'sanitized_claim_count': sanitized,
+                },
+                status='degraded' if sanitized else 'ok',
+                code='citation_references_sanitized' if sanitized else None,
+            )
             if sanitized:
                 degradations.append(RunIssue(stage="citation_check", code="citation_references_sanitized", message=f"sanitized_claims={sanitized}"))
             require_publishable_report(report)
             status: Literal["completed", "completed_with_degradation"] = "completed_with_degradation" if degradations else "completed"
             markdown = render_formal_report(status=status, papers=[paper for paper in papers if any(record.paper_id == paper.paper_id for record in records)], documents=records, evidence=evidence, report=report)
             recorder.publish_report(report, markdown)
+            recorder.trace_event(
+                'paper_agent.pipeline.output',
+                {
+                    'published': True,
+                    'paper_count': len(papers),
+                    'document_count': len(records),
+                },
+            )
+            if degradations:
+                recorder.trace_event(
+                    'paper_agent.pipeline.degradation',
+                    {'degradation_count': len(degradations)},
+                    status='degraded',
+                    code='pipeline_degraded',
+                )
+            recorder.trace_event(
+                'paper_agent.pipeline.run.finished',
+                {
+                    'selected_paper_count': len(papers),
+                    'analysis_count': len(analyses),
+                    'evidence_count': len(evidence),
+                },
+                status='degraded' if degradations else 'ok',
+                code='pipeline_degraded' if degradations else None,
+            )
             recorder.complete(status=status, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
             return PipelineResult(run_dir=recorder.run_dir, status=status)
         except (KeyboardInterrupt, SystemExit):
@@ -325,6 +528,17 @@ def run_pipeline(
         except GenerationProviderError as error:
             usage = _add_failure_usage(usage, error)
             code = error.code
+            _emit_failure_trace_event(
+                recorder,
+                stage=failure_stage,
+                code=code,
+            )
+            recorder.trace_event(
+                'paper_agent.pipeline.run.finished',
+                {'failure_stage': 'generation'},
+                status='error',
+                code=code,
+            )
             recorder.fail(stage="generation", code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
             raise PipelineRunFailed(recorder.run_dir, code) from error
         except ValueError as error:
@@ -333,9 +547,31 @@ def run_pipeline(
                 code = getattr(error, "error_code", "retrieval_failure")
             else:
                 code = message if message in {"insufficient_successful_analyses", "insufficient_supported_report"} else "pipeline_validation_error"
+            _emit_failure_trace_event(
+                recorder,
+                stage=failure_stage,
+                code=code,
+            )
+            recorder.trace_event(
+                'paper_agent.pipeline.run.finished',
+                {'failure_stage': failure_stage},
+                status='error',
+                code=code,
+            )
             recorder.fail(stage=failure_stage, code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
             raise PipelineRunFailed(recorder.run_dir, code) from error
         except Exception as error:
             code = "retrieval_failure" if failure_stage == "retrieval" else "unexpected_pipeline_error"
+            _emit_failure_trace_event(
+                recorder,
+                stage=failure_stage,
+                code=code,
+            )
+            recorder.trace_event(
+                'paper_agent.pipeline.run.finished',
+                {'failure_stage': failure_stage},
+                status='error',
+                code=code,
+            )
             recorder.fail(stage=failure_stage, code=code, counts=_counts(papers, records, analyses, evidence), retrieval_outcomes=retrievals, stage_elapsed_seconds=timings, usage=usage, degradations=degradations)
             raise PipelineRunFailed(recorder.run_dir, code) from error

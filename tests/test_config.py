@@ -25,6 +25,13 @@ SUPPORTED_SETTING_NAMES = (
     "RETRIEVAL_MODE",
     "RETRIEVAL_TOP_K",
     "RETRIEVAL_RRF_K",
+    'TRACE_ENABLED',
+    'DEPLOYMENT_ENVIRONMENT',
+    'OTLP_ENABLED',
+    'OTLP_ENDPOINT',
+    'OTLP_TIMEOUT_SECONDS',
+    'OTLP_FAILURE_THRESHOLD',
+    'OTLP_HEADERS_JSON',
 )
 
 
@@ -200,6 +207,59 @@ def test_settings_repr_hides_api_keys():
 
     assert "sentinel-semantic-scholar-secret" not in representation
     assert "sentinel-dashscope-secret" not in representation
+
+
+def test_optional_observability_settings_are_safe(monkeypatch) -> None:
+    monkeypatch.setenv('TRACE_ENABLED', 'true')
+    monkeypatch.setenv('OTLP_ENABLED', 'true')
+    monkeypatch.setenv('OTLP_ENDPOINT', 'https://collector.example.test/v1/traces')
+    monkeypatch.setenv('OTLP_TIMEOUT_SECONDS', '7.5')
+    monkeypatch.setenv('OTLP_FAILURE_THRESHOLD', '2')
+    monkeypatch.setenv(
+        'OTLP_HEADERS_JSON',
+        '{"Authorization": "secret-header"}',
+    )
+
+    settings = load_settings()
+    assert settings.trace_enabled
+    assert settings.otlp_enabled
+    assert settings.otlp_timeout_seconds == 7.5
+    assert settings.otlp_failure_threshold == 2
+    assert settings.otlp_headers == {'Authorization': 'secret-header'}
+    assert 'secret-header' not in repr(settings)
+
+
+@pytest.mark.parametrize('raw', ['yes', '1', ''])
+def test_observability_booleans_are_strict(raw, monkeypatch) -> None:
+    monkeypatch.setenv('OTLP_ENABLED', raw)
+    with pytest.raises(ValueError, match='OTLP_ENABLED'):
+        load_settings()
+
+
+def test_otlp_requires_local_trace(monkeypatch) -> None:
+    monkeypatch.setenv('TRACE_ENABLED', 'false')
+    monkeypatch.setenv('OTLP_ENABLED', 'true')
+    monkeypatch.setenv(
+        'OTLP_ENDPOINT',
+        'https://collector.example.test/v1/traces',
+    )
+    with pytest.raises(ValueError, match='TRACE_ENABLED'):
+        load_settings()
+
+
+@pytest.mark.parametrize(
+    'endpoint',
+    [
+        'http://collector.example.test/v1/traces',
+        'https://user:password@collector.example.test/v1/traces',
+        'https://collector.example.test/v1/traces?token=secret',
+    ],
+)
+def test_otlp_endpoint_rejects_unsafe_urls(endpoint, monkeypatch) -> None:
+    monkeypatch.setenv('OTLP_ENABLED', 'true')
+    monkeypatch.setenv('OTLP_ENDPOINT', endpoint)
+    with pytest.raises(ValueError, match='OTLP_ENDPOINT'):
+        load_settings()
 
 
 @pytest.mark.parametrize("value", ["not-an-integer", "1.5", ""])
