@@ -27,4 +27,8 @@ paper-agent run "hybrid retrieval for scientific literature review" --limit 3 --
 
 Runs are written below `outputs/` unless `--output-dir` is supplied. See [the full-text survey guide](docs/fulltext-survey.md) for artifacts, terminal states, failure semantics, limits, licensing, and verification.
 
+Local sealed traces are enabled by default. See
+[Trace and Observability](docs/observability.md) for artifact authority,
+fresh/reuse correlation, validation, security, and optional OTLP export.
+
 MOMO Scholar is licensed under AGPL-3.0; see `LICENSE` and `THIRD_PARTY_NOTICES.md`.

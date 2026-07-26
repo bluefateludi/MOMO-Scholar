@@ -1,9 +1,11 @@
 import json
+import hashlib
 
 import httpx
 import pymupdf
+import pytest
 
-from paper_agent.config import Settings
+from paper_agent.config import ObservabilityConfigurationError, Settings
 from paper_agent.evidence import EvidencePackBuilder
 from paper_agent.fulltext import FullTextDownloader, PdfParser
 from paper_agent.generation import StructuredGeneration
@@ -15,7 +17,7 @@ from paper_agent.synthesis.paper_reader import PaperAnalyzer
 from paper_agent.synthesis.survey import SurveySynthesizer
 
 
-EXPECTED = {"papers.json", "documents.json", "evidence.json", "analyses.json", "report.json", "report.md", "run_manifest.json", "logs.jsonl"}
+EXPECTED = {"papers.json", "documents.json", "evidence.json", "analyses.json", "report.json", "report.md", "run_manifest.json", "logs.jsonl", "traces.jsonl"}
 
 
 def _papers():
@@ -65,6 +67,32 @@ def test_pdf_to_formal_report_uses_real_vertical_components(tmp_path):
     assert result.status == "completed"
     assert {path.name for path in result.run_dir.iterdir()} == EXPECTED
     manifest = RunManifest.model_validate_json((result.run_dir / "run_manifest.json").read_text())
+    trace_bytes = (result.run_dir / 'traces.jsonl').read_bytes()
+    trace_records = [
+        json.loads(line) for line in trace_bytes.splitlines()
+    ]
+    assert [
+        record['name']
+        for record in trace_records
+        if record['record_type'] == 'span_start'
+    ] == ['paper_agent.pipeline.run']
+    assert {
+        record['name']
+        for record in trace_records
+        if record['record_type'] == 'span_event'
+    } == {
+        'paper_agent.pipeline.run.started',
+        'paper_agent.pipeline.retrieval',
+        'paper_agent.pipeline.fulltext',
+        'paper_agent.pipeline.rerank',
+        'paper_agent.pipeline.analysis',
+        'paper_agent.pipeline.citation_validation',
+        'paper_agent.pipeline.synthesis',
+        'paper_agent.pipeline.output',
+        'paper_agent.pipeline.run.finished',
+    }
+    assert trace_records[-1]['record_type'] == 'trace_seal'
+    assert manifest.trace_sha256 == hashlib.sha256(trace_bytes).hexdigest()
     evidence = [Evidence.model_validate(item) for item in json.loads((result.run_dir / "evidence.json").read_text())]
     assert len(manifest.retrieval_outcomes) == 2
     assert manifest.usage.model_dump() == {"operations": 3, "http_attempts": 3, "prompt_tokens": 30, "completion_tokens": 12, "total_tokens": 42}
@@ -86,3 +114,23 @@ def test_no_pdf_bypasses_transport_and_parser_but_generates_formal_report(tmp_pa
     assert manifest.counts.explicit_abstract_documents == 2
     assert all(call[0] in {"paper_analysis", "survey_synthesis"} for call in provider.calls)
     assert "# Formal Survey:" in (result.run_dir / "report.md").read_text()
+
+
+def test_otlp_preflight_fails_before_run_directory_creation(
+    tmp_path, monkeypatch
+):
+    settings = Settings(
+        dashscope_api_key='offline',
+        otlp_enabled=True,
+        otlp_endpoint='https://collector.example.test/v1/traces',
+    )
+
+    def fail_preflight() -> None:
+        raise ObservabilityConfigurationError('observability extra required')
+
+    monkeypatch.setattr('paper_agent.pipeline.preflight_otlp', fail_preflight)
+
+    with pytest.raises(ObservabilityConfigurationError):
+        run_pipeline('trace preflight', output_base=tmp_path, settings=settings)
+
+    assert list(tmp_path.iterdir()) == []

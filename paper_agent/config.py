@@ -1,7 +1,9 @@
 import math
 import os
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal, Mapping
 from urllib.parse import urlsplit
 
@@ -9,6 +11,10 @@ from dotenv import dotenv_values
 
 
 RetrievalMode = Literal["auto", "lexical", "hybrid"]
+
+
+class ObservabilityConfigurationError(ValueError):
+    pass
 
 _VALID_RETRIEVAL_MODES: tuple[RetrievalMode, ...] = (
     "auto",
@@ -38,6 +44,16 @@ class Settings:
     retrieval_mode: RetrievalMode = "auto"
     retrieval_top_k: int = 8
     retrieval_rrf_k: int = 60
+    trace_enabled: bool = True
+    deployment_environment: str = 'local'
+    otlp_enabled: bool = False
+    otlp_endpoint: str | None = None
+    otlp_timeout_seconds: float = 5.0
+    otlp_failure_threshold: int = 3
+    otlp_headers: Mapping[str, str] = field(
+        default_factory=lambda: MappingProxyType({}),
+        repr=False,
+    )
 
 
 def _optional_string(value: str | None) -> str | None:
@@ -99,6 +115,50 @@ def _retrieval_mode(value: str | None) -> RetrievalMode:
     return normalized  # type: ignore[return-value]
 
 
+def _strict_bool(name: str, value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().casefold()
+    if normalized == 'true':
+        return True
+    if normalized == 'false':
+        return False
+    raise ObservabilityConfigurationError(f'{name} must be true or false')
+
+
+def _otlp_endpoint(value: str | None, *, enabled: bool) -> str | None:
+    normalized = _optional_string(value)
+    if normalized is None:
+        if enabled:
+            raise ObservabilityConfigurationError(
+                'OTLP_ENDPOINT is required when OTLP is enabled'
+            )
+        return None
+    try:
+        return _https_base_url('OTLP_ENDPOINT', normalized, normalized)
+    except ValueError as error:
+        raise ObservabilityConfigurationError(str(error)) from error
+
+
+def _otlp_headers(value: str | None) -> Mapping[str, str]:
+    if value is None or not value.strip():
+        return MappingProxyType({})
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ObservabilityConfigurationError(
+            'OTLP_HEADERS_JSON must be a JSON object'
+        ) from error
+    if not isinstance(parsed, dict) or not all(
+        isinstance(key, str) and isinstance(item, str)
+        for key, item in parsed.items()
+    ):
+        raise ObservabilityConfigurationError(
+            'OTLP_HEADERS_JSON must map strings to strings'
+        )
+    return MappingProxyType(dict(parsed))
+
+
 def _setting(name: str, dotenv: Mapping[str, str | None]) -> str | None:
     if name in os.environ:
         return os.environ[name]
@@ -107,6 +167,20 @@ def _setting(name: str, dotenv: Mapping[str, str | None]) -> str | None:
 
 def load_settings() -> Settings:
     dotenv = dotenv_values(Path.cwd() / ".env")
+    otlp_enabled = _strict_bool(
+        'OTLP_ENABLED',
+        _setting('OTLP_ENABLED', dotenv),
+        False,
+    )
+    trace_enabled = _strict_bool(
+        'TRACE_ENABLED',
+        _setting('TRACE_ENABLED', dotenv),
+        True,
+    )
+    if otlp_enabled and not trace_enabled:
+        raise ObservabilityConfigurationError(
+            'OTLP export requires TRACE_ENABLED=true'
+        )
     return Settings(
         semantic_scholar_api_key=_optional_string(
             _setting("SEMANTIC_SCHOLAR_API_KEY", dotenv)
@@ -165,4 +239,25 @@ def load_settings() -> Settings:
         retrieval_rrf_k=_positive_int(
             "RETRIEVAL_RRF_K", _setting("RETRIEVAL_RRF_K", dotenv), 60
         ),
+        trace_enabled=trace_enabled,
+        deployment_environment=_string_with_default(
+            _setting('DEPLOYMENT_ENVIRONMENT', dotenv),
+            'local',
+        ),
+        otlp_enabled=otlp_enabled,
+        otlp_endpoint=_otlp_endpoint(
+            _setting('OTLP_ENDPOINT', dotenv),
+            enabled=otlp_enabled,
+        ),
+        otlp_timeout_seconds=_positive_float(
+            'OTLP_TIMEOUT_SECONDS',
+            _setting('OTLP_TIMEOUT_SECONDS', dotenv),
+            5.0,
+        ),
+        otlp_failure_threshold=_positive_int(
+            'OTLP_FAILURE_THRESHOLD',
+            _setting('OTLP_FAILURE_THRESHOLD', dotenv),
+            3,
+        ),
+        otlp_headers=_otlp_headers(_setting('OTLP_HEADERS_JSON', dotenv)),
     )

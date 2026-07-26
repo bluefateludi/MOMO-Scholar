@@ -1,4 +1,10 @@
-from paper_agent.observability.sanitize import sanitize_event_data
+import pytest
+
+from paper_agent.observability.sanitize import (
+    TraceDataPolicyError,
+    sanitize_event_data,
+    validate_event_attributes,
+)
 
 
 def test_sanitize_event_data_removes_secrets_and_raw_payloads() -> None:
@@ -59,3 +65,45 @@ def test_sanitize_event_data_describes_unsupported_type_without_rendering_it() -
         "test_sanitize_event_data_describes_unsupported_type_without_rendering_it."
         "<locals>.Dangerous]"
     )
+
+
+@pytest.mark.parametrize(
+    'key',
+    [
+        'prompt',
+        'prompt_text',
+        'response',
+        'abstract',
+        'pdf_text',
+        'evidence_quote',
+        'authorization',
+        'cookie',
+        'stack_trace',
+        'exception_message',
+        'endpoint_url',
+    ],
+)
+def test_trace_events_reject_prohibited_keys(key: str) -> None:
+    with pytest.raises(TraceDataPolicyError):
+        validate_event_attributes(
+            'paper_agent.pipeline.analysis',
+            {key: 'private'},
+        )
+
+
+def test_trace_attributes_redact_known_secret_and_reject_nested_payload() -> None:
+    assert validate_event_attributes(
+        'paper_agent.pipeline.analysis',
+        {'model_name': 'model-runtime-secret'},
+        secrets=('runtime-secret',),
+    ) == {'model_name': 'model-[REDACTED]'}
+    with pytest.raises(TraceDataPolicyError):
+        validate_event_attributes(
+            'paper_agent.pipeline.analysis',
+            {'details': {'cookie': 'private'}},
+        )
+    with pytest.raises(TraceDataPolicyError, match='not allowlisted'):
+        validate_event_attributes(
+            'paper_agent.pipeline.analysis',
+            {'novel_scalar': 'content'},
+        )
