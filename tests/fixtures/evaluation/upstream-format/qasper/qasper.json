@@ -1,0 +1,96 @@
+{
+  "synthetic-paper-1": {
+    "title": "Synthetic evaluation paper",
+    "abstract": "This fictional paper exists only to test conversion.",
+    "full_text": [
+      {
+        "section_name": "Introduction",
+        "paragraphs": [
+          "The synthetic system is introduced.",
+          "No real dataset or experiment is described."
+        ]
+      },
+      {
+        "section_name": "Results",
+        "paragraphs": [
+          "The synthetic outcome was positive.",
+          "A second synthetic observation was stable."
+        ]
+      },
+      {
+        "section_name": "Limitations",
+        "paragraphs": [
+          "The fixture cannot support conclusions about real systems."
+        ]
+      }
+    ],
+    "qas": [
+      {
+        "question": "What does the fictional paper report?",
+        "question_id": "question-1",
+        "nlp_background": "synthetic",
+        "topic_background": "synthetic",
+        "paper_read": true,
+        "search_query": "synthetic query",
+        "answers": [
+          {
+            "answer": {
+              "unanswerable": false,
+              "extractive_spans": [],
+              "yes_no": null,
+              "free_form_answer": "It reports a positive synthetic outcome.",
+              "evidence": [
+                "The synthetic outcome was positive."
+              ]
+            },
+            "annotation_id": "annotation-free",
+            "worker_id": "worker-1"
+          },
+          {
+            "answer": {
+              "unanswerable": false,
+              "extractive_spans": [
+                "positive",
+                "stable"
+              ],
+              "yes_no": null,
+              "free_form_answer": "",
+              "evidence": [
+                "The synthetic outcome was positive.",
+                "A second synthetic observation was stable."
+              ]
+            },
+            "annotation_id": "annotation-extractive",
+            "worker_id": "worker-2"
+          },
+          {
+            "answer": {
+              "unanswerable": false,
+              "extractive_spans": [],
+              "yes_no": true,
+              "free_form_answer": "",
+              "evidence": [
+                "The synthetic system is introduced."
+              ]
+            },
+            "annotation_id": "annotation-yes-no",
+            "worker_id": "worker-3"
+          },
+          {
+            "answer": {
+              "unanswerable": true,
+              "extractive_spans": [],
+              "yes_no": null,
+              "free_form_answer": "",
+              "evidence": [
+                "The fixture cannot support conclusions about real systems."
+              ]
+            },
+            "annotation_id": "annotation-unanswerable",
+            "worker_id": "worker-4"
+          }
+        ]
+      }
+    ]
+  }
+}

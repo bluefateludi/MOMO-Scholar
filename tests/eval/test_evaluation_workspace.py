@@ -15,6 +15,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EVALUATIONS_ROOT = REPOSITORY_ROOT / "evaluations"
 TEMPLATES_ROOT = EVALUATIONS_ROOT / "templates"
 TRACKED_EVALUATION_FILES = {
+    "evaluations/DATASETS.md",
     "evaluations/README.md",
     "evaluations/templates/corpus-manifest.template.json",
     "evaluations/templates/gold-judgments.template.json",
@@ -137,3 +138,14 @@ def test_allowlisted_evaluation_files_do_not_contain_secret_material() -> None:
             encoding="utf-8"
         ).lower()
         assert not any(fragment in content for fragment in forbidden_fragments)
+
+
+def test_dataset_registry_documents_real_data_review_gates() -> None:
+    content = (EVALUATIONS_ROOT / "DATASETS.md").read_text(encoding="utf-8")
+
+    assert "CC-BY-4.0" in content
+    assert "ODC-By-1.0" in content
+    assert "QASPER" in content
+    assert "review required" in content.lower()
+    assert "synthetic" in content.lower()
+    assert "not baseline" in content.lower()

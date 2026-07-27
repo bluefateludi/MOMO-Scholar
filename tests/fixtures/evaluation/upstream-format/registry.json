@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "contains_real_data": false,
+  "entries": [
+    {
+      "source": "SciFact-shape",
+      "asset": "claims-evidence",
+      "version": "synthetic-v1",
+      "url": "https://example.test/scifact/claims.jsonl",
+      "license": "CC0-1.0",
+      "redistribution_decision": "allowed",
+      "sha256": "26b50895b1bf5779020b5c542c9bbfc4a69cdd819df93c9d1f5deb96d82aaf66",
+      "reviewer": "fixture-author",
+      "review_date": "2026-07-26"
+    },
+    {
+      "source": "SciFact-shape",
+      "asset": "abstracts",
+      "version": "synthetic-v1",
+      "url": "https://example.test/scifact/corpus.jsonl",
+      "license": "CC0-1.0",
+      "redistribution_decision": "allowed",
+      "sha256": "9f9351afd47cf89b7e8586f90056909b49769ff0b91cfdeea447916500298ac1",
+      "reviewer": "fixture-author",
+      "review_date": "2026-07-26"
+    },
+    {
+      "source": "QASPER-shape",
+      "asset": "questions-answers-and-corpus",
+      "version": "synthetic-v1",
+      "url": "https://example.test/qasper/qasper.json",
+      "license": "CC0-1.0",
+      "redistribution_decision": "allowed",
+      "sha256": "98652e36cfffd439b4afb549015e20a3194218b017e00aa6731fc221fe9c8b5a",
+      "reviewer": "fixture-author",
+      "review_date": "2026-07-26"
+    }
+  ]
+}
