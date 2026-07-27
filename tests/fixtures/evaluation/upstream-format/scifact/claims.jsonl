@@ -1,4 +1,3 @@
 {"id":201,"claim":"The intervention improved the synthetic outcome.","evidence":{"101":[{"label":"SUPPORT","sentences":[1]}]},"cited_doc_ids":[101]}
 {"id":202,"claim":"The synthetic comparison reproduced the claim.","evidence":{"102":[{"label":"CONTRADICT","sentences":[0]}]},"cited_doc_ids":[102]}
 {"id":203,"claim":"Synthetic observations support the intervention.","evidence":{"101":[{"label":"SUPPORT","sentences":[0]},{"label":"SUPPORT","sentences":[1]}]},"cited_doc_ids":[101]}
-

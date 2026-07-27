@@ -236,6 +236,14 @@ SCIFACT_FIXTURE_ROOT = (
     / "upstream-format"
     / "scifact"
 )
+QASPER_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "evaluation"
+    / "upstream-format"
+    / "qasper"
+    / "qasper.json"
+)
 
 
 def _scifact_request(**changes: object) -> ConversionRequest:
@@ -352,3 +360,42 @@ def test_receipt_disallows_commit_when_any_asset_is_metadata_only() -> None:
     result = convert_dataset(request.model_copy(update={"assets": assets}))
 
     assert result.receipt.may_commit_transformed is False
+
+
+def test_convert_dataset_routes_qasper_and_hashes_its_asset() -> None:
+    payload = QASPER_FIXTURE_PATH.read_bytes()
+    request = ConversionRequest.model_validate(
+        {
+            "dataset": "qasper",
+            "split": "validation",
+            "upstream_version": "synthetic-v1",
+            "adapter_version": "qasper-v1",
+            "converted_at": datetime(
+                2026, 7, 26, 1, 2, 3, tzinfo=timezone.utc
+            ),
+            "assets": [
+                {
+                    "asset_type": "questions-answers-and-corpus",
+                    "path": QASPER_FIXTURE_PATH,
+                    "expected_sha256": hashlib.sha256(payload).hexdigest(),
+                    "source_url": "https://example.test/qasper/qasper.json",
+                    "license_id": "CC0-1.0",
+                    "redistribution": "allowed",
+                    "reviewer": "fixture-author",
+                    "review_date": date(2026, 7, 26),
+                }
+            ],
+        }
+    )
+
+    result = convert_dataset(request)
+
+    assert len(result.cases) == 4
+    assert all(case.metadata.split == "validation" for case in result.cases)
+    assert result.receipt.dataset == "qasper"
+    assert result.receipt.assets[0].upstream_sha256 == hashlib.sha256(
+        payload
+    ).hexdigest()
+    assert result.receipt.cases_sha256 == hashlib.sha256(
+        result.cases_jsonl
+    ).hexdigest()
