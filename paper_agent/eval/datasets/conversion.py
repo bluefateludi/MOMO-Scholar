@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -292,6 +294,102 @@ def convert_dataset(request: ConversionRequest) -> ConversionResult:
     )
 
 
+def _resolve_output_destination(
+    output_root: Path,
+    destination: Path,
+) -> Path:
+    candidate = destination if destination.is_absolute() else output_root / destination
+    try:
+        resolved = candidate.resolve(strict=False)
+        resolved.relative_to(output_root)
+    except (OSError, ValueError) as error:
+        raise ConversionValidationError(
+            f"{destination.name} resolves outside output root"
+        ) from error
+    if resolved == output_root:
+        raise ConversionValidationError(
+            f"{destination.name} must identify a file"
+        )
+    if not resolved.parent.is_dir():
+        raise ConversionValidationError(
+            f"{destination.name} parent directory is missing"
+        )
+    if resolved.exists():
+        raise ConversionValidationError(
+            f"{destination.name} already exists"
+        )
+    return resolved
+
+
+def _write_temporary(destination: Path, payload: bytes) -> Path:
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return temporary_path
+
+
+def write_conversion(
+    result: ConversionResult,
+    *,
+    output_root: Path,
+    cases_path: Path,
+    receipt_path: Path,
+) -> None:
+    try:
+        resolved_root = output_root.resolve(strict=True)
+    except OSError as error:
+        raise ConversionValidationError("output root is missing") from error
+    if not resolved_root.is_dir():
+        raise ConversionValidationError("output root is not a directory")
+
+    cases_destination = _resolve_output_destination(
+        resolved_root, cases_path
+    )
+    receipt_destination = _resolve_output_destination(
+        resolved_root, receipt_path
+    )
+    if cases_destination == receipt_destination:
+        raise ConversionValidationError(
+            "cases and receipt destinations must be distinct"
+        )
+
+    cases_temporary: Path | None = None
+    receipt_temporary: Path | None = None
+    publishing = cases_destination
+    try:
+        cases_temporary = _write_temporary(
+            cases_destination, result.cases_jsonl
+        )
+        receipt_temporary = _write_temporary(
+            receipt_destination, result.receipt_json
+        )
+        os.replace(cases_temporary, cases_destination)
+        cases_temporary = None
+        publishing = receipt_destination
+        os.replace(receipt_temporary, receipt_destination)
+        receipt_temporary = None
+    except OSError as error:
+        raise ConversionValidationError(
+            f"{publishing.name} could not be published"
+        ) from error
+    finally:
+        if cases_temporary is not None:
+            cases_temporary.unlink(missing_ok=True)
+        if receipt_temporary is not None:
+            receipt_temporary.unlink(missing_ok=True)
+
+
 __all__ = [
     "ConversionAssetInput",
     "ConversionAssetReceipt",
@@ -304,4 +402,5 @@ __all__ = [
     "canonical_json_bytes",
     "canonical_jsonl_bytes",
     "convert_dataset",
+    "write_conversion",
 ]

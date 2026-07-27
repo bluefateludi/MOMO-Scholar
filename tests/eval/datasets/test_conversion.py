@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from paper_agent.eval.datasets.conversion import (
     canonical_json_bytes,
     canonical_jsonl_bytes,
     convert_dataset,
+    write_conversion,
 )
 
 
@@ -399,3 +401,85 @@ def test_convert_dataset_routes_qasper_and_hashes_its_asset() -> None:
     assert result.receipt.cases_sha256 == hashlib.sha256(
         result.cases_jsonl
     ).hexdigest()
+
+
+def test_write_conversion_publishes_cases_then_receipt(tmp_path: Path) -> None:
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    result = convert_dataset(_scifact_request())
+
+    write_conversion(
+        result,
+        output_root=output_root,
+        cases_path=Path("cases.jsonl"),
+        receipt_path=Path("receipt.json"),
+    )
+
+    assert (output_root / "cases.jsonl").read_bytes() == result.cases_jsonl
+    assert (output_root / "receipt.json").read_bytes() == result.receipt_json
+    assert list(output_root.glob(".*.tmp")) == []
+
+
+@pytest.mark.parametrize(
+    "violation",
+    ["same", "existing", "outside", "missing-parent"],
+)
+def test_write_conversion_rejects_unsafe_destinations(
+    tmp_path: Path,
+    violation: str,
+) -> None:
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    cases_path = Path("cases.jsonl")
+    receipt_path = Path("receipt.json")
+    if violation == "same":
+        receipt_path = cases_path
+    elif violation == "existing":
+        (output_root / cases_path).write_bytes(b"existing")
+    elif violation == "outside":
+        cases_path = Path("../outside.jsonl")
+    else:
+        cases_path = Path("missing/cases.jsonl")
+
+    with pytest.raises(ConversionValidationError):
+        write_conversion(
+            convert_dataset(_scifact_request()),
+            output_root=output_root,
+            cases_path=cases_path,
+            receipt_path=receipt_path,
+        )
+
+    if violation == "existing":
+        assert (output_root / "cases.jsonl").read_bytes() == b"existing"
+
+
+def test_write_conversion_publishes_receipt_last_on_replace_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    real_replace = os.replace
+    replace_count = 0
+
+    def fail_second_replace(source: object, destination: object) -> None:
+        nonlocal replace_count
+        replace_count += 1
+        if replace_count == 2:
+            raise OSError("SECRET_REPLACE_FAILURE")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_second_replace)
+
+    with pytest.raises(ConversionValidationError, match="receipt.json") as caught:
+        write_conversion(
+            convert_dataset(_scifact_request()),
+            output_root=output_root,
+            cases_path=Path("cases.jsonl"),
+            receipt_path=Path("receipt.json"),
+        )
+
+    assert "SECRET_REPLACE_FAILURE" not in str(caught.value)
+    assert (output_root / "cases.jsonl").is_file()
+    assert not (output_root / "receipt.json").exists()
+    assert list(output_root.glob(".*.tmp")) == []

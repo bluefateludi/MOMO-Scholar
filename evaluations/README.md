@@ -1,8 +1,9 @@
 # Local Evaluation Workspace
 
 This directory is the local workspace for real evaluation inputs and generated
-experiment packages. Git ignores everything here except this file and the four
-empty templates explicitly allowlisted in `.gitignore`.
+experiment packages. Git ignores everything here except this file,
+`DATASETS.md`, and the four empty templates explicitly allowlisted in
+`.gitignore`.
 
 Do not commit dataset records, source documents, chunks, Gold judgments,
 provider credentials, downloaded archives, caches, model outputs, logs, traces,
@@ -25,7 +26,8 @@ identities, provider configuration, or approved spend.
 
 Before preparing a Development smoke input:
 
-1. Record each upstream asset separately in the license/provenance registry.
+1. Follow `DATASETS.md` and record each upstream asset separately in the
+   local license/provenance registry.
 2. Obtain a reviewer decision for license compatibility and redistribution.
 3. Verify the downloaded asset locally and record its SHA-256.
 4. Convert source records through the existing `DatasetManifest`, `EvalCase`,

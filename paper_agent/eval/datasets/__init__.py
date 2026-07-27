@@ -10,6 +10,7 @@ from paper_agent.eval.datasets.conversion import (
     canonical_json_bytes,
     canonical_jsonl_bytes,
     convert_dataset,
+    write_conversion,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "canonical_json_bytes",
     "canonical_jsonl_bytes",
     "convert_dataset",
+    "write_conversion",
 ]

@@ -10,6 +10,7 @@ outputs/
 # Real evaluation inputs, licensed assets, credentials, caches, and generated
 # experiment artifacts are local-only. Keep this default-deny allowlist exact.
 evaluations/**
+!evaluations/DATASETS.md
 !evaluations/README.md
 !evaluations/templates/
 evaluations/templates/**
