@@ -13,8 +13,11 @@ from paper_agent.eval.datasets.conversion import (
     ConversionAssetInput,
     ConversionAssetReceipt,
     ConversionReceipt,
+    ConversionRequest,
+    ConversionValidationError,
     canonical_json_bytes,
     canonical_jsonl_bytes,
+    convert_dataset,
 )
 
 
@@ -224,3 +227,128 @@ def test_receipt_serialization_normalizes_utc_and_is_byte_stable() -> None:
     assert b'"converted_at":"2026-07-26T01:02:03Z"' in canonical_json_bytes(
         first
     )
+
+
+SCIFACT_FIXTURE_ROOT = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "evaluation"
+    / "upstream-format"
+    / "scifact"
+)
+
+
+def _scifact_request(**changes: object) -> ConversionRequest:
+    assets = tuple(
+        ConversionAssetInput.model_validate(
+            {
+                "asset_type": asset_type,
+                "path": path,
+                "expected_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "source_url": f"https://example.test/scifact/{path.name}",
+                "license_id": "CC0-1.0",
+                "redistribution": "allowed",
+                "reviewer": "fixture-author",
+                "review_date": date(2026, 7, 26),
+            }
+        )
+        for asset_type, path in (
+            ("claims-evidence", SCIFACT_FIXTURE_ROOT / "claims.jsonl"),
+            ("abstracts", SCIFACT_FIXTURE_ROOT / "corpus.jsonl"),
+        )
+    )
+    data: dict[str, object] = {
+        "dataset": "scifact",
+        "split": "development",
+        "upstream_version": "synthetic-v1",
+        "adapter_version": "scifact-v1",
+        "converted_at": datetime(2026, 7, 26, 1, 2, 3, tzinfo=timezone.utc),
+        "assets": assets,
+    }
+    data.update(changes)
+    return ConversionRequest.model_validate(data)
+
+
+def test_convert_dataset_hashes_exact_assets_and_emitted_case_bytes() -> None:
+    result = convert_dataset(_scifact_request())
+
+    assert len(result.cases) == 4
+    assert result.cases_jsonl == canonical_jsonl_bytes(result.cases)
+    assert result.receipt.case_ids == tuple(
+        sorted(case.case_id for case in result.cases)
+    )
+    assert result.receipt.cases_sha256 == hashlib.sha256(
+        result.cases_jsonl
+    ).hexdigest()
+    assert result.receipt.may_commit_transformed is True
+    assert result.receipt_json == canonical_json_bytes(result.receipt)
+    assert tuple(asset.asset_type for asset in result.receipt.assets) == (
+        "abstracts",
+        "claims-evidence",
+    )
+    assert tuple(asset.upstream_sha256 for asset in result.receipt.assets) == (
+        hashlib.sha256(
+            (SCIFACT_FIXTURE_ROOT / "corpus.jsonl").read_bytes()
+        ).hexdigest(),
+        hashlib.sha256(
+            (SCIFACT_FIXTURE_ROOT / "claims.jsonl").read_bytes()
+        ).hexdigest(),
+    )
+
+
+def test_convert_dataset_is_byte_stable_for_identical_request() -> None:
+    first = convert_dataset(_scifact_request())
+    second = convert_dataset(_scifact_request())
+
+    assert first.cases_jsonl == second.cases_jsonl
+    assert first.receipt_json == second.receipt_json
+
+
+def test_convert_dataset_rejects_hash_before_parsing(tmp_path: Path) -> None:
+    invalid = tmp_path / "claims.jsonl"
+    invalid.write_bytes(b"SECRET_INVALID_SOURCE")
+    original = _scifact_request()
+    assets = tuple(
+        asset.model_copy(
+            update={
+                "path": invalid,
+                "expected_sha256": "0" * 64,
+            }
+        )
+        if asset.asset_type == "claims-evidence"
+        else asset
+        for asset in original.assets
+    )
+
+    with pytest.raises(ConversionValidationError, match="hash mismatch") as caught:
+        convert_dataset(original.model_copy(update={"assets": assets}))
+
+    assert "SECRET_INVALID_SOURCE" not in str(caught.value)
+
+
+@pytest.mark.parametrize("violation", ["missing", "extra"])
+def test_convert_dataset_rejects_inexact_asset_set(violation: str) -> None:
+    request = _scifact_request()
+    if violation == "missing":
+        assets = request.assets[:1]
+    else:
+        assets = request.assets + (
+            request.assets[0].model_copy(update={"asset_type": "unexpected"}),
+        )
+
+    with pytest.raises(ConversionValidationError, match="asset types"):
+        convert_dataset(request.model_copy(update={"assets": assets}))
+
+
+def test_receipt_disallows_commit_when_any_asset_is_metadata_only() -> None:
+    request = _scifact_request()
+    assets = (
+        request.assets[0].model_copy(
+            update={"redistribution": "metadata-only"}
+        ),
+        request.assets[1],
+    )
+
+    result = convert_dataset(request.model_copy(update={"assets": assets}))
+
+    assert result.receipt.may_commit_transformed is False

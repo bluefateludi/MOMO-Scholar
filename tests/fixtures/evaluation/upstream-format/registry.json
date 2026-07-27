@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "contains_real_data": false,
+  "entries": [
+    {
+      "source": "SciFact-shape",
+      "asset": "claims-evidence",
+      "version": "synthetic-v1",
+      "url": "https://example.test/scifact/claims.jsonl",
+      "license": "CC0-1.0",
+      "redistribution_decision": "allowed",
+      "sha256": "47d641494b3a236fa1a0c15e1a8c88f9b2c94516ce5292bd6a31f507ec2f7641",
+      "reviewer": "fixture-author",
+      "review_date": "2026-07-26"
+    },
+    {
+      "source": "SciFact-shape",
+      "asset": "abstracts",
+      "version": "synthetic-v1",
+      "url": "https://example.test/scifact/corpus.jsonl",
+      "license": "CC0-1.0",
+      "redistribution_decision": "allowed",
+      "sha256": "b7fa41abe00ffab78c580ffb2c7c2ae6291b5692573c5b2d19159baf8e1ca047",
+      "reviewer": "fixture-author",
+      "review_date": "2026-07-26"
+    }
+  ]
+}

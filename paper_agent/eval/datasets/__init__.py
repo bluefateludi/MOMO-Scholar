@@ -9,6 +9,7 @@ from paper_agent.eval.datasets.conversion import (
     ConversionValidationError,
     canonical_json_bytes,
     canonical_jsonl_bytes,
+    convert_dataset,
 )
 
 __all__ = [
@@ -20,5 +21,5 @@ __all__ = [
     "ConversionValidationError",
     "canonical_json_bytes",
     "canonical_jsonl_bytes",
+    "convert_dataset",
 ]
-

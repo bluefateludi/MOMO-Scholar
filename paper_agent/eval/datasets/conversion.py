@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -167,6 +168,130 @@ def canonical_jsonl_bytes(cases: tuple[EvalCase, ...]) -> bytes:
     )
 
 
+def _read_and_verify_assets(
+    request: ConversionRequest,
+    *,
+    expected_asset_types: frozenset[str],
+) -> tuple[
+    dict[str, bytes],
+    tuple[ConversionAssetReceipt, ...],
+]:
+    assets_by_type = {asset.asset_type: asset for asset in request.assets}
+    if set(assets_by_type) != expected_asset_types:
+        raise ConversionValidationError(
+            f"{request.dataset} asset types do not match the required set"
+        )
+
+    payloads: dict[str, bytes] = {}
+    receipts: list[ConversionAssetReceipt] = []
+    for asset_type in sorted(assets_by_type):
+        asset = assets_by_type[asset_type]
+        try:
+            payload = asset.path.read_bytes()
+        except FileNotFoundError as error:
+            raise ConversionValidationError(
+                f"{asset.path.name} is missing"
+            ) from error
+        except IsADirectoryError as error:
+            raise ConversionValidationError(
+                f"{asset.path.name} is not a file"
+            ) from error
+        except OSError as error:
+            raise ConversionValidationError(
+                f"{asset.path.name} has an I/O error"
+            ) from error
+        actual_hash = hashlib.sha256(payload).hexdigest()
+        if actual_hash != asset.expected_sha256:
+            raise ConversionValidationError(
+                f"{asset.path.name} hash mismatch"
+            )
+        payloads[asset_type] = payload
+        receipts.append(
+            ConversionAssetReceipt(
+                asset_type=asset.asset_type,
+                source_url=asset.source_url,
+                license_id=asset.license_id,
+                redistribution=asset.redistribution,
+                reviewer=asset.reviewer,
+                review_date=asset.review_date,
+                upstream_sha256=actual_hash,
+                byte_length=len(payload),
+            )
+        )
+    return payloads, tuple(receipts)
+
+
+def _build_result(
+    request: ConversionRequest,
+    *,
+    cases: tuple[EvalCase, ...],
+    asset_receipts: tuple[ConversionAssetReceipt, ...],
+) -> ConversionResult:
+    ordered_cases = tuple(sorted(cases, key=lambda item: item.case_id))
+    case_ids = tuple(case.case_id for case in ordered_cases)
+    if len(case_ids) != len(set(case_ids)):
+        raise ConversionValidationError("converted case IDs must be unique")
+    cases_jsonl = canonical_jsonl_bytes(ordered_cases)
+    receipt = ConversionReceipt(
+        schema_version="1.0",
+        dataset=request.dataset,
+        split=request.split,
+        upstream_version=request.upstream_version,
+        adapter_version=request.adapter_version,
+        converted_at=request.converted_at,
+        assets=tuple(
+            sorted(asset_receipts, key=lambda item: item.asset_type)
+        ),
+        case_ids=case_ids,
+        case_count=len(case_ids),
+        cases_sha256=hashlib.sha256(cases_jsonl).hexdigest(),
+        may_commit_transformed=all(
+            asset.redistribution == "allowed" for asset in asset_receipts
+        ),
+    )
+    return ConversionResult(
+        cases=ordered_cases,
+        cases_jsonl=cases_jsonl,
+        receipt=receipt,
+        receipt_json=canonical_json_bytes(receipt),
+    )
+
+
+def convert_dataset(request: ConversionRequest) -> ConversionResult:
+    if request.dataset == "scifact":
+        from paper_agent.eval.datasets.scifact import convert_scifact
+
+        payloads, receipts = _read_and_verify_assets(
+            request,
+            expected_asset_types=frozenset(
+                {"claims-evidence", "abstracts"}
+            ),
+        )
+        cases = convert_scifact(
+            split=request.split,
+            claims_bytes=payloads["claims-evidence"],
+            corpus_bytes=payloads["abstracts"],
+        )
+    else:
+        from paper_agent.eval.datasets.qasper import convert_qasper
+
+        payloads, receipts = _read_and_verify_assets(
+            request,
+            expected_asset_types=frozenset(
+                {"questions-answers-and-corpus"}
+            ),
+        )
+        cases = convert_qasper(
+            split=request.split,
+            dataset_bytes=payloads["questions-answers-and-corpus"],
+        )
+    return _build_result(
+        request,
+        cases=cases,
+        asset_receipts=receipts,
+    )
+
+
 __all__ = [
     "ConversionAssetInput",
     "ConversionAssetReceipt",
@@ -178,4 +303,5 @@ __all__ = [
     "RedistributionDecision",
     "canonical_json_bytes",
     "canonical_jsonl_bytes",
+    "convert_dataset",
 ]
