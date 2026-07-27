@@ -240,6 +240,7 @@ def _map_annotation(
     paper: QasperPaperRecord,
     question: QasperQuestion,
     annotation: QasperAnnotation,
+    dataset_source_url: str,
 ) -> EvalCase:
     canonical_paper_id = f"qasper-paper-{paper_id}"
     case_id = (
@@ -290,8 +291,7 @@ def _map_annotation(
                         "year": None,
                         "abstract": paper.abstract,
                         "url": (
-                            "https://example.test/qasper/paper/"
-                            f"{paper_id}"
+                            f"{dataset_source_url}#paper_id={paper_id}"
                         ),
                         "pdf_url": None,
                         "source": "QASPER",
@@ -321,7 +321,9 @@ def convert_qasper(
     *,
     split: SplitName,
     dataset_bytes: bytes,
+    dataset_source_url: str,
 ) -> tuple[EvalCase, ...]:
+    _require_non_blank(dataset_source_url)
     papers = _parse_dataset(dataset_bytes)
     cases = [
         _map_annotation(
@@ -330,6 +332,7 @@ def convert_qasper(
             paper=paper,
             question=question,
             annotation=annotation,
+            dataset_source_url=dataset_source_url,
         )
         for paper_id, paper in sorted(papers.items())
         for question in sorted(

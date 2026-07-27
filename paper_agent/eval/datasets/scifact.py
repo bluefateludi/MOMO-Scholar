@@ -182,6 +182,7 @@ def _map_case(
     document: SciFactCorpusRecord,
     evidence_set: SciFactEvidenceSet,
     evidence_set_index: int,
+    corpus_source_url: str,
 ) -> EvalCase:
     paper_id = f"scifact-document-{document.doc_id}"
     case_id = (
@@ -228,8 +229,7 @@ def _map_case(
                         "year": None,
                         "abstract": "\n".join(document.abstract),
                         "url": (
-                            "https://example.test/scifact/document/"
-                            f"{document.doc_id}"
+                            f"{corpus_source_url}#doc_id={document.doc_id}"
                         ),
                         "pdf_url": None,
                         "source": "SciFact",
@@ -276,7 +276,9 @@ def convert_scifact(
     split: SplitName,
     claims_bytes: bytes,
     corpus_bytes: bytes,
+    corpus_source_url: str,
 ) -> tuple[EvalCase, ...]:
+    _require_non_blank(corpus_source_url)
     claims = _parse_jsonl(
         claims_bytes,
         identity="claims.jsonl",
@@ -296,6 +298,7 @@ def convert_scifact(
             document=documents[int(doc_id)],
             evidence_set=evidence_set,
             evidence_set_index=evidence_set_index,
+            corpus_source_url=corpus_source_url,
         )
         for claim in sorted(claims, key=lambda item: item.id)
         for doc_id, evidence_sets in sorted(

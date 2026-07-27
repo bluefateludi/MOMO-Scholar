@@ -39,6 +39,7 @@ def _convert() -> tuple[EvalCase, ...]:
         split="development",
         claims_bytes=claims,
         corpus_bytes=corpus,
+        corpus_source_url="https://example.test/scifact/corpus.jsonl",
     )
 
 
@@ -150,6 +151,7 @@ def test_scifact_rejects_invalid_shape_and_references(
             split="development",
             claims_bytes=claims,
             corpus_bytes=corpus,
+            corpus_source_url="https://example.test/scifact/corpus.jsonl",
         )
 
 
@@ -176,6 +178,7 @@ def test_scifact_rejects_malformed_bytes_without_leaking_content(
             split="development",
             claims_bytes=claims,
             corpus_bytes=corpus,
+            corpus_source_url="https://example.test/scifact/corpus.jsonl",
         )
 
     assert "SECRET_CORPUS" not in str(caught.value)
@@ -228,7 +231,9 @@ def test_scifact_maps_each_evidence_set_to_a_strict_case() -> None:
                         "Synthetic observations were recorded.\n"
                         "The intervention improved the synthetic outcome."
                     ),
-                    "url": "https://example.test/scifact/document/101",
+                    "url": (
+                        "https://example.test/scifact/corpus.jsonl#doc_id=101"
+                    ),
                     "pdf_url": None,
                     "source": "SciFact",
                     "content_sha256": expected_hash,

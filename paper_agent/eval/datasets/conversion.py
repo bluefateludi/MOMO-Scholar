@@ -130,11 +130,20 @@ class ConversionReceipt(FrozenEvalModel):
 
     @model_validator(mode="after")
     def _receipt_is_consistent(self) -> ConversionReceipt:
+        if not self.assets:
+            raise ValueError("assets must not be empty")
         asset_types = [asset.asset_type for asset in self.assets]
         if len(asset_types) != len(set(asset_types)):
             raise ValueError("asset types must be unique")
         if self.case_count != len(self.case_ids):
             raise ValueError("case count must match case IDs")
+        expected_commit_decision = bool(self.assets) and all(
+            asset.redistribution == "allowed" for asset in self.assets
+        )
+        if self.may_commit_transformed != expected_commit_decision:
+            raise ValueError(
+                "may_commit_transformed must match asset redistribution"
+            )
         return self
 
 
@@ -273,6 +282,11 @@ def convert_dataset(request: ConversionRequest) -> ConversionResult:
             split=request.split,
             claims_bytes=payloads["claims-evidence"],
             corpus_bytes=payloads["abstracts"],
+            corpus_source_url=next(
+                asset.source_url
+                for asset in receipts
+                if asset.asset_type == "abstracts"
+            ),
         )
     else:
         from paper_agent.eval.datasets.qasper import convert_qasper
@@ -286,6 +300,7 @@ def convert_dataset(request: ConversionRequest) -> ConversionResult:
         cases = convert_qasper(
             split=request.split,
             dataset_bytes=payloads["questions-answers-and-corpus"],
+            dataset_source_url=receipts[0].source_url,
         )
     return _build_result(
         request,

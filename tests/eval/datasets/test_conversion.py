@@ -191,6 +191,22 @@ def test_receipt_rejects_duplicate_assets_case_ids_and_wrong_count() -> None:
         ConversionReceipt.model_validate(_receipt(case_count=2))
 
 
+def test_receipt_rejects_commit_decision_inconsistent_with_assets() -> None:
+    metadata_only = _asset_receipt(redistribution="metadata-only")
+    with pytest.raises(ValidationError, match="may_commit_transformed"):
+        ConversionReceipt.model_validate(
+            _receipt(assets=(metadata_only,), may_commit_transformed=True)
+        )
+    with pytest.raises(ValidationError, match="may_commit_transformed"):
+        ConversionReceipt.model_validate(
+            _receipt(may_commit_transformed=False)
+        )
+    with pytest.raises(ValidationError, match="assets"):
+        ConversionReceipt.model_validate(
+            _receipt(assets=(), may_commit_transformed=False)
+        )
+
+
 def test_canonical_json_bytes_are_compact_sorted_utf8_and_lf_terminated() -> None:
     payload = {"z": "论文", "a": {"y": 2, "x": 1}}
 
@@ -304,6 +320,9 @@ def test_convert_dataset_hashes_exact_assets_and_emitted_case_bytes() -> None:
             (SCIFACT_FIXTURE_ROOT / "claims.jsonl").read_bytes()
         ).hexdigest(),
     )
+    assert result.cases[0].corpus.papers[0].url == (
+        "https://example.test/scifact/corpus.jsonl#doc_id=101"
+    )
 
 
 def test_convert_dataset_is_byte_stable_for_identical_request() -> None:
@@ -401,6 +420,10 @@ def test_convert_dataset_routes_qasper_and_hashes_its_asset() -> None:
     assert result.receipt.cases_sha256 == hashlib.sha256(
         result.cases_jsonl
     ).hexdigest()
+    assert result.cases[0].corpus.papers[0].url == (
+        "https://example.test/qasper/qasper.json"
+        "#paper_id=synthetic-paper-1"
+    )
 
 
 def test_write_conversion_publishes_cases_then_receipt(tmp_path: Path) -> None:

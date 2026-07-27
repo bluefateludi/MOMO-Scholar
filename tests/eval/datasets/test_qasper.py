@@ -48,6 +48,7 @@ def _convert() -> tuple[EvalCase, ...]:
     return convert_qasper(
         split="development",
         dataset_bytes=FIXTURE_PATH.read_bytes(),
+        dataset_source_url="https://example.test/qasper/qasper.json",
     )
 
 
@@ -135,6 +136,7 @@ def test_qasper_rejects_invalid_shape_answers_and_references(
         convert_qasper(
             split="development",
             dataset_bytes=_encoded(payload),
+            dataset_source_url="https://example.test/qasper/qasper.json",
         )
 
 
@@ -150,7 +152,11 @@ def test_qasper_rejects_malformed_bytes_without_leaking_content(
     message: str,
 ) -> None:
     with pytest.raises(ConversionValidationError, match=message) as caught:
-        convert_qasper(split="development", dataset_bytes=payload)
+        convert_qasper(
+            split="development",
+            dataset_bytes=payload,
+            dataset_source_url="https://example.test/qasper/qasper.json",
+        )
 
     assert "SECRET_QASPER" not in str(caught.value)
 
