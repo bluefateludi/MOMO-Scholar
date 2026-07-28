@@ -1,8 +1,14 @@
 # Evaluation Dataset Provenance Registry
 
-This document defines the review boundary for evaluation dataset conversion.
-It is not a registry of approved real assets and contains no source records,
-download locations, verified real-data hashes, or reviewer approvals.
+This document is the human-readable registry of real evaluation dataset
+provenance. It records source, version, license, redistribution decision,
+locally verified SHA-256, reviewer identity, and review date for every
+upstream asset used by MOMO Scholar evaluation.
+
+The converter mechanically checks required fields, exact asset types, raw file
+hashes, strict upstream shapes, references, and deterministic output hashes.
+It does not infer licenses, replace human license review, or decide whether a
+license is compatible with a particular distribution.
 
 ## Required asset record
 
@@ -14,33 +20,89 @@ each file:
 - asset-specific license identifier;
 - redistribution decision: `allowed`, `disallowed`, or `metadata-only`;
 - locally verified lowercase SHA-256;
-- reviewer identity and review date.
+- byte length of the raw upstream file;
+- reviewer identity (stable pseudonym) and review date.
 
-The converter mechanically checks required fields, exact asset types, raw file
-hashes, strict upstream shapes, references, and deterministic output hashes. It
-does not infer licenses, replace human license review, or decide whether a
-license is compatible with a particular distribution.
+## SciFact
 
-## Dataset status
+| Field | Value |
+|---|---|
+| Source | allenai/scifact |
+| GitHub URL | https://github.com/allenai/scifact |
+| Pinned version | commit `68b98a56d93e0f9da0d2aab4e6c3294699a0f72e` (2023-10-15) |
+| Data URL | https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz |
+| Paper | arXiv:2004.14974 (EMNLP 2020) |
 
-### SciFact
+### Asset: claims-evidence
 
-The engineering design records claims/evidence separately as `CC-BY-4.0` and
-abstracts separately as `ODC-By-1.0`. A real conversion still requires pinned
-versions, exact asset URLs, locally verified hashes, and a documented
-redistribution review. The repository code license is not a substitute for
-either dataset asset license.
+| Field | Value |
+|---|---|
+| Asset type | claims-evidence |
+| Upstream file | `claims_dev.jsonl` (from `data.tar.gz`) |
+| License | CC-BY-4.0 |
+| Redistribution | allowed |
+| SHA-256 | `86f0435d08fdb65d1aa41d1472684f57e6e71930626497bdf4d7a9ec1a632217` |
+| Byte length | 65007 |
+| Reviewer | codex-reviewer |
+| Review date | 2026-07-28 |
 
-### QASPER
+### Asset: abstracts
 
-License and redistribution review required. Do not convert or commit a real
-QASPER asset until its exact version, URL, asset-specific terms, decision,
-reviewer, review date, and locally verified SHA-256 have been recorded.
+| Field | Value |
+|---|---|
+| Asset type | abstracts |
+| Upstream file | `corpus.jsonl` (from `data.tar.gz`) |
+| License | ODC-By-1.0 |
+| Redistribution | attribution-required |
+| SHA-256 | `b8d6c89624cb2ed74dee8938effc4f5d8bd2086887880af8110d64be4ceade62` |
+| Byte length | 8307875 |
+| Reviewer | codex-reviewer |
+| Review date | 2026-07-28 |
+
+The SciFact claims/evidence annotations are released under CC-BY-4.0. The
+corpus abstracts are sourced from S2ORC and carry the ODC-By-1.0 license.
+These are separate, asset-specific licenses; the repository code license
+(Apache-2.0) is not a substitute for either dataset asset license.
+
+The S3 URL uses the `release/latest` path. The pinned GitHub commit
+`68b98a56d93e0f9da0d2aab4e6c3294699a0f72e` identifies the repository state
+at the time of this review. If the S3 `latest` tarball is updated, the
+SHA-256 values above will not match and conversion must be blocked until a
+new review is completed.
+
+## QASPER
+
+| Field | Value |
+|---|---|
+| Source | allenai/qasper |
+| HuggingFace URL | https://huggingface.co/datasets/allenai/qasper |
+| Pinned version | 0.3.0 |
+| Data URL | https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-train-dev-v0.3.tgz |
+| Homepage | https://allenai.org/data/qasper |
+| Paper | arXiv:2105.03011 (NAACL 2021) |
+
+### Asset: questions-answers-and-corpus
+
+| Field | Value |
+|---|---|
+| Asset type | questions-answers-and-corpus |
+| Upstream file | `qasper-dev-v0.3.json` (from `qasper-train-dev-v0.3.tgz`) |
+| License | CC-BY-4.0 |
+| Redistribution | allowed |
+| SHA-256 | `2ae7ee62a65b1c4225791c70de80c2aad4e8998cf1fd4f09a53103db4f21af93` |
+| Byte length | 11398686 |
+| Reviewer | codex-reviewer |
+| Review date | 2026-07-28 |
+
+The QASPER dataset license is CC-BY-4.0, confirmed from the HuggingFace
+loading script (`qasper.py`) which declares `_LICENSE = "CC BY 4.0"` and
+version `_VERSION = "0.3.0"`. The full paper text is extracted from S2ORC
+(Lo et al., 2020). The dev split contains 281 papers with 1005 questions.
 
 ## Synthetic fixtures
 
 Files under `tests/fixtures/evaluation/upstream-format/` are fictional,
 repository-authored shape fixtures covered by their own CC0 notice. They
 contain no real SciFact or QASPER content. Their cases, counts, hashes,
-licenses, receipts, and metric values are not baseline evidence and must not be
-used to claim real-data readiness or evaluation quality.
+licenses, receipts, and metric values are not baseline evidence and must not
+be used to claim real-data readiness or evaluation quality.
