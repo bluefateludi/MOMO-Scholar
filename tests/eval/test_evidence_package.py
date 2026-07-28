@@ -28,6 +28,14 @@ REQUIRED = {
     "traces.jsonl": "",
     "report.md": "# Report\n",
     "resume-evidence.md": "# Resume Evidence\n",
+    # --- citation track review authorities (Task 6) ---
+    "assertions.jsonl": '{"assertion_id":"a1"}\n',
+    "citation-occurrences.jsonl": '{"occurrence_id":"c1"}\n',
+    "evidence-matches.jsonl": '{"match_id":"m1"}\n',
+    "review-rubric.json": {"rubric_version": "rubric-v1"},
+    "calibration.jsonl": '{"calibration_id":"cal1"}\n',
+    "judgments.jsonl": '{"judgment_id":"j1"}\n',
+    "adjudications.jsonl": '{"adjudication_id":"adj1"}\n',
 }
 
 
@@ -97,6 +105,21 @@ def test_sealed_builder_refuses_mutation_and_verifier_detects_external_append(tm
         handle.write("external mutation\n")
     with pytest.raises(EvidencePackageError, match="(length|hash) mismatch"):
         verify_evidence_package(builder.root)
+
+
+def test_required_artifacts_include_citation_review_authorities() -> None:
+    from paper_agent.eval.evidence_package import REQUIRED_ARTIFACTS
+
+    citation_artifacts = {
+        "assertions.jsonl",
+        "citation-occurrences.jsonl",
+        "evidence-matches.jsonl",
+        "review-rubric.json",
+        "calibration.jsonl",
+        "judgments.jsonl",
+        "adjudications.jsonl",
+    }
+    assert citation_artifacts <= REQUIRED_ARTIFACTS
 
 
 def test_verifier_rejects_manifest_path_tampering(tmp_path) -> None:

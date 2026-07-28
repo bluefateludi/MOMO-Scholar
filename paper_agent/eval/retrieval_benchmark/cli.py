@@ -462,6 +462,14 @@ def _write_live_package(prepared: Path, output: Path) -> None:
         builder.write_text(name, content)
     builder.write_text("logs.jsonl", "")
     builder.write_text("traces.jsonl", "")
+    # Citation track artifacts are empty for retrieval-only packages.
+    builder.write_text("assertions.jsonl", "")
+    builder.write_text("citation-occurrences.jsonl", "")
+    builder.write_text("evidence-matches.jsonl", "")
+    builder.write_json("review-rubric.json", {})
+    builder.write_text("calibration.jsonl", "")
+    builder.write_text("judgments.jsonl", "")
+    builder.write_text("adjudications.jsonl", "")
     dataset_manifest = _load_json(prepared / "dataset-manifest.json")
     if not isinstance(dataset_manifest, dict):
         raise ValueError("dataset-manifest.json is invalid")

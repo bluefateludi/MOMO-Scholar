@@ -126,6 +126,14 @@ def _sealed_package(root: Path, *, corrupt_aggregate: bool = False) -> Path:
     builder.write_text("traces.jsonl", "")
     builder.write_text("report.md", "# Retrieval Benchmark Report\n")
     builder.write_text("resume-evidence.md", "# Resume Evidence\n")
+    # Citation track artifacts are empty for retrieval-only packages.
+    builder.write_text("assertions.jsonl", "")
+    builder.write_text("citation-occurrences.jsonl", "")
+    builder.write_text("evidence-matches.jsonl", "")
+    builder.write_json("review-rubric.json", {})
+    builder.write_text("calibration.jsonl", "")
+    builder.write_text("judgments.jsonl", "")
+    builder.write_text("adjudications.jsonl", "")
     builder.seal(package_kind="retrieval_benchmark")
     return package
 
