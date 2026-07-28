@@ -22,6 +22,14 @@ REQUIRED_ARTIFACTS = frozenset(
         "traces.jsonl",
         "report.md",
         "resume-evidence.md",
+        # --- citation track review authorities (Task 6) ---
+        "assertions.jsonl",
+        "citation-occurrences.jsonl",
+        "evidence-matches.jsonl",
+        "review-rubric.json",
+        "calibration.jsonl",
+        "judgments.jsonl",
+        "adjudications.jsonl",
     }
 )
 _MANIFEST = "artifact-manifest.json"
