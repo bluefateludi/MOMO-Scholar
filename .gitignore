@@ -12,6 +12,7 @@ outputs/
 evaluations/**
 !evaluations/DATASETS.md
 !evaluations/README.md
+!evaluations/DATASETS.md
 !evaluations/templates/
 evaluations/templates/**
 !evaluations/templates/corpus-manifest.template.json
