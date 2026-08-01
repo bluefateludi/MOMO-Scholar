@@ -95,8 +95,6 @@ class SciFactClaimRecord(FrozenEvalModel):
     ) -> tuple[int, ...]:
         if any(doc_id < 0 for doc_id in cited_doc_ids):
             raise ValueError("cited document IDs must be non-negative")
-        if len(cited_doc_ids) != len(set(cited_doc_ids)):
-            raise ValueError("cited document IDs must be unique")
         return cited_doc_ids
 
 

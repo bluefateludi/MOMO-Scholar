@@ -12,6 +12,10 @@ from paper_agent.eval.datasets.conversion import (
     convert_dataset,
     write_conversion,
 )
+from paper_agent.eval.datasets.curation import (
+    CuratedValidationCases,
+    curate_validation_cases,
+)
 
 __all__ = [
     "ConversionAssetInput",
@@ -20,8 +24,10 @@ __all__ = [
     "ConversionRequest",
     "ConversionResult",
     "ConversionValidationError",
+    "CuratedValidationCases",
     "canonical_json_bytes",
     "canonical_jsonl_bytes",
     "convert_dataset",
+    "curate_validation_cases",
     "write_conversion",
 ]

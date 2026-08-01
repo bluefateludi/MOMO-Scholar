@@ -97,26 +97,8 @@ def _convert() -> tuple[EvalCase, ...]:
             "qasper.json",
         ),
         (
-            lambda paper, question, annotation: annotation["answer"].update(
-                {"evidence": ["missing paragraph"]}
-            ),
-            "evidence",
-        ),
-        (
-            lambda paper, question, annotation: paper["full_text"][0][
-                "paragraphs"
-            ].append("The synthetic outcome was positive."),
-            "evidence",
-        ),
-        (
             lambda paper, question, annotation: paper.update(
                 {"full_text": []}
-            ),
-            "qasper.json",
-        ),
-        (
-            lambda paper, question, annotation: annotation["answer"].update(
-                {"evidence": []}
             ),
             "qasper.json",
         ),
@@ -177,6 +159,71 @@ def test_qasper_materialization_preserves_paragraph_bytes() -> None:
     )
 
     assert materialize_qasper_content(record) == b" first \nsecond\n"
+
+
+def test_qasper_accepts_v03_metadata_fields() -> None:
+    payload = _fixture_payload()
+    paper = payload["synthetic-paper-1"]
+    question = paper["qas"][0]
+    question.update(
+        {
+            "nlp_background": "",
+            "topic_background": "",
+            "paper_read": "",
+            "question_writer": "writer-1",
+        }
+    )
+    paper["figures_and_tables"] = [
+        {"file": "figure-1.png", "caption": "Synthetic figure."}
+    ]
+    paper["full_text"].append(
+        {"section_name": None, "paragraphs": [""]}
+    )
+    question["answers"][0]["answer"]["highlighted_evidence"] = [
+        "The synthetic outcome was positive.",
+        "The synthetic outcome was positive.",
+    ]
+
+    cases = convert_qasper(
+        split="development",
+        dataset_bytes=_encoded(payload),
+        dataset_source_url="https://example.test/qasper/qasper.json",
+    )
+
+    assert len(cases) == 4
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda paper, answer: answer.update({"evidence": []}),
+        lambda paper, answer: answer.update(
+            {"evidence": ["missing paragraph"]}
+        ),
+        lambda paper, answer: paper["full_text"][0]["paragraphs"].append(
+            answer["evidence"][0]
+        ),
+    ],
+)
+def test_qasper_skips_annotation_without_resolvable_evidence(
+    mutate: object,
+) -> None:
+    payload = _fixture_payload()
+    paper = payload["synthetic-paper-1"]
+    annotations = paper["qas"][0]["answers"]
+    skipped_id = annotations[0]["annotation_id"]
+    mutate(paper, annotations[0]["answer"])
+
+    cases = convert_qasper(
+        split="development",
+        dataset_bytes=_encoded(payload),
+        dataset_source_url="https://example.test/qasper/qasper.json",
+    )
+
+    assert len(cases) < 4
+    assert not any(
+        item.case_id.endswith(f"annotation-{skipped_id}") for item in cases
+    )
 
 
 def test_qasper_maps_each_annotation_to_one_strict_case() -> None:

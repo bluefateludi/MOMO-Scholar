@@ -10,6 +10,9 @@ hashes, strict upstream shapes, references, and deterministic output hashes.
 It does not infer licenses, replace human license review, or decide whether a
 license is compatible with a particular distribution.
 
+Review required: any upstream version, URL, hash, license, or redistribution
+change must receive a new human provenance review before materialization.
+
 ## Required asset record
 
 Before converting a real asset, record all of these values independently for
@@ -31,6 +34,8 @@ each file:
 | GitHub URL | https://github.com/allenai/scifact |
 | Pinned version | commit `68b98a56d93e0f9da0d2aab4e6c3294699a0f72e` (2023-10-15) |
 | Data URL | https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz |
+| Archive SHA-256 | `11c621288d41ac144d29b13b0f8503b3820b7d6e8b1f6ff24dff335c196d76be` |
+| Archive byte length | 3115079 |
 | Paper | arXiv:2004.14974 (EMNLP 2020) |
 
 ### Asset: claims-evidence
@@ -78,6 +83,8 @@ new review is completed.
 | HuggingFace URL | https://huggingface.co/datasets/allenai/qasper |
 | Pinned version | 0.3.0 |
 | Data URL | https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-train-dev-v0.3.tgz |
+| Archive SHA-256 | `a28fdf966db827bcee3d873107d6b6669864fb7ca8fbf73a192f5e39191bdb5a` |
+| Archive byte length | 10835856 |
 | Homepage | https://allenai.org/data/qasper |
 | Paper | arXiv:2105.03011 (NAACL 2021) |
 
@@ -98,6 +105,27 @@ The QASPER dataset license is CC-BY-4.0, confirmed from the HuggingFace
 loading script (`qasper.py`) which declares `_LICENSE = "CC BY 4.0"` and
 version `_VERSION = "0.3.0"`. The full paper text is extracted from S2ORC
 (Lo et al., 2020). The dev split contains 281 papers with 1005 questions.
+
+## Validation materialization policy
+
+The frozen 60-case Validation input is selected only from converter-emitted
+cases whose Gold Evidence can be represented without inventing a locator.
+QASPER annotations with no evidence, table/figure placeholders, section-title
+evidence, or evidence that does not uniquely match one full-text paragraph are
+not emitted as `EvalCase` records. Their upstream annotations remain unchanged
+in the ignored raw asset.
+
+Eligible case IDs are ranked independently for SciFact and QASPER by lowercase
+SHA-256 of the UTF-8 case ID. The first 20 cases per source form the 40-case
+Retrieval track; the next 10 cases per source form the disjoint 20-case Citation
+track. This produces exactly 60 unique case IDs with 30 cases per source while
+leaving all answers, claims, evidence quotes, locators, and relevance grades
+unchanged from converter output.
+
+Downloaded archives, extracted source files, converted JSONL, receipts,
+manifests, Gold judgments, and prepared experiment inputs stay under ignored
+`evaluations/` paths. This policy and converter code are committable; the
+licensed and generated records are not.
 
 ## Synthetic fixtures
 
