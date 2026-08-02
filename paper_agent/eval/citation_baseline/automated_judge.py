@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
-from pydantic import Field, StrictFloat, StrictInt, field_validator, model_validator
+from pydantic import (
+    Field,
+    StrictFloat,
+    StrictInt,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from paper_agent.generation import GenerationMessage
 from paper_agent.generation.dashscope_transport import DashScopeChatTransport
@@ -292,7 +299,10 @@ class DashScopeAutomatedJudgeProvider:
             temperature=0.0,
             max_tokens=self.authority.max_completion_tokens_per_send,
         )
-        semantic = JudgeSemanticResponse.model_validate(json.loads(response.content))
+        try:
+            semantic = JudgeSemanticResponse.model_validate(json.loads(response.content))
+        except (json.JSONDecodeError, ValidationError) as error:
+            raise AutomatedJudgeError("judge semantic response is invalid") from error
         if response.usage is None or any(
             value is None
             for value in (response.usage.prompt_tokens, response.usage.completion_tokens)
