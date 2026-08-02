@@ -1,5 +1,6 @@
 from paper_agent.generation.contracts import (
     GenerationAuthenticationError,
+    GenerationBudgetExceededError,
     GenerationConfigurationError,
     GenerationFailureMetadata,
     GenerationMessage,
@@ -20,6 +21,7 @@ __all__ = [
     "DashScopeChatTransport",
     "DashScopeGenerationProvider",
     "GenerationAuthenticationError",
+    "GenerationBudgetExceededError",
     "GenerationConfigurationError",
     "GenerationFailureMetadata",
     "GenerationMessage",

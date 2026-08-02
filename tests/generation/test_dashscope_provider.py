@@ -76,7 +76,7 @@ def response(content='{"answer":"ok"}', *, prompt=None, completion=None, total=N
     return GenerationHttpResponse(content=content, model="qwen3.7-plus", usage=usage)
 
 
-def provider(outcomes, *, key="secret"):
+def provider(outcomes, *, key="secret", temperature=0.0, max_tokens=2048):
     transport = ScriptedTransport(outcomes)
     clock = Clock()
     instance = DashScopeGenerationProvider(
@@ -84,6 +84,8 @@ def provider(outcomes, *, key="secret"):
         model="qwen3.7-plus",
         base_url="https://dashscope.example/v1",
         transport=transport,
+        temperature=temperature,
+        max_tokens=max_tokens,
         sleep=clock.sleep,
         monotonic=clock.monotonic,
     )
@@ -106,12 +108,16 @@ def generate(instance, schema=Answer, timeout=7.25):
 
 
 def test_one_send_success_preserves_timeout_and_usage():
-    instance, transport, clock = provider([response(prompt=2, completion=3)])
+    instance, transport, clock = provider(
+        [response(prompt=2, completion=3)], temperature=0.25, max_tokens=777
+    )
     result = generate(instance)
     assert result.result == Answer(answer="ok")
     assert (result.attempts, result.elapsed_seconds) == (1, 0)
     assert (result.prompt_tokens, result.completion_tokens, result.total_tokens) == (2, 3, None)
     assert transport.calls[0]["timeout"] == 7.25
+    assert transport.calls[0]["temperature"] == 0.25
+    assert transport.calls[0]["max_tokens"] == 777
     assert clock.sleeps == []
 
 
@@ -146,6 +152,8 @@ def test_transient_failure_retries_once_with_unchanged_timeout(error):
     result = generate(instance)
     assert result.attempts == 2
     assert [call["timeout"] for call in transport.calls] == [7.25, 7.25]
+    assert [call["temperature"] for call in transport.calls] == [0.0, 0.0]
+    assert [call["max_tokens"] for call in transport.calls] == [2048, 2048]
     assert clock.sleeps == ([2.5] if isinstance(error, GenerationRateLimitError) else [1.0])
     assert result.elapsed_seconds == sum(clock.sleeps)
 
@@ -189,6 +197,8 @@ def test_invalid_json_is_repaired_once_with_original_grounding_and_safe_delimite
     assert invalid not in repair_messages[2].content
     assert repair_messages[3].role == "user"
     assert "Answer" in repair_messages[3].content
+    assert [call["temperature"] for call in transport.calls] == [0.0, 0.0]
+    assert [call["max_tokens"] for call in transport.calls] == [2048, 2048]
 
 
 def test_schema_repair_summary_has_only_five_location_and_type_entries_and_is_capped():

@@ -131,6 +131,8 @@ class DashScopeGenerationProvider:
         model: str,
         base_url: str,
         transport: DashScopeChatTransport,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -138,6 +140,21 @@ class DashScopeGenerationProvider:
         self._model = model
         self._base_url = base_url
         self._transport = transport
+        if (
+            isinstance(temperature, bool)
+            or not isinstance(temperature, (int, float))
+            or not math.isfinite(float(temperature))
+            or not 0 <= temperature <= 2
+        ):
+            raise ValueError("temperature must be a finite number between 0 and 2")
+        if (
+            isinstance(max_tokens, bool)
+            or not isinstance(max_tokens, int)
+            or max_tokens < 1
+        ):
+            raise ValueError("max_tokens must be a positive integer")
+        self._temperature = float(temperature)
+        self._max_tokens = max_tokens
         self._sleep = sleep
         self._monotonic = monotonic
 
@@ -179,6 +196,8 @@ class DashScopeGenerationProvider:
                     api_key=self._api_key,
                     base_url=self._base_url,
                     timeout=timeout,
+                    temperature=self._temperature,
+                    max_tokens=self._max_tokens,
                 )
             except GenerationProviderError as error:
                 retryable = isinstance(

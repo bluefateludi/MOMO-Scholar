@@ -101,3 +101,7 @@ class GenerationServerError(GenerationProviderError):
 
 class GenerationResponseError(GenerationProviderError):
     code = "generation_response_error"
+
+
+class GenerationBudgetExceededError(GenerationProviderError):
+    code = "generation_budget_exceeded"

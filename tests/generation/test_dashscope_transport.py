@@ -34,6 +34,8 @@ def send(transport: DashScopeChatTransport):
         api_key="top-secret-key",
         base_url="https://dashscope.example/compatible-mode/v1/",
         timeout=7.25,
+        temperature=0.0,
+        max_tokens=512,
     )
 
 
@@ -49,6 +51,8 @@ def test_posts_exact_chat_request_and_parses_response_with_usage() -> None:
             "model": "qwen3.7-plus",
             "messages": MESSAGES,
             "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+            "max_tokens": 512,
         }
         assert request.extensions["timeout"] == {
             "connect": 7.25,
@@ -224,5 +228,37 @@ def test_rejects_invalid_timeout_before_sending(timeout) -> None:
             api_key="top-secret-key",
             base_url="https://dashscope.example/v1",
             timeout=timeout,
+            temperature=0.0,
+            max_tokens=512,
         )
     assert calls == 0
+
+
+@pytest.mark.parametrize("temperature", [-0.1, 2.1, float("nan"), True])
+def test_rejects_invalid_temperature_before_sending(temperature) -> None:
+    transport = make_transport(lambda _: pytest.fail("request must not be sent"))
+    with pytest.raises(ValueError, match="temperature"):
+        transport.send(
+            messages=MESSAGES,
+            model="qwen3.7-plus",
+            api_key="top-secret-key",
+            base_url="https://dashscope.example/v1",
+            timeout=1.0,
+            temperature=temperature,
+            max_tokens=512,
+        )
+
+
+@pytest.mark.parametrize("max_tokens", [0, -1, 1.5, True])
+def test_rejects_invalid_max_tokens_before_sending(max_tokens) -> None:
+    transport = make_transport(lambda _: pytest.fail("request must not be sent"))
+    with pytest.raises(ValueError, match="max_tokens"):
+        transport.send(
+            messages=MESSAGES,
+            model="qwen3.7-plus",
+            api_key="top-secret-key",
+            base_url="https://dashscope.example/v1",
+            timeout=1.0,
+            temperature=0.0,
+            max_tokens=max_tokens,
+        )
