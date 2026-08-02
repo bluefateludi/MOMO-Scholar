@@ -55,11 +55,13 @@ Do not interrupt implementation with long conceptual explanations unless the use
 
 - Check the working tree before editing and distinguish current Task changes from pre-existing user work.
 - For implementation Tasks that produce verified tracked changes, delivery is an automatic part of the Task. Without requesting additional confirmation, create or use a `codex/` branch, stage only the active Task's files, create a scoped commit, push the branch with a normal non-force push, and create or update a Draft pull request targeting `master`.
-- Treat the preceding automatic delivery workflow as standing user authorization for branch creation, scoped staging, commit creation, normal push, and Draft pull request creation or updates. Do not ask the user to perform these steps manually when the required credentials and tools are available.
+- After the pull request is mergeable, all required checks pass, and no unresolved review or policy blocker remains, automatically mark it Ready, merge it with a normal repository-supported merge method, and delete the remote head branch. Do not merge on failing or pending required checks, merge conflicts, unresolved requested changes, or an unverified diff.
+- Treat the preceding automatic delivery workflow as standing user authorization for branch creation, scoped staging, commit creation, normal push, Draft pull request creation or updates, Ready conversion, merge, and post-merge remote branch deletion. Do not ask the user to perform these routine steps manually when the required credentials and tools are available.
 - Do not create an empty commit or pull request when a Task produces no tracked changes or only gitignored/local artifacts. Do not stage unrelated user changes.
-- Merge, rebase, reset, clean, amend, force push, pull request conversion to Ready, branch deletion, and worktree deletion still require explicit user authorization.
+- After confirming the merged commit is reachable from the updated `origin/master`, automatically remove the merged local Task branch and its dedicated worktree when the platform permits safe cleanup. Resolve and validate the exact worktree path before deletion; never delete the active worktree from inside itself or remove a branch/worktree that contains unmerged or unrelated changes.
+- Rebase, reset, clean, amend, force push, deletion of unmerged branches or worktrees, and other destructive history changes still require explicit user authorization.
 - Deleting or renaming source files is allowed when it is a necessary, scoped part of the approved Task and is visible in the final diff.
 - If authentication, repository policy, or tooling blocks automatic delivery, complete all safe local work and report the exact blocker instead of delegating routine Git commands back to the user.
-- Report the branch, commit, push, and Draft pull request during handoff.
+- Report the branch, commit, pull request, merge result, and cleanup result during handoff.
 - Before handoff, summarize changed files, verification commands and results, and known remaining limitations.
 - Keep interview preparation and learning documentation separate from development delivery unless the user explicitly requests both.
