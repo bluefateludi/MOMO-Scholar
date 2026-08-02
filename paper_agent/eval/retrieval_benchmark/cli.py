@@ -396,6 +396,9 @@ def _write_live_package(prepared: Path, output: Path) -> None:
         raise ValueError("DASHSCOPE_API_KEY is required for run-live")
     if settings.bailian_region != "beijing":
         raise ValueError("BAILIAN_REGION must be beijing for run-live")
+    environment = _git_environment(config.embedding_model_version)
+    if environment.get("git_dirty") is not False:
+        raise ValueError("publishable package requires a clean Git worktree")
 
     embedder = BailianTextEmbedder(
         api_key=api_key,
@@ -403,20 +406,19 @@ def _write_live_package(prepared: Path, output: Path) -> None:
         region=settings.bailian_region,
         timeout=config.timeout_seconds,
     )
-    vector_source = VectorCandidateSource(
-        VectorRetriever(
-            embedder=embedder,
-            store=InMemoryVectorStore(embedding_model=config.embedding_model),
-        )
-    )
-    benchmark = RetrievalBenchmarkRunner(
-        lexical_source=LexicalCandidateSource(),
-        vector_source=vector_source,
-    )
-
     _new_directory(output)
     results = tuple(
-        benchmark.run_case(
+        RetrievalBenchmarkRunner(
+            lexical_source=LexicalCandidateSource(),
+            vector_source=VectorCandidateSource(
+                VectorRetriever(
+                    embedder=embedder,
+                    store=InMemoryVectorStore(
+                        embedding_model=config.embedding_model
+                    ),
+                )
+            ),
+        ).run_case(
             case_id=case_id,
             query=question,
             chunks=chunks,
@@ -432,7 +434,6 @@ def _write_live_package(prepared: Path, output: Path) -> None:
     }
     statistics = score_benchmark(cases=results, relevance_by_case=relevance)
     projections = _statistics_projections(statistics)
-    environment = _git_environment(config.embedding_model_version)
     builder = EvidencePackageBuilder(output)
     for name in (
         "dataset-manifest.json",
