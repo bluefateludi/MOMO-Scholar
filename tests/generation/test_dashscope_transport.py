@@ -51,6 +51,7 @@ def test_posts_exact_chat_request_and_parses_response_with_usage() -> None:
             "model": "qwen3.7-plus",
             "messages": MESSAGES,
             "response_format": {"type": "json_object"},
+            "enable_thinking": False,
             "temperature": 0.0,
             "max_tokens": 512,
         }
@@ -64,7 +65,12 @@ def test_posts_exact_chat_request_and_parses_response_with_usage() -> None:
             200,
             json={
                 "model": "qwen3.7-plus-2026-07-01",
-                "choices": [{"message": {"content": '{"answer":"ok"}'}}],
+                "choices": [
+                    {
+                        "message": {"content": '{"answer":"ok"}'},
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {
                     "prompt_tokens": 11,
                     "completion_tokens": 5,
@@ -77,6 +83,7 @@ def test_posts_exact_chat_request_and_parses_response_with_usage() -> None:
 
     assert response.content == '{"answer":"ok"}'
     assert response.model == "qwen3.7-plus-2026-07-01"
+    assert response.finish_reason == "stop"
     assert response.usage is not None
     assert response.usage.prompt_tokens == 11
     assert response.usage.completion_tokens == 5

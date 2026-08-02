@@ -138,6 +138,7 @@ class LedgerFakeProvider:
         response = GenerationHttpResponse(
             content="{}",
             model="qwen3.7-plus-2026-08-01",
+            finish_reason="stop",
             usage=GenerationUsage(prompt_tokens=40, completion_tokens=20, total_tokens=60),
         )
         self.ledger.complete(sequence, response=response)
@@ -201,6 +202,9 @@ def test_runner_is_offline_records_frozen_request_and_stable_outputs(tmp_path, m
         row["authorized_cost_ceiling_usd"] == config.max_cost_per_send_usd
         for row in sends
     )
+    assert all(row["finish_reason"] == "stop" for row in sends)
+    assert all(row["response_content_length"] == 2 for row in sends)
+    assert all(row["response_content_sha256"] for row in sends)
     results = [
         json.loads(line)
         for line in (output / "case-results.jsonl").read_text().splitlines()

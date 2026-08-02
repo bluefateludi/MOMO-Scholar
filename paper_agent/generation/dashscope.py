@@ -123,6 +123,26 @@ def _repair_messages(
     return (*messages, assistant, instruction)
 
 
+def _schema_message(response_schema: type[BaseModel]) -> GenerationMessage:
+    schema = json.dumps(
+        response_schema.model_json_schema(),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return GenerationMessage(
+        role="user",
+        content=(
+            "Return only one concise JSON object that conforms exactly to this "
+            "trusted JSON Schema. Include every required field and do not add "
+            "properties outside the schema. Empty arrays are allowed.\n"
+            "TRUSTED_JSON_SCHEMA_BEGIN\n"
+            f"{schema}\n"
+            "TRUSTED_JSON_SCHEMA_END"
+        ),
+    )
+
+
 class DashScopeGenerationProvider:
     def __init__(
         self,
@@ -240,15 +260,19 @@ class DashScopeGenerationProvider:
                 metadata=aggregate.metadata(self._monotonic())
             )
 
+        schema_messages = (*messages, _schema_message(response_schema))
         original = self._send_with_one_retry(
-            messages=messages, timeout=timeout, aggregate=aggregate
+            messages=schema_messages, timeout=timeout, aggregate=aggregate
         )
         result, validation_error = self._validate(original, response_schema)
         final_response = original
         if result is None:
             repair = self._send_with_one_retry(
                 messages=_repair_messages(
-                    messages, original.content, response_schema, validation_error
+                    schema_messages,
+                    original.content,
+                    response_schema,
+                    validation_error,
                 ),
                 timeout=timeout,
                 aggregate=aggregate,
