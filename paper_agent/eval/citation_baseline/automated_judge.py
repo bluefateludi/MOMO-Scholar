@@ -50,7 +50,7 @@ _RUBRIC = {
 _PROMPT_TEMPLATE = (
     "Judge only whether the cited passages, checked against the supplied Gold Evidence, "
     "entail the complete assertion. Return supported or unsupported, a concise rationale, "
-    "and only supplied evidence IDs. Do not use outside knowledge."
+    "and only supplied evidence IDs. Do not use outside knowledge. Return JSON only."
 )
 _HUMAN_AUTHORITY_FILES = {
     "review-rubric.json",

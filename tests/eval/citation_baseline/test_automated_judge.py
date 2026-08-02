@@ -116,6 +116,21 @@ class InvalidSemanticResponseTransport:
         )
 
 
+class CapturingSemanticResponseTransport:
+    def __init__(self) -> None:
+        self.kwargs = None
+
+    def send(self, **kwargs):
+        self.kwargs = kwargs
+        return SimpleNamespace(
+            content=json.dumps(
+                {"result": "supported", "rationale": "fixture", "evidence_references": []}
+            ),
+            model="judge-fixture-2026-08-02",
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+
+
 def _forbid_network(monkeypatch) -> None:
     def forbidden(*_args, **_kwargs):
         raise AssertionError("offline automated judge test attempted network access")
@@ -259,6 +274,31 @@ def test_provider_failure_persists_only_safe_http_diagnostics(tmp_path) -> None:
     assert "must-never-persist" not in failure_text
     assert "prompt-body" not in failure_text
     assert "secret" not in failure_text
+
+
+def test_judge_json_mode_prompt_contains_required_json_keyword() -> None:
+    authority = _authority(max_retries_per_pass=0)
+    transport = CapturingSemanticResponseTransport()
+    provider = DashScopeAutomatedJudgeProvider(
+        api_key="fixture-key",
+        base_url=authority.judge_base_url,
+        authority=authority,
+        transport=transport,
+    )
+
+    result = provider.judge(
+        payload={
+            "assertion_id": "a",
+            "assertion": "A.",
+            "cited_passages": [],
+            "gold_passages": [],
+        },
+        pass_index=1,
+        timeout_seconds=5.0,
+    )
+
+    assert result.result == "supported"
+    assert "JSON" in transport.kwargs["messages"][0].content
 
 
 def test_retry_accounting_survives_process_restart(tmp_path) -> None:
