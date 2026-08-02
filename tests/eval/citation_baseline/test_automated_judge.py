@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import socket
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -15,6 +16,7 @@ from paper_agent.eval.citation_baseline.automated_judge import (
     AutomatedJudgeAuthority,
     AutomatedJudgeError,
     AutomatedJudgeInput,
+    DashScopeAutomatedJudgeProvider,
     JudgePassage,
     JudgeProviderResult,
     run_automated_judge,
@@ -104,6 +106,15 @@ class FakeProvider:
         )
 
 
+class InvalidSemanticResponseTransport:
+    def send(self, **_kwargs):
+        return SimpleNamespace(
+            content="not-json",
+            model="judge-fixture-2026-08-02",
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+
+
 def _forbid_network(monkeypatch) -> None:
     def forbidden(*_args, **_kwargs):
         raise AssertionError("offline automated judge test attempted network access")
@@ -182,6 +193,29 @@ def test_budget_gate_blocks_before_provider_call(tmp_path) -> None:
             provider=provider,
         )
     assert provider.calls == []
+
+
+def test_local_semantic_schema_failure_is_not_mislabeled_as_provider_error(
+    tmp_path,
+) -> None:
+    authority = _authority(max_retries_per_pass=0)
+    provider = DashScopeAutomatedJudgeProvider(
+        api_key="fixture-key",
+        base_url=authority.judge_base_url,
+        authority=authority,
+        transport=InvalidSemanticResponseTransport(),
+    )
+
+    with pytest.raises(AutomatedJudgeError):
+        run_automated_judge(
+            output=tmp_path,
+            authority=authority,
+            inputs=(_input("invalid-semantic-response"),),
+            provider=provider,
+        )
+
+    failure = json.loads((tmp_path / "automated-judge-failures.jsonl").read_text())
+    assert failure["reason_code"] == "judge_contract_error"
 
 
 def test_retry_accounting_survives_process_restart(tmp_path) -> None:
