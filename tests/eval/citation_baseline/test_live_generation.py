@@ -106,14 +106,22 @@ def _prepared(root: Path) -> Path:
     )
     model_document = prepared / "model-doc.txt"
     pricing_document = prepared / "pricing-doc.txt"
+    deployment_document = prepared / "deployment-doc.txt"
     model_document.write_text("provider model authority snapshot", encoding="utf-8")
     pricing_document.write_text("provider pricing authority snapshot", encoding="utf-8")
+    deployment_document.write_text("provider deployment authority snapshot", encoding="utf-8")
     authority = {
         "schema_version": "1.0",
         "provider": "dashscope",
         "request_model": "qwen3.7-plus-2026-08-01",
         "expected_response_model": "qwen3.7-plus-2026-08-01",
         "identifier_kind": "dated_immutable",
+        "deployment_scope": "China (Beijing)",
+        "generation_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "deployment_authority_file": deployment_document.name,
+        "deployment_authority_sha256": hashlib.sha256(
+            deployment_document.read_bytes()
+        ).hexdigest(),
         "model_document_url": "https://provider.example/model",
         "model_document_retrieved_at_utc": "2026-08-02T00:00:00Z",
         "model_document_file": model_document.name,
@@ -122,8 +130,9 @@ def _prepared(root: Path) -> Path:
         "pricing_document_retrieved_at_utc": "2026-08-02T00:00:00Z",
         "pricing_document_file": pricing_document.name,
         "pricing_document_sha256": hashlib.sha256(pricing_document.read_bytes()).hexdigest(),
-        "input_usd_per_million_tokens": 1.0,
-        "output_usd_per_million_tokens": 3.0,
+        "pricing_currency": "CNY",
+        "input_cost_per_million_tokens": 1.0,
+        "output_cost_per_million_tokens": 3.0,
         "approved_by": "reviewer-1",
         "approved_at_utc": "2026-08-02T00:00:00Z",
     }
@@ -161,14 +170,21 @@ def _config(**updates: object) -> LiveGenerationConfig:
                     "approved_by": "reviewer-1",
                     "expected_response_model": "qwen3.7-plus-2026-08-01",
                     "identifier_kind": "dated_immutable",
-                    "input_usd_per_million_tokens": 1.0,
+                    "deployment_scope": "China (Beijing)",
+                    "generation_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "deployment_authority_file": "deployment-doc.txt",
+                    "deployment_authority_sha256": hashlib.sha256(
+                        b"provider deployment authority snapshot"
+                    ).hexdigest(),
+                    "pricing_currency": "CNY",
+                    "input_cost_per_million_tokens": 1.0,
                     "model_document_file": "model-doc.txt",
                     "model_document_retrieved_at_utc": "2026-08-02T00:00:00Z",
                     "model_document_sha256": hashlib.sha256(
                         b"provider model authority snapshot"
                     ).hexdigest(),
                     "model_document_url": "https://provider.example/model",
-                    "output_usd_per_million_tokens": 3.0,
+                    "output_cost_per_million_tokens": 3.0,
                     "pricing_document_file": "pricing-doc.txt",
                     "pricing_document_retrieved_at_utc": "2026-08-02T00:00:00Z",
                     "pricing_document_sha256": hashlib.sha256(
@@ -183,6 +199,8 @@ def _config(**updates: object) -> LiveGenerationConfig:
         ).hexdigest(),
         "campaign_id": "citation-task8",
         "execution_id": "citation-20case-live",
+        "deployment_scope": "China (Beijing)",
+        "generation_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "temperature": 0.0,
         "max_tokens": 512,
         "attempt_timeout_seconds": 60.0,
@@ -193,9 +211,10 @@ def _config(**updates: object) -> LiveGenerationConfig:
         "max_total_prompt_tokens": 160_000,
         "max_total_completion_tokens": 20_000,
         "pricing_authority": "https://pricing.example/model",
-        "input_usd_per_million_tokens": 1.0,
-        "output_usd_per_million_tokens": 3.0,
-        "max_cost_usd": 0.25,
+        "cost_currency": "CNY",
+        "input_cost_per_million_tokens": 1.0,
+        "output_cost_per_million_tokens": 3.0,
+        "max_cost": 0.25,
     }
     values.update(updates)
     return LiveGenerationConfig.model_validate(values)
@@ -307,7 +326,8 @@ def test_runner_is_offline_records_frozen_request_and_stable_outputs(tmp_path, m
         (0.0, 512, 60.0)
     }
     assert all(
-        row["authorized_cost_ceiling_usd"] == config.max_cost_per_send_usd
+        row["cost_currency"] == "CNY"
+        and row["authorized_cost_ceiling"] == config.max_cost_per_send
         for row in sends
     )
     assert all(row["finish_reason"] == "stop" for row in sends)
@@ -485,6 +505,19 @@ def test_campaign_ledger_imports_prior_attempts_and_blocks_before_next_send(tmp_
         output=campaign, campaign_id="citation-task8", prior_ledgers=[source]
     )
     assert summary["prior_send_count"] == 2
+    assert summary["prior_accounted_costs"] == [
+        {
+            "currency": "USD",
+            "amount": 0.002,
+            "authority": "legacy_smoke_estimate",
+        }
+    ]
+    separated = GenerationBudgetLedger(
+        campaign,
+        _config(case_limit=1, max_total_sends=3, max_cost=0.022),
+    )
+    assert separated._totals()[2] == {"USD": 0.002}
+    separated.assert_batch_capacity(1)
     config = _config(case_limit=1, max_total_sends=2)
     ledger = GenerationBudgetLedger(campaign, config)
     with pytest.raises(Exception, match="generation_budget_exceeded"):
@@ -552,11 +585,11 @@ def test_resume_rejects_changed_config_git_or_nested_output(tmp_path):
 
 
 def test_config_rejects_a_non_executable_cost_ceiling() -> None:
-    with pytest.raises(ValueError, match="exceeds max_cost_usd"):
+    with pytest.raises(ValueError, match="exceeds max_cost"):
         _config(
-            input_usd_per_million_tokens=100.0,
-            output_usd_per_million_tokens=100.0,
-            max_cost_usd=0.01,
+            input_cost_per_million_tokens=100.0,
+            output_cost_per_million_tokens=100.0,
+            max_cost=0.01,
         )
 
 
@@ -593,6 +626,8 @@ def test_cli_requires_cost_ack_and_checks_offline_gates_before_credentials(
         "160000",
         "--max-total-completion-tokens",
         "20000",
+        "--max-cost",
+        "0.25",
     ]
     runner = CliRunner()
     monkeypatch.setattr(
@@ -659,6 +694,8 @@ def test_preflight_cli_is_offline_and_does_not_read_credentials(tmp_path, monkey
             "160000",
             "--max-total-completion-tokens",
             "20000",
+            "--max-cost",
+            "0.25",
         ],
     )
     assert result.exit_code == 0, result.output

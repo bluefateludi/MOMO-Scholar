@@ -796,7 +796,7 @@ def _live_generation_config(
     max_prompt_tokens_per_send: int,
     max_total_prompt_tokens: int,
     max_total_completion_tokens: int,
-    max_cost_usd: float,
+    max_cost: float,
 ) -> LiveGenerationConfig:
     authority = load_provider_model_authority(model_authority)
     return LiveGenerationConfig(
@@ -805,6 +805,8 @@ def _live_generation_config(
         model_authority_sha256=hashlib.sha256(model_authority.read_bytes()).hexdigest(),
         campaign_id=campaign_id,
         execution_id=execution_id,
+        deployment_scope=authority.deployment_scope,
+        generation_base_url=authority.generation_base_url,
         temperature=temperature,
         max_tokens=max_tokens,
         attempt_timeout_seconds=attempt_timeout_seconds,
@@ -816,9 +818,10 @@ def _live_generation_config(
         max_total_prompt_tokens=max_total_prompt_tokens,
         max_total_completion_tokens=max_total_completion_tokens,
         pricing_authority=authority.pricing_document_url,
-        input_usd_per_million_tokens=authority.input_usd_per_million_tokens,
-        output_usd_per_million_tokens=authority.output_usd_per_million_tokens,
-        max_cost_usd=max_cost_usd,
+        cost_currency=authority.pricing_currency,
+        input_cost_per_million_tokens=authority.input_cost_per_million_tokens,
+        output_cost_per_million_tokens=authority.output_cost_per_million_tokens,
+        max_cost=max_cost,
     )
 
 
@@ -866,7 +869,7 @@ def preflight_live_generation_command(
     max_prompt_tokens_per_send: int = typer.Option(..., min=1),
     max_total_prompt_tokens: int = typer.Option(..., min=1),
     max_total_completion_tokens: int = typer.Option(..., min=1),
-    max_cost_usd: float = typer.Option(0.25, min=0.000001),
+    max_cost: float = typer.Option(..., "--max-cost", min=0.000001),
 ) -> None:
     """Run every deterministic launch gate without reading credentials or sending."""
 
@@ -885,7 +888,7 @@ def preflight_live_generation_command(
             max_prompt_tokens_per_send=max_prompt_tokens_per_send,
             max_total_prompt_tokens=max_total_prompt_tokens,
             max_total_completion_tokens=max_total_completion_tokens,
-            max_cost_usd=max_cost_usd,
+            max_cost=max_cost,
         )
         selected_ids = preflight_live_generation(
             prepared=prepared,
@@ -925,11 +928,11 @@ def run_live_generation_command(
     max_prompt_tokens_per_send: int = typer.Option(..., min=1),
     max_total_prompt_tokens: int = typer.Option(..., min=1),
     max_total_completion_tokens: int = typer.Option(..., min=1),
-    max_cost_usd: float = typer.Option(0.25, min=0.000001),
+    max_cost: float = typer.Option(..., "--max-cost", min=0.000001),
     acknowledge_provider_costs: bool = typer.Option(
         False,
         "--acknowledge-provider-costs",
-        help="Acknowledge the frozen provider call and USD ceilings.",
+        help="Acknowledge the frozen provider call and typed currency ceilings.",
     ),
 ) -> None:
     """Run or resume frozen Citation cases with hard send and cost authorization."""
@@ -954,7 +957,7 @@ def run_live_generation_command(
             max_prompt_tokens_per_send=max_prompt_tokens_per_send,
             max_total_prompt_tokens=max_total_prompt_tokens,
             max_total_completion_tokens=max_total_completion_tokens,
-            max_cost_usd=max_cost_usd,
+            max_cost=max_cost,
         )
         environment = _git_environment()
         selected_ids = preflight_live_generation(
@@ -968,6 +971,8 @@ def run_live_generation_command(
         settings = load_settings()
         if settings.dashscope_generation_model != config.request_model:
             raise ValueError("configured request model does not match frozen settings")
+        if settings.dashscope_generation_base_url != config.generation_base_url:
+            raise ValueError("configured provider endpoint does not match frozen authority")
         api_key = settings.dashscope_api_key
         if not api_key or not api_key.strip():
             raise ValueError("generation provider credential is unavailable")
