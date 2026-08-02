@@ -16,6 +16,11 @@ from paper_agent.eval.citation_baseline.live_generation import (
     load_provider_model_authority,
     run_live_generation as _run_live_generation_impl,
 )
+from paper_agent.eval.citation_baseline.generation_authority import (
+    GenerationAuthorityError,
+    seal_generation_authority,
+    verify_generation_authority,
+)
 from paper_agent.generation import (
     GenerationFailureMetadata,
     GenerationTimeoutError,
@@ -343,6 +348,67 @@ def test_runner_is_offline_records_frozen_request_and_stable_outputs(tmp_path, m
         path.read_text() for path in output.iterdir() if path.is_file()
     )
     assert "must-not-be-read" not in persisted
+
+
+def test_generation_authority_seals_without_mutating_source_and_recomputes(
+    tmp_path, monkeypatch
+):
+    _forbid_network(monkeypatch)
+    prepared = _prepared(tmp_path)
+    output = tmp_path / "experiment"
+    config = _config()
+    _run_live_generation(
+        prepared=prepared,
+        output=output,
+        config=config,
+        environment=_environment(),
+        provider_factory=_factory(
+            config, {"case-a": [None], "case-b": [None]}, []
+        ),
+    )
+    before = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in output.iterdir()
+        if path.is_file()
+    }
+
+    package = tmp_path / "generation-authority"
+    manifest = seal_generation_authority(
+        output, tmp_path / "campaign-ledger.jsonl", package
+    )
+    verified = verify_generation_authority(package)
+
+    assert manifest["package_kind"] == "citation_generation_authority"
+    assert verified["case_count"] == 2
+    assert verified["authority_sha256"] == manifest["artifacts"][0]["sha256"]
+    assert before == {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in output.iterdir()
+        if path.is_file()
+    }
+
+
+def test_generation_authority_verifier_detects_tampering(tmp_path, monkeypatch):
+    _forbid_network(monkeypatch)
+    prepared = _prepared(tmp_path)
+    output = tmp_path / "experiment"
+    config = _config()
+    _run_live_generation(
+        prepared=prepared,
+        output=output,
+        config=config,
+        environment=_environment(),
+        provider_factory=_factory(
+            config, {"case-a": [None], "case-b": [None]}, []
+        ),
+    )
+    package = tmp_path / "generation-authority"
+    seal_generation_authority(output, tmp_path / "campaign-ledger.jsonl", package)
+    with (package / "generation-authority.json").open("ab") as handle:
+        handle.write(b" ")
+
+    with pytest.raises(GenerationAuthorityError, match="recomputation differs"):
+        verify_generation_authority(package)
 
 
 def test_resume_keeps_successful_case_and_only_retries_failed_case(tmp_path, monkeypatch):

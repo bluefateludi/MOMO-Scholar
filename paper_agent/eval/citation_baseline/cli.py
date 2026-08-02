@@ -29,6 +29,11 @@ from .live_generation import (
     preflight_live_generation,
     run_live_generation,
 )
+from .generation_authority import (
+    GenerationAuthorityError,
+    seal_generation_authority,
+    verify_generation_authority,
+)
 
 from .contracts import (
     AtomicAssertion,
@@ -1013,6 +1018,46 @@ def run_live_generation_command(
         )
         raise typer.Exit(code=_EXIT_REVIEW)
     typer.echo(f"Generated {len(selected_ids)} frozen Citation cases: {output}")
+
+
+@app.command("seal-live-generation")
+def seal_live_generation_command(
+    source: Path = typer.Option(..., exists=True, file_okay=False),
+    campaign_ledger: Path = typer.Option(..., exists=True, dir_okay=False),
+    output: Path = typer.Option(...),
+) -> None:
+    """Seal completed live-generation outputs for offline automated judging."""
+
+    try:
+        manifest = seal_generation_authority(source, campaign_ledger, output)
+    except (GenerationAuthorityError, OSError, ValueError):
+        typer.echo(
+            "Generation authority sealing failed: invalid or unsafe inputs",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_INPUT) from None
+    authority = manifest["artifacts"][0]
+    typer.echo(
+        "Sealed generation authority: "
+        f"{output} ({authority['sha256']})"
+    )
+
+
+@app.command("verify-live-generation-seal")
+def verify_live_generation_seal_command(
+    package: Path = typer.Argument(..., exists=True, file_okay=False),
+) -> None:
+    """Verify hashes and byte-identical generation-authority recomputation."""
+
+    try:
+        result = verify_generation_authority(package)
+    except (GenerationAuthorityError, OSError, ValueError):
+        typer.echo("Generation authority verification failed", err=True)
+        raise typer.Exit(code=_EXIT_INTEGRITY) from None
+    typer.echo(
+        "Verified byte-identical generation authority: "
+        f"{result['case_count']} cases ({result['package_sha256']})"
+    )
 
 
 @app.command()
