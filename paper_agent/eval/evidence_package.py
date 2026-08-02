@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
@@ -99,11 +100,20 @@ class EvidencePackageBuilder:
         name = _validate_artifact_path(path)
         _atomic_write(self.root / name, content.encode("utf-8"))
 
-    def seal(self, *, package_kind: str) -> dict[str, object]:
+    def seal(
+        self,
+        *,
+        package_kind: str,
+        required_artifacts: Iterable[str] | None = None,
+        manifest_metadata: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
         if self.sealed:
             raise EvidencePackageError("evidence package is already sealed")
+        required = frozenset(required_artifacts or REQUIRED_ARTIFACTS)
+        if not required or any(_validate_artifact_path(name) != name for name in required):
+            raise EvidencePackageError("required artifact set is invalid")
         present = {path.name for path in self.root.iterdir() if path.is_file()}
-        missing = sorted(REQUIRED_ARTIFACTS - present)
+        missing = sorted(required - present)
         if missing:
             raise EvidencePackageError(
                 f"missing required artifacts: {', '.join(missing)}"
@@ -125,7 +135,7 @@ class EvidencePackageBuilder:
             raise EvidencePackageError("environment must record every model version")
 
         artifacts = []
-        for name in sorted(REQUIRED_ARTIFACTS):
+        for name in sorted(required):
             path = self.root / name
             artifacts.append(
                 {
@@ -141,6 +151,12 @@ class EvidencePackageBuilder:
             "sealed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "artifacts": artifacts,
         }
+        if required != REQUIRED_ARTIFACTS:
+            manifest["required_artifacts"] = sorted(required)
+        for key, value in dict(manifest_metadata or {}).items():
+            if key in manifest or not key.strip():
+                raise EvidencePackageError("manifest metadata key is invalid")
+            manifest[key] = value
         content = (
             json.dumps(
                 manifest,
@@ -182,7 +198,22 @@ def verify_evidence_package(root: str | Path) -> dict[str, object]:
             raise EvidencePackageError(f"artifact length mismatch: {name}")
         if _sha256(path) != entry.get("sha256"):
             raise EvidencePackageError(f"artifact hash mismatch: {name}")
-    if seen != REQUIRED_ARTIFACTS:
+    declared = manifest.get("required_artifacts")
+    if declared is None:
+        required = REQUIRED_ARTIFACTS
+    elif (
+        not isinstance(declared, list)
+        or not declared
+        or any(not isinstance(name, str) for name in declared)
+        or len(declared) != len(set(declared))
+    ):
+        raise EvidencePackageError("required artifact declaration is invalid")
+    else:
+        try:
+            required = frozenset(_validate_artifact_path(name) for name in declared)
+        except EvidencePackageError:
+            raise
+    if seen != required:
         raise EvidencePackageError("artifact manifest does not cover required artifacts")
     return manifest
 

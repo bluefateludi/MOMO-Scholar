@@ -59,6 +59,7 @@ class ValidationSource:
     metric_versions: tuple[str, ...]
     git_sha: str
     data_kind: str
+    evaluation_method: str
     report: str
     resume_evidence: str
 
@@ -189,8 +190,17 @@ def _validate_failures(track: str, root: Path) -> None:
 
 def _default_recomputers() -> dict[str, Recomputer]:
     # Lazy imports keep this module provider-independent. Both functions are offline.
-    from paper_agent.eval.citation_baseline.cli import _recompute as recompute_citation
+    from paper_agent.eval.citation_baseline.automated_judge import (
+        recompute_automated_citation_package,
+    )
+    from paper_agent.eval.citation_baseline.cli import _recompute as recompute_human_citation
     from paper_agent.eval.retrieval_benchmark.cli import _recompute as recompute_retrieval
+
+    def recompute_citation(package: Path, output: Path) -> list[str]:
+        manifest = verify_evidence_package(package)
+        if manifest.get("evaluation_method") == "llm_as_judge_single_pass":
+            return recompute_automated_citation_package(package, output)
+        return recompute_human_citation(package, output)
 
     return {"retrieval": recompute_retrieval, "citation": recompute_citation}
 
@@ -244,6 +254,28 @@ def _load_source(
         raise ValidationPackageError(f"{track} source package verification failed") from error
     if manifest.get("package_kind") != expected_kind:
         raise ValidationPackageError(f"{track} source package kind is invalid")
+    evaluation_method = (
+        "deterministic_retrieval"
+        if track == "retrieval"
+        else manifest.get("evaluation_method", "human_review")
+    )
+    if track == "citation" and evaluation_method not in {
+        "human_review",
+        "llm_as_judge_single_pass",
+    }:
+        raise ValidationPackageError("citation evaluation method is invalid")
+    if track == "citation" and evaluation_method == "llm_as_judge_single_pass":
+        from paper_agent.eval.citation_baseline.automated_judge import (
+            AutomatedJudgeError,
+            verify_automated_citation_package,
+        )
+
+        try:
+            verify_automated_citation_package(root)
+        except (AutomatedJudgeError, EvidencePackageError, OSError, ValueError) as error:
+            raise ValidationPackageError(
+                "citation automated authority verification failed"
+            ) from error
 
     dataset = _load_json(root / "dataset-manifest.json")
     corpus = _load_json(root / "corpus-manifest.json")
@@ -286,6 +318,7 @@ def _load_source(
         metric_versions=_metric_versions(track, config),
         git_sha=_required_text(environment.get("git_sha"), f"{track} Git SHA"),
         data_kind=_required_text(dataset.get("data_kind"), f"{track} data kind"),
+        evaluation_method=str(evaluation_method),
         report=report,
         resume_evidence=resume,
     )
@@ -359,6 +392,7 @@ def _source_record(source: ValidationSource) -> dict[str, object]:
         "corpus_sha256": source.corpus_sha256,
         "resolved_config_sha256": source.config_sha256,
         "metric_versions": list(source.metric_versions),
+        "evaluation_method": source.evaluation_method,
     }
 
 
@@ -384,12 +418,12 @@ def _render_report(preflight: ValidationPreflight) -> str:
         "",
         "## Source packages",
         "",
-        "| Track | Cases | Manifest SHA-256 | Corpus SHA-256 | Config SHA-256 |",
-        "|---|---:|---|---|---|",
+        "| Track | Method | Cases | Manifest SHA-256 | Corpus SHA-256 | Config SHA-256 |",
+        "|---|---|---:|---|---|---|",
     ]
     for source in (retrieval, citation):
         lines.append(
-            f"| {source.track} | {len(source.case_ids)} | `{source.manifest_sha256}` | "
+            f"| {source.track} | `{source.evaluation_method}` | {len(source.case_ids)} | `{source.manifest_sha256}` | "
             f"`{source.corpus_sha256}` | `{source.config_sha256}` |"
         )
     if preflight.blockers:
@@ -400,6 +434,8 @@ def _render_report(preflight: ValidationPreflight) -> str:
             [
                 "",
                 f"## {source.track.title()} track (verified source projection)",
+                "",
+                f"Evaluation method: `{source.evaluation_method}`",
                 "",
                 f"Source manifest: `{source.manifest_sha256}`",
                 "",
@@ -435,6 +471,8 @@ def _render_resume(preflight: ValidationPreflight) -> str:
                 f"{source.track} source has no verified resume-ready claims"
             )
         lines.append(f"## {source.track.title()} track")
+        lines.append("")
+        lines.append(f"Evaluation method: `{source.evaluation_method}`.")
         lines.append("")
         for claim in claims:
             text = claim[1:].strip() if claim.startswith("-") else claim
@@ -573,11 +611,22 @@ def verify_validation_package(root: str | Path) -> dict[str, object]:
             "retrieval": "retrieval_benchmark",
             "citation": "citation_baseline",
         }[track]
+        expected_evaluation_method = (
+            "deterministic_retrieval"
+            if track == "retrieval"
+            else source.get("evaluation_method")
+        )
         if (
             not isinstance(source_path, str)
             or not isinstance(source_hash, str)
             or not _SHA256.fullmatch(source_hash)
             or source.get("package_kind") != expected_source_kind
+            or expected_evaluation_method
+            not in (
+                {"deterministic_retrieval"}
+                if track == "retrieval"
+                else {"human_review", "llm_as_judge_single_pass"}
+            )
             or not isinstance(ids, list)
             or len(ids) != expected_count
             or any(not isinstance(item, str) or not item.strip() for item in ids)
@@ -596,6 +645,27 @@ def verify_validation_package(root: str | Path) -> dict[str, object]:
             ) from error
         if source_package_manifest.get("package_kind") != expected_source_kind:
             raise ValidationPackageError(f"validation {track} source package kind is invalid")
+        actual_evaluation_method = (
+            "deterministic_retrieval"
+            if track == "retrieval"
+            else source_package_manifest.get("evaluation_method", "human_review")
+        )
+        if actual_evaluation_method != expected_evaluation_method:
+            raise ValidationPackageError(
+                f"validation {track} evaluation method mismatch"
+            )
+        if track == "citation" and actual_evaluation_method == "llm_as_judge_single_pass":
+            from paper_agent.eval.citation_baseline.automated_judge import (
+                AutomatedJudgeError,
+                verify_automated_citation_package,
+            )
+
+            try:
+                verify_automated_citation_package(source_root)
+            except (AutomatedJudgeError, EvidencePackageError, OSError, ValueError) as error:
+                raise ValidationPackageError(
+                    "validation citation automated authority verification failed"
+                ) from error
 
         dataset = _load_json(source_root / "dataset-manifest.json")
         corpus = _load_json(source_root / "corpus-manifest.json")

@@ -5,13 +5,22 @@ import random
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from .contracts import (
     AtomicAssertion,
     CitationOccurrence,
     EvidenceMatch,
-    SupportJudgment,
 )
+
+
+class SemanticJudgment(Protocol):
+    @property
+    def judgment_id(self) -> str: ...
+
+    case_id: str
+    assertion_id: str
+    semantic_verdict: str
 
 
 BOOTSTRAP_SEED = 20_260_726
@@ -29,7 +38,7 @@ class CitationCaseInput:
     assertions: tuple[AtomicAssertion, ...] = ()
     citation_occurrences: tuple[CitationOccurrence, ...] = ()
     evidence_matches: tuple[EvidenceMatch, ...] = ()
-    judgments: tuple[SupportJudgment, ...] = ()
+    judgments: tuple[SemanticJudgment, ...] = ()
     unscorable_assertion_ids: tuple[str, ...] = ()
     duration_ms: float | None = None
     failure_reason_code: str | None = None
@@ -131,9 +140,8 @@ def _score_case(case: CitationCaseInput) -> dict[str, object]:
     ):
         raise ValueError("judgment case or assertion reference is invalid")
 
-    judgment_by_assertion: dict[str, SupportJudgment] = {}
+    judgment_by_assertion: dict[str, SemanticJudgment] = {}
     for judgment in judgments.values():
-        assert isinstance(judgment, SupportJudgment)
         if judgment.assertion_id in judgment_by_assertion:
             raise ValueError("assertions must have at most one final judgment")
         judgment_by_assertion[judgment.assertion_id] = judgment

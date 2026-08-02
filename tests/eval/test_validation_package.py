@@ -349,3 +349,50 @@ def test_combined_verifier_revalidates_citation_source_seal(tmp_path: Path) -> N
         ValidationPackageError, match="citation source package verification failed"
     ):
         verify_validation_package(package)
+
+
+def test_task9_preserves_verified_llm_as_judge_single_pass_method(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from paper_agent.eval.citation_baseline import automated_judge
+
+    retrieval = _source_package(
+        tmp_path / "sources",
+        track="retrieval",
+        case_ids=[f"r-{index}" for index in range(40)],
+    )
+    citation = _source_package(
+        tmp_path / "sources",
+        track="citation",
+        case_ids=[f"c-{index}" for index in range(20)],
+    )
+    citation_manifest = citation / "artifact-manifest.json"
+    manifest = json.loads(citation_manifest.read_text())
+    manifest["evaluation_method"] = "llm_as_judge_single_pass"
+    citation_manifest.write_text(_json(manifest), encoding="utf-8")
+    monkeypatch.setattr(
+        automated_judge,
+        "verify_automated_citation_package",
+        lambda _root: manifest,
+    )
+
+    preflight = preflight_validation_sources(
+        retrieval,
+        citation,
+        recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+    )
+
+    assert preflight.sources["citation"].evaluation_method == "llm_as_judge_single_pass"
+    package = assemble_validation_package(
+        retrieval,
+        citation,
+        tmp_path / "validation",
+        recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+        fixture_dry_run=True,
+    )
+    combined = verify_validation_package(package)
+    assert combined["sources"]["citation"]["evaluation_method"] == "llm_as_judge_single_pass"
+    assert "Evaluation method: `llm_as_judge_single_pass`" in (
+        package / "report.md"
+    ).read_text()

@@ -17,6 +17,12 @@ Assembly requires both of these exact inputs once the real runs exist:
    The handoff must include the absolute package path and the full SHA-256 of
    its `artifact-manifest.json`.
 
+The Citation source may use the preserved `human_review` method or the separate
+`llm_as_judge_single_pass` method. An automated source must explicitly declare
+`evaluation_method=llm_as_judge_single_pass`, pass its automated authority verifier, and
+retain that method in the combined manifest, report, and resume evidence. Task 9
+never relabels an automated source as human-reviewed.
+
 The source packages must pass their ordinary seal/hash verifier and a new
 offline recomputation. The recomputed `case-metrics.jsonl`, `aggregate.json`,
 and `confidence-intervals.json` must be byte-identical to the sealed canonical
@@ -35,6 +41,8 @@ The assembler requires:
 - a track dataset fingerprint, corpus hash, resolved-config hash, chunk-hash
   authority, non-empty metric versions, and exact model versions;
 - failures represented by sanitized stable `reason_code` values;
+- an explicit Citation evaluation method preserved through recomputation and
+  assembly;
 - `data_kind=real` for both inputs before a publishable package can be created.
 
 Corpus, config, metric, interval, latency, and failure authorities stay
@@ -42,6 +50,12 @@ track-specific. The final report never averages retrieval and citation metrics
 into a composite score. Each track report is copied only after offline
 recomputation proves that it matches its sealed source. Each combined resume
 claim records the source package manifest hash prefix.
+
+For `llm_as_judge_single_pass`, recomputation also requires a judge snapshot distinct from
+the generation snapshot, complete single-pass provenance, frozen
+rubric/prompt/Gold/output hashes, zero unresolved automated failures, and
+prominent same-model repeatability and Gold Evidence limitations. Automated
+prose that implies human review is an integrity failure.
 
 ## Outputs and commands
 

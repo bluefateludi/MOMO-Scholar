@@ -29,6 +29,17 @@ from .live_generation import (
     preflight_live_generation,
     run_live_generation,
 )
+from .automated_judge import (
+    AutomatedJudgeAuthority,
+    AutomatedJudgeError,
+    AutomatedJudgeInput,
+    DashScopeAutomatedJudgeProvider,
+    inspect_frozen_generation,
+    recompute_automated_citation_package,
+    run_automated_judge,
+    seal_automated_citation_package,
+    verify_automated_citation_package,
+)
 from .generation_authority import (
     GenerationAuthorityError,
     seal_generation_authority,
@@ -784,6 +795,165 @@ def score(
         typer.echo(f"Sealed citation package with case failures: {output}", err=True)
         raise typer.Exit(code=_EXIT_REVIEW)
     typer.echo(f"Sealed citation package: {output}")
+
+
+def _automated_authority(path: Path) -> AutomatedJudgeAuthority:
+    value = _load_json(path)
+    if not isinstance(value, dict):
+        raise ValueError("automated judge authority must be an object")
+    return AutomatedJudgeAuthority.model_validate(value)
+
+
+def _automated_inputs(path: Path) -> tuple[AutomatedJudgeInput, ...]:
+    return tuple(
+        AutomatedJudgeInput.model_validate(value) for value in _load_jsonl(path)
+    )
+
+
+def _preflight_automated(
+    generation: Path,
+    authority: AutomatedJudgeAuthority,
+    inputs: tuple[AutomatedJudgeInput, ...],
+) -> dict[str, object]:
+    frozen = inspect_frozen_generation(generation)
+    if (
+        authority.generation_model_version != frozen["generation_model_version"]
+        or authority.generation_output_sha256
+        != frozen["generation_output_sha256"]
+        or authority.gold_evidence_sha256 != frozen["gold_evidence_sha256"]
+    ):
+        raise AutomatedJudgeError("judge authority does not match frozen generation")
+    if not inputs or any(
+        item.output_sha256 != authority.generation_output_sha256
+        or item.gold_evidence_sha256 != authority.gold_evidence_sha256
+        for item in inputs
+    ):
+        raise AutomatedJudgeError("judge inputs do not match frozen authorities")
+    unresolved = sum(not item.deterministic_support_match_ids for item in inputs)
+    minimum_passes = unresolved
+    maximum_passes = unresolved
+    maximum_sends_with_retries = maximum_passes * (
+        authority.max_retries_per_pass + 1
+    )
+    if authority.max_total_sends < minimum_passes:
+        raise AutomatedJudgeError("judge send budget cannot fund single-pass protocol")
+    return {
+        **frozen,
+        "assertion_count": len(inputs),
+        "deterministic_decision_count": len(inputs) - unresolved,
+        "minimum_judge_passes": minimum_passes,
+        "maximum_judge_passes": maximum_passes,
+        "maximum_provider_sends_with_retries": maximum_sends_with_retries,
+        "authorized_send_cap": authority.max_total_sends,
+        "authorized_cost_cap": authority.max_total_cost,
+        "pricing_currency": authority.pricing_currency,
+    }
+
+
+@app.command("preflight-automated-judge")
+def preflight_automated_judge_command(
+    generation: Path = typer.Option(..., exists=True, file_okay=False),
+    authority: Path = typer.Option(..., exists=True, dir_okay=False),
+    inputs: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Validate frozen generation, judge provenance, and budgets without sending."""
+    try:
+        summary = _preflight_automated(
+            generation,
+            _automated_authority(authority),
+            _automated_inputs(inputs),
+        )
+    except (OSError, ValidationError, AutomatedJudgeError, ValueError):
+        typer.echo("Automated judge preflight failed: frozen authority mismatch", err=True)
+        raise typer.Exit(code=_EXIT_INPUT) from None
+    typer.echo(_canonical_json({"status": "PASS", "provider_calls": 0, **summary}).strip())
+
+
+@app.command("run-automated-judge")
+def run_automated_judge_command(
+    generation: Path = typer.Option(..., exists=True, file_okay=False),
+    authority: Path = typer.Option(..., exists=True, dir_okay=False),
+    inputs: Path = typer.Option(..., exists=True, dir_okay=False),
+    output: Path = typer.Option(...),
+    acknowledge_provider_costs: bool = typer.Option(False, "--acknowledge-provider-costs"),
+) -> None:
+    """Run/resume paid automated judging only after explicit bounded approval."""
+    if not acknowledge_provider_costs:
+        typer.echo("run-automated-judge requires --acknowledge-provider-costs", err=True)
+        raise typer.Exit(code=_EXIT_INPUT)
+    try:
+        frozen_authority = _automated_authority(authority)
+        frozen_inputs = _automated_inputs(inputs)
+        _preflight_automated(generation, frozen_authority, frozen_inputs)
+        settings = load_settings()
+        if settings.dashscope_generation_model != frozen_authority.judge_model_version:
+            raise ValueError("configured judge model does not match authority")
+        api_key = settings.dashscope_api_key
+        if not api_key or not api_key.strip():
+            raise ValueError("judge credential is unavailable")
+        if settings.dashscope_generation_base_url != frozen_authority.judge_base_url:
+            raise ValueError("configured judge endpoint does not match authority")
+        with httpx.Client() as client:
+            provider = DashScopeAutomatedJudgeProvider(
+                api_key=api_key,
+                base_url=frozen_authority.judge_base_url,
+                authority=frozen_authority,
+                transport=DashScopeChatTransport(client),
+            )
+            decisions = run_automated_judge(
+                output=output,
+                authority=frozen_authority,
+                inputs=frozen_inputs,
+                provider=provider,
+            )
+    except (OSError, ValidationError, AutomatedJudgeError, ValueError):
+        typer.echo("Automated judge run failed: authority, budget, or provider gate", err=True)
+        raise typer.Exit(code=_EXIT_REVIEW) from None
+    typer.echo(f"Completed {len(decisions)} automated assertion decisions: {output}")
+
+
+@app.command("score-automated")
+def score_automated_command(
+    prepared: Path = typer.Option(..., exists=True, file_okay=False),
+    output: Path = typer.Option(...),
+) -> None:
+    """Score and seal complete LLM-as-Judge authorities offline."""
+    try:
+        seal_automated_citation_package(prepared, output)
+    except (OSError, ValidationError, AutomatedJudgeError, EvidencePackageError, ValueError):
+        typer.echo("Automated scoring failed: incomplete or corrupt authority", err=True)
+        raise typer.Exit(code=_EXIT_INTEGRITY) from None
+    typer.echo(f"Sealed LLM-as-Judge citation package: {output}")
+
+
+@app.command("recompute-automated")
+def recompute_automated_command(
+    package: Path = typer.Option(..., exists=True, file_okay=False),
+    output: Path = typer.Option(...),
+) -> None:
+    """Recompute LLM-as-Judge projections from sealed authorities offline."""
+    try:
+        mismatches = recompute_automated_citation_package(package, output)
+    except (OSError, ValidationError, AutomatedJudgeError, EvidencePackageError, ValueError):
+        typer.echo("Automated recompute failed: corrupt authority", err=True)
+        raise typer.Exit(code=_EXIT_INTEGRITY) from None
+    if mismatches:
+        typer.echo(f"Automated projection mismatch: {', '.join(mismatches)}", err=True)
+        raise typer.Exit(code=_EXIT_INTEGRITY)
+    typer.echo(f"Recomputed LLM-as-Judge projections: {output}")
+
+
+@app.command("verify-automated")
+def verify_automated_command(
+    package: Path = typer.Argument(..., exists=True, file_okay=False),
+) -> None:
+    """Verify seal, method, provenance, and projections offline."""
+    try:
+        verify_automated_citation_package(package)
+    except (OSError, ValidationError, AutomatedJudgeError, EvidencePackageError, ValueError):
+        typer.echo("Automated verification failed: integrity or method mismatch", err=True)
+        raise typer.Exit(code=_EXIT_INTEGRITY) from None
+    typer.echo(f"Verified LLM-as-Judge citation package: {package}")
 
 
 def _live_generation_config(

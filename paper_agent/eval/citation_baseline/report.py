@@ -25,8 +25,19 @@ def _publishable(metadata: dict[str, object]) -> tuple[bool, list[str]]:
         failures.append("evidence package is not sealed")
     if metadata.get("recomputed") is not True:
         failures.append("offline recomputation is incomplete")
-    if metadata.get("calibration_complete") is not True:
-        failures.append("human review calibration is incomplete")
+    method = metadata.get("evaluation_method", "human_review")
+    if method == "human_review":
+        if metadata.get("calibration_complete") is not True:
+            failures.append("human review calibration is incomplete")
+    elif method == "llm_as_judge_single_pass":
+        if metadata.get("automated_judge_complete") is not True:
+            failures.append("automated judge authority is incomplete")
+        if metadata.get("judge_model_version") == metadata.get(
+            "generation_model_version"
+        ):
+            failures.append("judge and generation models are not distinct")
+    else:
+        failures.append("evaluation method is invalid")
     return not failures, failures
 
 
@@ -54,12 +65,18 @@ def render_citation_reports(
     denominators = cast(dict[str, int], statistics["denominators"])
     operations = cast(dict[str, object], statistics["operations"])
 
+    method = str(metadata.get("evaluation_method", "human_review"))
+    method_label = (
+        "Gold-grounded single-pass LLM-as-Judge"
+        if method == "llm_as_judge_single_pass"
+        else "Human review"
+    )
     lines: list[str] = [
         "# Citation Quality Baseline Report",
         "",
+        f"Evaluation method: {method_label} (`{method}`)",
         f"Cases: {metadata['case_count']} ({metadata['data_kind']})",
-        f"Rubric: {metadata['rubric_version']} "
-        f"(calibration: {metadata['calibration_set_version']})",
+        f"Rubric: {metadata['rubric_version']}",
         f"Generation model: {metadata['generation_model_version']}",
         f"Git: `{metadata['git_sha']}` "
         f"(dirty={str(metadata['git_dirty']).lower()})",
@@ -95,15 +112,39 @@ def render_citation_reports(
         "Ambiguous and unscorable assertions are reported separately "
         "and never coerced to supported or unsupported.",
         "",
-        "## Calibration",
-        "",
-        "| Statistic | Value |",
-        "|---|---:|",
-        f"| Raw agreement | {_number(metadata['calibration_raw_agreement'], digits=6)} |",
-        f"| Cohen's kappa | {_number(metadata['calibration_cohens_kappa'], digits=6)} |",
-        f"| Disagreements | {metadata['calibration_disagreement_count']} |",
-        f"| Unresolved | {metadata['calibration_unresolved_count']} |",
-        "",
+    ]
+    if method == "llm_as_judge_single_pass":
+        lines.extend(
+            [
+                "## Automated judge protocol",
+                "",
+                f"Judge model: {metadata['judge_model_version']}",
+                "Two blinded independent passes per unresolved assertion; a third pass "
+                "is used only when the first two disagree.",
+                f"Judge passes: {metadata['judge_pass_count']} (one semantic pass per "
+                "non-deterministic assertion).",
+                "Limitation: no human review, independent second judge, or adjudication.",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"Calibration set: {metadata['calibration_set_version']}",
+                "",
+                "## Calibration",
+                "",
+                "| Statistic | Value |",
+                "|---|---:|",
+                f"| Raw agreement | {_number(metadata['calibration_raw_agreement'], digits=6)} |",
+                f"| Cohen's kappa | {_number(metadata['calibration_cohens_kappa'], digits=6)} |",
+                f"| Disagreements | {metadata['calibration_disagreement_count']} |",
+                f"| Unresolved | {metadata['calibration_unresolved_count']} |",
+                "",
+            ]
+        )
+    lines.extend(
+        [
         "## Operations",
         "",
         "| Attempted | Completed | Failed | Failure rate | p50 ms | p95 ms |",
@@ -115,7 +156,8 @@ def render_citation_reports(
         "",
         "## Limitations",
         "",
-    ]
+        ]
+    )
     limitations = cast(list[str], metadata.get("limitations", []))
     lines.extend(f"- {item}" for item in limitations)
     lines.extend(
@@ -148,7 +190,7 @@ def render_citation_reports(
         cases = entry.get("case_denominator")
         denom = denominators[denom_key]
         resume.append(
-            f"- On {case_count} real cases, {label} was {macro}, "
+            f"- Using {method_label} on {case_count} real cases, {label} was {macro}, "
             f"95% CI [{low}, {high}], n={cases} cases, "
             f"{denom} {denom_key}; manifest `{manifest}`."
         )
