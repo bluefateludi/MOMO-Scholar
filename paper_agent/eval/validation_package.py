@@ -365,10 +365,15 @@ def _source_record(source: ValidationSource) -> dict[str, object]:
 def _render_report(preflight: ValidationPreflight) -> str:
     retrieval = preflight.sources["retrieval"]
     citation = preflight.sources["citation"]
+    title = (
+        "# MOMO Scholar 60-Case Validation Report"
+        if preflight.publishable
+        else "# DRY RUN / NON-PUBLISHABLE — MOMO Scholar 60-Case Validation Report"
+    )
     lines = [
-        "# MOMO Scholar 60-Case Validation Report",
+        title,
         "",
-        f"Package status: {'publishable' if preflight.publishable else 'fixture dry-run only'}",
+        f"Package status: {'PUBLISHABLE' if preflight.publishable else 'DRY RUN / NON-PUBLISHABLE'}",
         "Cases: 60 total (40 retrieval + 20 citation; no overlap)",
         f"Dataset: {retrieval.dataset_id} {retrieval.dataset_version} / {retrieval.selected_split}",
         f"Git: `{retrieval.git_sha}` (clean in both sources)",
@@ -406,8 +411,14 @@ def _render_report(preflight: ValidationPreflight) -> str:
 
 
 def _render_resume(preflight: ValidationPreflight) -> str:
-    lines = ["# Resume Evidence", ""]
+    title = (
+        "# Resume Evidence"
+        if preflight.publishable
+        else "# DRY RUN / NON-PUBLISHABLE — Resume Evidence"
+    )
+    lines = [title, ""]
     if not preflight.publishable:
+        lines.append("DRY RUN / NON-PUBLISHABLE. Synthetic fixture data only.")
         lines.append("No resume-ready numeric claims.")
         lines.extend(f"- {blocker}" for blocker in preflight.blockers)
         lines.append("")
@@ -461,6 +472,12 @@ def assemble_validation_package(
         )
     if preflight.publishable and fixture_dry_run:
         raise ValidationPackageError("fixture dry-run requires non-publishable inputs")
+    if fixture_dry_run and any(
+        source.data_kind != "synthetic" for source in preflight.sources.values()
+    ):
+        raise ValidationPackageError(
+            "fixture dry-run requires both source packages to be synthetic"
+        )
 
     root = Path(output)
     if root.exists():
@@ -487,6 +504,11 @@ def assemble_validation_package(
         ),
         "sealed": True,
         "publishable": preflight.publishable,
+        "status": (
+            "PUBLISHABLE"
+            if preflight.publishable
+            else "DRY RUN / NON-PUBLISHABLE"
+        ),
         "sealed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "case_count": 60,
         "track_case_counts": dict(preflight.track_case_counts),
@@ -530,10 +552,16 @@ def verify_validation_package(root: str | Path) -> dict[str, object]:
     )
     if not isinstance(publishable, bool) or manifest.get("package_kind") != expected_kind:
         raise ValidationPackageError("validation publication status is inconsistent")
+    expected_status = (
+        "PUBLISHABLE" if publishable else "DRY RUN / NON-PUBLISHABLE"
+    )
+    if manifest.get("status") != expected_status:
+        raise ValidationPackageError("validation publication status is inconsistent")
     sources = manifest.get("sources")
     if not isinstance(sources, dict) or set(sources) != {"retrieval", "citation"}:
         raise ValidationPackageError("validation source references are invalid")
     case_ids: dict[str, list[str]] = {}
+    source_metadata: dict[str, dict[str, object]] = {}
     for track, expected_count in (("retrieval", 40), ("citation", 20)):
         source = sources[track]
         if not isinstance(source, dict):
@@ -541,22 +569,112 @@ def verify_validation_package(root: str | Path) -> dict[str, object]:
         source_path = source.get("path")
         source_hash = source.get("artifact_manifest_sha256")
         ids = source.get("ordered_case_ids")
+        expected_source_kind = {
+            "retrieval": "retrieval_benchmark",
+            "citation": "citation_baseline",
+        }[track]
         if (
             not isinstance(source_path, str)
             or not isinstance(source_hash, str)
             or not _SHA256.fullmatch(source_hash)
+            or source.get("package_kind") != expected_source_kind
             or not isinstance(ids, list)
             or len(ids) != expected_count
             or any(not isinstance(item, str) or not item.strip() for item in ids)
             or len(ids) != len(set(ids))
         ):
             raise ValidationPackageError("validation source references are invalid")
-        source_manifest = Path(source_path) / _MANIFEST
+        source_root = Path(source_path)
+        source_manifest = source_root / _MANIFEST
         if not source_manifest.is_file() or _sha256(source_manifest) != source_hash:
             raise ValidationPackageError(f"validation {track} source hash mismatch")
+        try:
+            source_package_manifest = verify_evidence_package(source_root)
+        except EvidencePackageError as error:
+            raise ValidationPackageError(
+                f"validation {track} source package verification failed"
+            ) from error
+        if source_package_manifest.get("package_kind") != expected_source_kind:
+            raise ValidationPackageError(f"validation {track} source package kind is invalid")
+
+        dataset = _load_json(source_root / "dataset-manifest.json")
+        corpus = _load_json(source_root / "corpus-manifest.json")
+        config = _load_json(source_root / "resolved-config.json")
+        environment = _load_json(source_root / "environment.json")
+        _validate_chunk_authority(track, config, corpus)
+        _validate_failures(track, source_root)
+        actual_ids = list(_case_ids(track, config))
+        actual_fingerprint = _required_sha256(
+            dataset.get("dataset_fingerprint_sha256"),
+            f"validation {track} dataset fingerprint",
+        )
+        actual_corpus = _required_sha256(
+            corpus.get("corpus_sha256"), f"validation {track} corpus hash"
+        )
+        actual_metrics = list(_metric_versions(track, config))
+        if (
+            ids != actual_ids
+            or source.get("dataset_fingerprint_sha256") != actual_fingerprint
+            or source.get("corpus_sha256") != actual_corpus
+            or source.get("resolved_config_sha256")
+            != _sha256(source_root / "resolved-config.json")
+            or source.get("metric_versions") != actual_metrics
+        ):
+            raise ValidationPackageError(
+                f"validation {track} source metadata mismatch"
+            )
+        data_kind = _required_text(
+            dataset.get("data_kind"), f"validation {track} data kind"
+        )
+        expected_data_kind = "real" if publishable else "synthetic"
+        if data_kind != expected_data_kind:
+            raise ValidationPackageError(
+                f"validation {track} source is not {expected_data_kind}"
+            )
+        git_sha = _required_text(
+            environment.get("git_sha"), f"validation {track} Git SHA"
+        )
+        models = environment.get("models")
+        if (
+            not _GIT_SHA.fullmatch(git_sha)
+            or environment.get("git_dirty") is not False
+            or not isinstance(models, dict)
+            or not models
+            or any(
+                not isinstance(value, str) or not value.strip()
+                for value in models.values()
+            )
+        ):
+            raise ValidationPackageError(
+                f"validation {track} source Git state is invalid"
+            )
         case_ids[track] = ids
+        source_metadata[track] = {
+            "dataset_id": _required_text(
+                dataset.get("dataset_id"), f"validation {track} dataset ID"
+            ),
+            "dataset_version": _required_text(
+                dataset.get("dataset_version"),
+                f"validation {track} dataset version",
+            ),
+            "selected_split": _required_text(
+                dataset.get("selected_split"),
+                f"validation {track} selected split",
+            ),
+            "git_sha": git_sha,
+        }
     if set(case_ids["retrieval"]) & set(case_ids["citation"]):
         raise ValidationPackageError("validation source case IDs overlap")
+    if source_metadata["retrieval"] != source_metadata["citation"]:
+        raise ValidationPackageError("validation source compatibility metadata mismatch")
+    if source_metadata["retrieval"]["selected_split"] != "validation":
+        raise ValidationPackageError("validation source selected split must be validation")
+    if manifest.get("dataset") != {
+        "dataset_id": source_metadata["retrieval"]["dataset_id"],
+        "dataset_version": source_metadata["retrieval"]["dataset_version"],
+        "selected_split": source_metadata["retrieval"]["selected_split"],
+    } or manifest.get("git_sha") != source_metadata["retrieval"]["git_sha"]:
+        raise ValidationPackageError("validation package compatibility metadata mismatch")
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list) or len(artifacts) != len(_OUTPUT_ARTIFACTS):
         raise ValidationPackageError("validation artifact entries are invalid")
@@ -577,6 +695,16 @@ def verify_validation_package(root: str | Path) -> dict[str, object]:
             raise ValidationPackageError(f"validation artifact hash mismatch: {name}")
     if seen != set(_OUTPUT_ARTIFACTS):
         raise ValidationPackageError("validation artifact coverage is incomplete")
+    if publishable is False:
+        report = (package / "report.md").read_text(encoding="utf-8")
+        resume = (package / "resume-evidence.md").read_text(encoding="utf-8")
+        if "DRY RUN / NON-PUBLISHABLE" not in report or (
+            "DRY RUN / NON-PUBLISHABLE" not in resume
+            or "No resume-ready numeric claims." not in resume
+        ):
+            raise ValidationPackageError(
+                "validation dry-run projections are not safely labeled"
+            )
     return manifest
 
 
@@ -624,7 +752,8 @@ def assemble(
     except ValidationPackageError as error:
         typer.echo(f"Validation assembly failed: {error}", err=True)
         raise typer.Exit(code=3) from None
-    typer.echo(f"Assembled validation package: {package}")
+    label = "DRY RUN / NON-PUBLISHABLE " if fixture_dry_run else ""
+    typer.echo(f"Assembled {label}validation package: {package}")
 
 
 @app.command()
@@ -633,11 +762,16 @@ def verify(
 ) -> None:
     """Verify the combined manifest, report, and resume projection hashes."""
     try:
-        verify_validation_package(package)
+        manifest = verify_validation_package(package)
     except ValidationPackageError as error:
         typer.echo(f"Validation verification failed: {error}", err=True)
         raise typer.Exit(code=3) from None
-    typer.echo(f"Verified validation package: {package}")
+    label = (
+        "DRY RUN / NON-PUBLISHABLE "
+        if manifest["publishable"] is False
+        else ""
+    )
+    typer.echo(f"Verified {label}validation package: {package}")
 
 
 __all__ = [

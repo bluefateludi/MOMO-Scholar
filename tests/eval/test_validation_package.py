@@ -213,7 +213,12 @@ def test_assembly_refuses_synthetic_sources_and_verifier_detects_report_mutation
     )
     manifest = verify_validation_package(package)
     assert manifest["publishable"] is False
-    assert "No resume-ready numeric claims" in (package / "resume-evidence.md").read_text()
+    assert manifest["status"] == "DRY RUN / NON-PUBLISHABLE"
+    report = (package / "report.md").read_text()
+    resume = (package / "resume-evidence.md").read_text()
+    assert "DRY RUN / NON-PUBLISHABLE" in report
+    assert "DRY RUN / NON-PUBLISHABLE" in resume
+    assert "No resume-ready numeric claims" in resume
     assert "fixture report" not in (package / "resume-evidence.md").read_text()
 
     source_manifest = retrieval / "artifact-manifest.json"
@@ -226,4 +231,121 @@ def test_assembly_refuses_synthetic_sources_and_verifier_detects_report_mutation
     with (package / "report.md").open("a", encoding="utf-8") as handle:
         handle.write("mutated\n")
     with pytest.raises(ValidationPackageError, match="(length|hash) mismatch"):
+        verify_validation_package(package)
+
+
+def test_fixture_dry_run_refuses_mixing_real_retrieval_with_synthetic_citation(
+    tmp_path: Path,
+) -> None:
+    retrieval = _source_package(
+        tmp_path,
+        track="retrieval",
+        case_ids=[f"r-{index}" for index in range(40)],
+        data_kind="real",
+    )
+    citation = _source_package(
+        tmp_path,
+        track="citation",
+        case_ids=[f"c-{index}" for index in range(20)],
+    )
+
+    with pytest.raises(
+        ValidationPackageError, match="both source packages to be synthetic"
+    ):
+        assemble_validation_package(
+            retrieval,
+            citation,
+            tmp_path / "mixed-validation",
+            recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+            fixture_dry_run=True,
+        )
+
+
+def test_preflight_rejects_missing_or_unverified_citation_source(tmp_path: Path) -> None:
+    retrieval = _source_package(
+        tmp_path,
+        track="retrieval",
+        case_ids=[f"r-{index}" for index in range(40)],
+    )
+    missing = tmp_path / "missing-citation"
+    with pytest.raises(
+        ValidationPackageError, match="citation source package verification failed"
+    ):
+        preflight_validation_sources(
+            retrieval,
+            missing,
+            recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+        )
+
+    citation = _source_package(
+        tmp_path,
+        track="citation",
+        case_ids=[f"c-{index}" for index in range(20)],
+    )
+    (citation / "judgments.jsonl").write_text("corrupt\n", encoding="utf-8")
+    with pytest.raises(
+        ValidationPackageError, match="citation source package verification failed"
+    ):
+        preflight_validation_sources(
+            retrieval,
+            citation,
+            recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+        )
+
+
+@pytest.mark.parametrize("track", ["retrieval", "citation"])
+def test_combined_verifier_rejects_each_source_hash_mismatch(
+    tmp_path: Path,
+    track: str,
+) -> None:
+    retrieval = _source_package(
+        tmp_path / "sources",
+        track="retrieval",
+        case_ids=[f"r-{index}" for index in range(40)],
+    )
+    citation = _source_package(
+        tmp_path / "sources",
+        track="citation",
+        case_ids=[f"c-{index}" for index in range(20)],
+    )
+    package = assemble_validation_package(
+        retrieval,
+        citation,
+        tmp_path / "fixture-dry-run",
+        recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+        fixture_dry_run=True,
+    )
+
+    source_manifest = (
+        retrieval if track == "retrieval" else citation
+    ) / "artifact-manifest.json"
+    source_manifest.write_bytes(source_manifest.read_bytes() + b" ")
+
+    with pytest.raises(ValidationPackageError, match=rf"{track} source hash mismatch"):
+        verify_validation_package(package)
+
+
+def test_combined_verifier_revalidates_citation_source_seal(tmp_path: Path) -> None:
+    retrieval = _source_package(
+        tmp_path / "sources",
+        track="retrieval",
+        case_ids=[f"r-{index}" for index in range(40)],
+    )
+    citation = _source_package(
+        tmp_path / "sources",
+        track="citation",
+        case_ids=[f"c-{index}" for index in range(20)],
+    )
+    package = assemble_validation_package(
+        retrieval,
+        citation,
+        tmp_path / "fixture-dry-run",
+        recomputers={"retrieval": _copy_recompute, "citation": _copy_recompute},
+        fixture_dry_run=True,
+    )
+    (citation / "judgments.jsonl").write_text("corrupt\n", encoding="utf-8")
+
+    with pytest.raises(
+        ValidationPackageError, match="citation source package verification failed"
+    ):
         verify_validation_package(package)
