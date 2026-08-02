@@ -51,3 +51,9 @@ No real records or generated manifests are committed. A clean clone therefore
 still contains only deterministic synthetic fixtures; local materialization
 must obtain and verify the registered public assets. Preparing inputs is not a
 live smoke or baseline run and does not authorize model calls or provider cost.
+
+The offline human-review workflow is documented in
+`docs/citation-human-review.md`. The empty
+`templates/citation-calibration-bundle.template.json` records the fields that
+must be frozen after generation and before calibration; it contains no reviewer,
+case, answer, judgment, or metric data.

@@ -290,6 +290,92 @@ def test_prepare_export_import_are_offline_and_registered(tmp_path, monkeypatch)
     assert len(judgments.read_text(encoding="utf-8").splitlines()) == 3
 
 
+def test_reviewer_template_and_resumable_import_are_offline(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from paper_agent.eval.citation_baseline.cli import app
+
+    _forbid_network(monkeypatch)
+    source, assignments = _source(tmp_path)
+    prepared = tmp_path / "prepared"
+    assert runner.invoke(
+        app, ["prepare", "--source", str(source), "--output", str(prepared)]
+    ).exit_code == 0
+
+    reviewer = assignments[0].reviewer_pseudonym
+    packet = tmp_path / "packet.jsonl"
+    assert runner.invoke(
+        app,
+        [
+            "export-review",
+            "--prepared",
+            str(prepared),
+            "--output",
+            str(packet),
+            "--reviewer-pseudonym",
+            reviewer,
+        ],
+    ).exit_code == 0
+    assert {
+        json.loads(line)["reviewer_pseudonym"]
+        for line in packet.read_text(encoding="utf-8").splitlines()
+    } == {reviewer}
+
+    template = tmp_path / "responses.template.jsonl"
+    assert runner.invoke(
+        app,
+        [
+            "export-review-template",
+            "--prepared",
+            str(prepared),
+            "--output",
+            str(template),
+            "--reviewer-pseudonym",
+            reviewer,
+        ],
+    ).exit_code == 0
+    template_rows = [
+        json.loads(line)
+        for line in template.read_text(encoding="utf-8").splitlines()
+    ]
+    assert all(row["semantic_verdict"] == "__REQUIRED__" for row in template_rows)
+
+    first_response = tmp_path / "first.jsonl"
+    _write_jsonl(first_response, (_review_response(assignments[0]),))
+    first_judgments = tmp_path / "first-judgments.jsonl"
+    assert runner.invoke(
+        app,
+        [
+            "import-review",
+            "--prepared",
+            str(prepared),
+            "--review",
+            str(first_response),
+            "--output",
+            str(first_judgments),
+        ],
+    ).exit_code == 0
+    second_response = tmp_path / "second.jsonl"
+    _write_jsonl(second_response, (_review_response(assignments[-1]),))
+    resumed = tmp_path / "resumed-judgments.jsonl"
+    assert runner.invoke(
+        app,
+        [
+            "import-review",
+            "--prepared",
+            str(prepared),
+            "--review",
+            str(second_response),
+            "--existing",
+            str(first_judgments),
+            "--output",
+            str(resumed),
+        ],
+    ).exit_code == 0
+    assert len(resumed.read_text(encoding="utf-8").splitlines()) == 2
+
+
 def test_import_rejects_hash_or_rubric_mismatch_with_review_exit_code(
     tmp_path,
 ) -> None:

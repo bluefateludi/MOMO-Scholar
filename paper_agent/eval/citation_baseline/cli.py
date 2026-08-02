@@ -42,10 +42,12 @@ from .review import (
     ReviewAssignment,
     ReviewIntegrityError,
     calibration_statistics,
+    export_response_template_jsonl,
     export_review_jsonl,
     freeze_rubric,
     import_review_jsonl,
     judgments_for_scoring,
+    merge_review_judgments,
     require_scoring_ready,
 )
 
@@ -673,12 +675,22 @@ def prepare(
 def export_review(
     prepared: Path = typer.Option(..., exists=True, file_okay=False),
     output: Path = typer.Option(...),
+    reviewer_pseudonym: str | None = typer.Option(None),
 ) -> None:
     """Export deterministic blinded review assignments offline."""
     try:
         if output.exists():
             raise ValueError("output exists")
-        content = export_review_jsonl(_load_assignments(prepared))
+        assignments = _load_assignments(prepared)
+        if reviewer_pseudonym is not None:
+            assignments = tuple(
+                item
+                for item in assignments
+                if item.reviewer_pseudonym == reviewer_pseudonym
+            )
+            if not assignments:
+                raise ValueError("unknown reviewer")
+        content = export_review_jsonl(assignments)
         _atomic_write(output, content)
     except (OSError, ValidationError, ReviewIntegrityError, ValueError):
         typer.echo("Review export failed: invalid frozen authorities", err=True)
@@ -686,11 +698,39 @@ def export_review(
     typer.echo(f"Exported review assignments: {output}")
 
 
+@app.command("export-review-template")
+def export_review_template(
+    prepared: Path = typer.Option(..., exists=True, file_okay=False),
+    output: Path = typer.Option(...),
+    reviewer_pseudonym: str = typer.Option(...),
+) -> None:
+    """Export an import-shaped response template for one pseudonymous reviewer."""
+    try:
+        if output.exists():
+            raise ValueError("output exists")
+        assignments = tuple(
+            item
+            for item in _load_assignments(prepared)
+            if item.reviewer_pseudonym == reviewer_pseudonym
+        )
+        if not assignments:
+            raise ValueError("unknown reviewer")
+        _atomic_write(output, export_response_template_jsonl(assignments))
+    except (OSError, ValidationError, ReviewIntegrityError, ValueError):
+        typer.echo(
+            "Response template export failed: invalid frozen authorities",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_INPUT) from None
+    typer.echo(f"Exported review response template: {output}")
+
+
 @app.command("import-review")
 def import_review(
     prepared: Path = typer.Option(..., exists=True, file_okay=False),
     review: Path = typer.Option(..., exists=True, dir_okay=False),
     output: Path = typer.Option(...),
+    existing: Path | None = typer.Option(None, exists=True, dir_okay=False),
 ) -> None:
     """Validate hash-bound review responses and emit judgments offline."""
     try:
@@ -701,7 +741,9 @@ def import_review(
         typer.echo("Review import failed: invalid prepared authorities", err=True)
         raise typer.Exit(code=_EXIT_INPUT) from None
     try:
-        judgments = import_review_jsonl(_read_text(review), assignments)
+        imported = import_review_jsonl(_read_text(review), assignments)
+        prior = _load_models(existing, SupportJudgment) if existing is not None else ()
+        judgments = merge_review_judgments(prior, imported, assignments)
         _atomic_write(output, _jsonl(judgments))
     except (ValidationError, ReviewIntegrityError, ValueError):
         typer.echo(

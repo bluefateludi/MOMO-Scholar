@@ -21,6 +21,7 @@ TRACKED_EVALUATION_FILES = {
     "evaluations/templates/gold-judgments.template.json",
     "evaluations/templates/license-provenance-registry.template.json",
     "evaluations/templates/resolved-config.template.json",
+    "evaluations/templates/citation-calibration-bundle.template.json",
 }
 
 
@@ -120,6 +121,24 @@ def test_data_templates_are_empty_and_reference_existing_contracts() -> None:
     assert config["budget"]["currency"] is None
     assert config["budget"]["maximum_amount"] is None
     assert config["provider_costs_acknowledged"] is False
+
+
+def test_citation_calibration_template_is_empty_and_requires_three_roles() -> None:
+    template = _load_template("citation-calibration-bundle.template.json")
+
+    assert template["contains_real_data"] is False
+    assert template["status"] == "awaiting_frozen_generation"
+    assert template["rubric_version"] == "citation-support-v1"
+    assert template["calibration_set_version"] == "citation-calibration-v1"
+    assert template["required_role_pseudonyms"] == {
+        "reviewers": [],
+        "adjudicator": None,
+    }
+    assert template["calibration_assertion_ids"] == []
+    assert template["calibration_answer_key"] == []
+    assert template["calibration_records"] == []
+    assert template["adjudications"] == []
+    assert set(template["frozen_authorities"].values()) == {None}
 
 
 def test_allowlisted_evaluation_files_do_not_contain_secret_material() -> None:
