@@ -221,6 +221,62 @@ def test_run_live_requires_ack_and_preflights_before_creating_output(
     assert not output.exists()
 
 
+def test_run_live_rejects_dirty_git_before_provider_access(
+    tmp_path, monkeypatch
+) -> None:
+    from paper_agent.eval.retrieval_benchmark import cli
+
+    prepared = tmp_path / "prepared"
+    cli._write_prepared(
+        dataset_path=Path("tests/fixtures/evaluation/minimal-dataset"),
+        split="validation",
+        output=prepared,
+        candidate_limit=30,
+        timeout_seconds=7.5,
+        rrf_k=60,
+        embedding_model="text-embedding-v4",
+        embedding_model_version="text-embedding-v4@test",
+    )
+
+    class ProviderMustNotStart:
+        def __init__(self, **_kwargs: object) -> None:
+            raise AssertionError("dirty Git must fail before provider access")
+
+    monkeypatch.setattr(cli, "BailianTextEmbedder", ProviderMustNotStart)
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: Settings(dashscope_api_key="test-key"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_git_environment",
+        lambda model: {
+            "git_sha": "e" * 40,
+            "git_dirty": True,
+            "python_version": "3.12",
+            "models": {"embedding": model},
+        },
+    )
+    output = tmp_path / "experiment"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "run-live",
+            "--prepared",
+            str(prepared),
+            "--output",
+            str(output),
+            "--acknowledge-provider-costs",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "clean Git worktree" in result.output
+    assert not output.exists()
+
+
 def test_run_live_applies_timeout_and_seals_sanitized_mode_failures(
     tmp_path, monkeypatch
 ) -> None:
@@ -322,6 +378,76 @@ def test_run_live_applies_timeout_and_seals_sanitized_mode_failures(
     }
     assert "test-key" not in (output / "failures.jsonl").read_text(encoding="utf-8")
     assert (output / "artifact-manifest.json").is_file()
+
+
+def test_run_live_isolates_vector_index_between_cases(tmp_path, monkeypatch) -> None:
+    from paper_agent.eval.retrieval_benchmark import cli
+
+    prepared = tmp_path / "prepared"
+    cli._write_prepared(
+        dataset_path=Path("tests/fixtures/evaluation/minimal-dataset"),
+        split="validation",
+        output=prepared,
+        candidate_limit=30,
+        timeout_seconds=7.5,
+        rrf_k=60,
+        embedding_model="text-embedding-v4",
+        embedding_model_version="text-embedding-v4@test",
+    )
+
+    class FakeEmbedder:
+        model_name = "text-embedding-v4"
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[1.0] for _text in texts]
+
+    monkeypatch.setattr(cli, "BailianTextEmbedder", FakeEmbedder)
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: Settings(dashscope_api_key="test-key"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_git_environment",
+        lambda model: {
+            "git_sha": "e" * 40,
+            "git_dirty": False,
+            "python_version": "3.12",
+            "models": {"embedding": model},
+        },
+    )
+    output = tmp_path / "experiment"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "run-live",
+            "--prepared",
+            str(prepared),
+            "--output",
+            str(output),
+            "--acknowledge-provider-costs",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    rankings = [
+        json.loads(line)
+        for line in (output / "raw-rankings.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    vector_rankings = [item for item in rankings if item["mode"] == "vector"]
+    assert [len(item["candidates"]) for item in vector_rankings] == [1, 1]
+    assert all(
+        candidate["chunk_id"].startswith(f"{ranking['case_id']}:")
+        for ranking in vector_rankings
+        for candidate in ranking["candidates"]
+    )
 
 
 def test_recompute_writes_verification_copy_and_detects_projection_mismatch(
