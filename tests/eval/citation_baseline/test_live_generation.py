@@ -113,6 +113,8 @@ class LedgerFakeProvider:
 
     def generate_structured(self, *, operation, messages, response_schema, timeout):
         self.calls.append(self.case_id)
+        assert "exactly one concise answer claim" in messages[0].content
+        assert "leave every other SurveyDraft array empty" in messages[0].content
         sequence = self.ledger.reserve(
             case_id=self.case_id,
             messages=messages,
