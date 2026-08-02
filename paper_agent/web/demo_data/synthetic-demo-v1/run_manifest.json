@@ -1,0 +1,79 @@
+{
+  "run_id": "synthetic-demo-v1",
+  "execution_id": "synthetic-demo-execution",
+  "trace_enabled": false,
+  "status": "completed_with_degradation",
+  "question": "How can hybrid retrieval support resilient scientific literature review?",
+  "requested_limit": 2,
+  "no_pdf": false,
+  "started_at": "2026-08-02T04:00:01Z",
+  "finished_at": "2026-08-02T04:00:12Z",
+  "settings": {
+    "retrieval_mode": "auto",
+    "embedding_model": "synthetic-embedding",
+    "generation_provider": "dashscope",
+    "generation_endpoint_host": "example.invalid",
+    "generation_model": "synthetic-generation",
+    "generation_timeout_seconds": 1.0,
+    "pdf_download_timeout_seconds": 1.0,
+    "pdf_max_bytes": 1000000,
+    "pdf_max_pages": 20,
+    "analysis_evidence_per_paper": 6,
+    "chunk_max_words": 180,
+    "chunk_overlap_words": 30
+  },
+  "counts": {
+    "selected_papers": 2,
+    "pdf_documents": 1,
+    "abstract_documents": 1,
+    "explicit_abstract_documents": 0,
+    "pdf_fallback_documents": 1,
+    "excluded_papers": 0,
+    "successful_analyses": 2,
+    "evidence_items": 2
+  },
+  "stage_elapsed_seconds": {
+    "search": 1.2,
+    "retrieval": 2.4,
+    "synthesis": 1.8
+  },
+  "usage": {
+    "operations": 0,
+    "http_attempts": 0,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "total_tokens": null
+  },
+  "component_versions": {
+    "paper-agent": "synthetic-demo-v1"
+  },
+  "retrieval_outcomes": [
+    {
+      "paper_id": "arxiv:synthetic.0001",
+      "requested_mode": "auto",
+      "actual_mode": "hybrid",
+      "degraded": false,
+      "degradation_code": null
+    },
+    {
+      "paper_id": "arxiv:synthetic.0002",
+      "requested_mode": "auto",
+      "actual_mode": "lexical",
+      "degraded": true,
+      "degradation_code": "vector_network_unavailable"
+    }
+  ],
+  "degradations": [
+    {
+      "stage": "retrieval",
+      "code": "vector_network_unavailable",
+      "paper_id": "arxiv:synthetic.0002",
+      "message": null
+    }
+  ],
+  "errors": [],
+  "trace_schema_version": null,
+  "trace_root_trace_id": null,
+  "trace_root_span_id": null,
+  "trace_sha256": null
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "paper_id": "arxiv:synthetic.0001",
+    "title": "Synthetic Hybrid Retrieval Study",
+    "authors": [
+      "Ada Example",
+      "Lin Fixture"
+    ],
+    "year": 2026,
+    "abstract": "Synthetic content for the bundled offline demonstration.",
+    "url": "https://example.invalid/synthetic-hybrid-retrieval",
+    "pdf_url": "https://example.invalid/synthetic-hybrid-retrieval.pdf",
+    "source": "synthetic",
+    "citation_count": null
+  },
+  {
+    "paper_id": "arxiv:synthetic.0002",
+    "title": "Synthetic Resilient Review Pipelines",
+    "authors": [
+      "Noor Sample"
+    ],
+    "year": 2026,
+    "abstract": "Synthetic content for the bundled offline demonstration.",
+    "url": "https://example.invalid/synthetic-resilient-review",
+    "pdf_url": null,
+    "source": "synthetic",
+    "citation_count": null
+  }
+]

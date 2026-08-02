@@ -9,6 +9,7 @@ const errorMessages: Record<string, string> = {
   execution_unavailable: "The local research executor is unavailable.", run_not_found: "This run could not be found.", paper_not_found: "This paper is not part of the run.",
   evidence_not_found: "This Evidence item could not be found.", artifact_not_found: "This artifact is not available.", artifact_not_ready: "The requested content is still being prepared.",
   report_unavailable: "This run did not publish a report.", artifact_corrupt: "A saved artifact could not be safely read.", internal_error: "The local service hit an unexpected error.",
+  run_busy: "The local research runner is busy. Try again shortly.", origin_not_allowed: "This browser origin is not allowed to use the local API.",
 };
 export const messageForCode = (code: string) => errorMessages[code] ?? "The request could not be completed safely.";
 
@@ -21,7 +22,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse
     throw new ApiError(response.status, code, messageForCode(code), body?.error.details);
   }
   const retry = Number(response.headers.get("Retry-After"));
-  return { data: await response.json() as T, retryAfterSeconds: Number.isFinite(retry) && retry > 0 ? retry : undefined };
+  return { data: await response.json() as T, retryAfterSeconds: Number.isFinite(retry) && retry > 0 ? retry : undefined, location: response.headers.get("Location") ?? undefined };
 }
 
 export const httpApi: RunApi = {

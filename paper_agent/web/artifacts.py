@@ -10,7 +10,10 @@ from paper_agent.fulltext.models import DocumentRecord
 from paper_agent.observability.models import RunEvent, RunManifest
 from paper_agent.schemas import Evidence, Paper
 from paper_agent.synthesis.models import CheckedPaperAnalysis, CheckedSurveyReport
-from paper_agent.web.api_models import EvidenceSource, EvidenceView, ManifestProjection
+from paper_agent.web.api_models import (
+    EvidenceSource, EvidenceView, ManifestProjection, PaperAnalysisResponse,
+    PaperSummary,
+)
 from paper_agent.web.errors import WebError
 
 
@@ -114,6 +117,41 @@ class ArtifactReader:
                 ),
             ))
         return items
+
+    def papers(self, origin: str, artifact_run_id: str) -> list[PaperSummary]:
+        papers = self.model(origin, artifact_run_id, "papers.json", list[Paper])
+        documents = self.model(origin, artifact_run_id, "documents.json", list[DocumentRecord])
+        analyses = self.model(origin, artifact_run_id, "analyses.json", list[CheckedPaperAnalysis])
+        evidence = self.model(origin, artifact_run_id, "evidence.json", list[Evidence])
+        document_by_id = {item.paper_id: item for item in documents}
+        analysis_ids = {item.paper_id for item in analyses}
+        evidence_counts: dict[str, int] = {}
+        for item in evidence:
+            evidence_counts[item.paper_id] = evidence_counts.get(item.paper_id, 0) + 1
+        return [
+            PaperSummary(
+                **paper.model_dump(),
+                document=document_by_id.get(paper.paper_id),
+                analysis_available=paper.paper_id in analysis_ids,
+                evidence_count=evidence_counts.get(paper.paper_id, 0),
+            )
+            for paper in papers
+        ]
+
+    def paper_analysis(
+        self, origin: str, artifact_run_id: str, paper_id: str, run_id: str,
+    ) -> PaperAnalysisResponse:
+        papers = self.model(origin, artifact_run_id, "papers.json", list[Paper])
+        documents = self.model(origin, artifact_run_id, "documents.json", list[DocumentRecord])
+        analyses = self.model(origin, artifact_run_id, "analyses.json", list[CheckedPaperAnalysis])
+        paper = next((item for item in papers if item.paper_id == paper_id), None)
+        analysis = next((item for item in analyses if item.paper_id == paper_id), None)
+        if paper is None or analysis is None:
+            raise WebError(404, "paper_not_found")
+        document = next((item for item in documents if item.paper_id == paper_id), None)
+        return PaperAnalysisResponse(
+            run_id=run_id, paper=paper, document=document, analysis=analysis,
+        )
 
     def validate_download(self, origin: str, artifact_run_id: str, name: str, *, terminal: bool) -> Path:
         path = self.path(origin, artifact_run_id, name, terminal=terminal)

@@ -4,16 +4,20 @@ import json
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 
 from paper_agent.config import Settings
 from paper_agent.fulltext.models import DocumentRecord
-from paper_agent.observability.models import RunCounts, SafeRunSettings, UsageTotals
+from paper_agent.observability.models import RunCounts, RunIssue, SafeRunSettings, UsageTotals
 from paper_agent.observability.recorder import RunRecorder
 from paper_agent.schemas import Evidence, Paper
-from paper_agent.synthesis.models import CheckedClaim, CheckedSurveyReport
+from paper_agent.synthesis.models import (
+    CheckedClaim, CheckedFinding, CheckedPaperAnalysis, CheckedSurveyReport,
+)
 from paper_agent.web.app import create_app
+from paper_agent.web.demo import DEMO_API_ID
 
 
 REQUEST = {
@@ -32,9 +36,10 @@ def _settings() -> Settings:
 
 
 class SuccessfulRunner:
-    def __init__(self) -> None:
+    def __init__(self, status: str = "completed") -> None:
         self.calls: list[dict[str, object]] = []
         self.error: str | None = None
+        self.status = status
 
     def __call__(self, question: str, **kwargs: object) -> object:
         try:
@@ -76,15 +81,25 @@ class SuccessfulRunner:
         recorder.write_papers([paper])
         recorder.write_documents([document])
         recorder.write_evidence([evidence])
-        recorder.write_analyses([])
+        recorder.write_analyses([CheckedPaperAnalysis(
+            paper_id=paper.paper_id,
+            contributions=[CheckedFinding(
+                text="Supported", evidence_ids=[evidence.evidence_id],
+                support_status="supported",
+            )],
+        )])
         recorder.publish_report(report, "# Exact persisted Markdown\n")
         recorder.complete(
-            status="completed", counts=RunCounts(
+            status=self.status, counts=RunCounts(
                 selected_papers=1, pdf_documents=0, abstract_documents=1,
                 explicit_abstract_documents=1, pdf_fallback_documents=0,
-                excluded_papers=0, successful_analyses=0, evidence_items=1,
+                excluded_papers=0, successful_analyses=1, evidence_items=1,
             ), retrieval_outcomes=[], stage_elapsed_seconds={},
             usage=UsageTotals(operations=0, http_attempts=0),
+            degradations=(
+                [RunIssue(stage="retrieval", code="vector_network_unavailable")]
+                if self.status == "completed_with_degradation" else []
+            ),
         )
         return object()
 
@@ -145,6 +160,16 @@ def test_create_maps_request_and_exposes_validated_views(tmp_path):
         assert evidence[0]["source"]["content_source"] == "abstract"
         exact = client.get(f"/api/v1/runs/{created['id']}/evidence/{evidence[0]['evidence_id']}")
         assert exact.status_code == 200
+        encoded = quote(evidence[0]["evidence_id"], safe="")
+        assert client.get(f"/api/v1/runs/{created['id']}/evidence/{encoded}").json() == exact.json()
+
+        papers = client.get(f"/api/v1/runs/{created['id']}/papers")
+        assert papers.status_code == 200
+        assert papers.json()["items"][0]["analysis_available"] is True
+        paper_id = quote(papers.json()["items"][0]["paper_id"], safe="")
+        analysis = client.get(f"/api/v1/runs/{created['id']}/papers/{paper_id}/analysis")
+        assert analysis.status_code == 200
+        assert analysis.json()["analysis"]["paper_id"] == "arxiv:1234.5678"
 
         download = client.get(f"/api/v1/runs/{created['id']}/artifacts/report.md")
         assert download.content.decode("utf-8") == persisted_markdown
@@ -200,6 +225,75 @@ def test_download_allowlist_rejects_private_and_traversal_names(tmp_path):
             response = client.get(f"/api/v1/runs/{run_id}/artifacts/{name}")
             assert response.status_code == 404, name
             assert response.json()["error"]["code"] == "artifact_not_found"
+
+
+def test_all_allowlisted_artifacts_download_with_canonical_headers(tmp_path):
+    runner = SuccessfulRunner()
+    with _client(tmp_path, runner) as client:
+        run_id = client.post("/api/v1/runs", json=REQUEST).json()["id"]
+        detail = _wait_terminal(client, run_id)
+        assert set(detail["available_artifacts"]) == {
+            "papers.json", "documents.json", "evidence.json", "analyses.json",
+            "report.json", "report.md", "run_manifest.json", "logs.jsonl",
+        }
+        for name in detail["available_artifacts"]:
+            response = client.get(f"/api/v1/runs/{run_id}/artifacts/{name}")
+            assert response.status_code == 200, name
+            assert f'filename="{name}"' in response.headers["content-disposition"]
+            assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_list_degraded_run_and_bundled_demo_vertical_read(tmp_path):
+    calls = 0
+
+    def should_not_run(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("bundled demo must not execute a pipeline")
+
+    with _client(tmp_path, should_not_run) as client:
+        listing = client.get("/api/v1/runs?limit=1")
+        assert listing.status_code == 200
+        assert listing.json()["items"][0]["id"] == DEMO_API_ID
+        detail = client.get(f"/api/v1/runs/{DEMO_API_ID}").json()
+        assert detail["status"] == "completed_with_degradation"
+        assert detail["demo"] is True and detail["origin"] == "bundled_demo"
+        assert "retry-after" not in client.get(f"/api/v1/runs/{DEMO_API_ID}").headers
+        report = client.get(f"/api/v1/runs/{DEMO_API_ID}/report")
+        assert report.status_code == 200
+        papers = client.get(f"/api/v1/runs/{DEMO_API_ID}/papers").json()["items"]
+        assert len(papers) == 2
+        evidence = client.get(f"/api/v1/runs/{DEMO_API_ID}/evidence").json()["items"]
+        encoded = quote(evidence[0]["evidence_id"], safe="")
+        assert client.get(f"/api/v1/runs/{DEMO_API_ID}/evidence/{encoded}").status_code == 200
+        assert calls == 0
+
+
+def test_origin_boundary_and_security_headers(tmp_path):
+    with _client(tmp_path, SuccessfulRunner()) as client:
+        blocked = client.get("/api/v1/runs", headers={"Origin": "https://evil.example"})
+        assert blocked.status_code == 403
+        assert blocked.json()["error"]["code"] == "origin_not_allowed"
+        allowed = client.get("/api/v1/runs", headers={"Origin": "http://testserver"})
+        assert allowed.status_code == 200
+        assert "frame-ancestors 'none'" in allowed.headers["content-security-policy"]
+        assert allowed.headers["x-frame-options"] == "DENY"
+    web_dist = tmp_path / "web-dist"
+    web_dist.mkdir()
+    (web_dist / "index.html").write_text("<title>MOMO Scholar</title>", encoding="utf-8")
+    app = create_app(
+        state_root=tmp_path / "static-state", output_root=tmp_path / "static-outputs",
+        web_dist=web_dist, runner=SuccessfulRunner(), settings_loader=_settings,
+    )
+    with TestClient(app) as client:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert "MOMO Scholar" in home.text
+        deep_link = client.get(f"/runs/{DEMO_API_ID}/report")
+        assert deep_link.status_code == 200
+        missing_api = client.get("/api/v1/not-a-route")
+        assert missing_api.status_code == 404
+        assert missing_api.json()["error"]["code"] == "run_not_found"
 
 
 def test_terminal_manifest_repairs_stale_registry_projection(tmp_path):

@@ -1,0 +1,50 @@
+[
+  {
+    "paper_id": "arxiv:synthetic.0001",
+    "contributions": [
+      {
+        "text": "The study combines two retrieval signals.",
+        "evidence_ids": [
+          "synthetic-demo-v1:paper:arxiv:synthetic.0001:ev_001"
+        ],
+        "support_status": "supported"
+      }
+    ],
+    "methods": [
+      {
+        "text": "Ranked lists are fused by reciprocal rank.",
+        "evidence_ids": [
+          "synthetic-demo-v1:paper:arxiv:synthetic.0001:ev_001"
+        ],
+        "support_status": "supported"
+      }
+    ],
+    "experiments": [],
+    "results": [],
+    "limitations": []
+  },
+  {
+    "paper_id": "arxiv:synthetic.0002",
+    "contributions": [
+      {
+        "text": "The pipeline specifies an explicit degraded state.",
+        "evidence_ids": [
+          "synthetic-demo-v1:paper:arxiv:synthetic.0002:ev_001"
+        ],
+        "support_status": "supported"
+      }
+    ],
+    "methods": [],
+    "experiments": [],
+    "results": [],
+    "limitations": [
+      {
+        "text": "Only abstract content was available.",
+        "evidence_ids": [
+          "synthetic-demo-v1:paper:arxiv:synthetic.0002:ev_001"
+        ],
+        "support_status": "weakly_supported"
+      }
+    ]
+  }
+]

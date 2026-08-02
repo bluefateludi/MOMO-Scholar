@@ -1,0 +1,2389 @@
+{
+  "components": {
+    "schemas": {
+      "CheckedClaim": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "support_status": {
+            "enum": [
+              "supported",
+              "weakly_supported",
+              "unsupported"
+            ],
+            "title": "Support Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "evidence_ids",
+          "support_status"
+        ],
+        "title": "CheckedClaim",
+        "type": "object"
+      },
+      "CheckedFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "support_status": {
+            "enum": [
+              "supported",
+              "weakly_supported",
+              "unsupported"
+            ],
+            "title": "Support Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "evidence_ids",
+          "support_status"
+        ],
+        "title": "CheckedFinding",
+        "type": "object"
+      },
+      "CheckedPaperAnalysis": {
+        "additionalProperties": false,
+        "properties": {
+          "contributions": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedFinding"
+            },
+            "title": "Contributions",
+            "type": "array"
+          },
+          "experiments": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedFinding"
+            },
+            "title": "Experiments",
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedFinding"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedFinding"
+            },
+            "title": "Methods",
+            "type": "array"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedFinding"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paper_id"
+        ],
+        "title": "CheckedPaperAnalysis",
+        "type": "object"
+      },
+      "CheckedSurveyReport": {
+        "additionalProperties": false,
+        "properties": {
+          "comparisons": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedClaim"
+            },
+            "title": "Comparisons",
+            "type": "array"
+          },
+          "key_findings": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedClaim"
+            },
+            "title": "Key Findings",
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedClaim"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "method_taxonomy": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedClaim"
+            },
+            "title": "Method Taxonomy",
+            "type": "array"
+          },
+          "open_questions": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedClaim"
+            },
+            "title": "Open Questions",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "rejected_critical_claims": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedCriticalClaim"
+            },
+            "title": "Rejected Critical Claims",
+            "type": "array"
+          },
+          "tldr_claims": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedClaim"
+            },
+            "title": "Tldr Claims",
+            "type": "array"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "CheckedSurveyReport",
+        "type": "object"
+      },
+      "CreateRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_mode": {
+            "enum": [
+              "pdf_preferred",
+              "abstract_only"
+            ],
+            "title": "Content Mode",
+            "type": "string"
+          },
+          "paper_limit": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Paper Limit",
+            "type": "integer"
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Question",
+            "type": "string"
+          },
+          "retrieval": {
+            "$ref": "#/components/schemas/RetrievalRequest"
+          }
+        },
+        "required": [
+          "question",
+          "paper_limit",
+          "content_mode",
+          "retrieval"
+        ],
+        "title": "CreateRunRequest",
+        "type": "object"
+      },
+      "DocumentRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "content_source": {
+            "enum": [
+              "pdf",
+              "abstract"
+            ],
+            "title": "Content Source",
+            "type": "string"
+          },
+          "fallback_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Code"
+          },
+          "page_count": {
+            "minimum": 1.0,
+            "title": "Page Count",
+            "type": "integer"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paper_id",
+          "content_source",
+          "content_sha256",
+          "page_count"
+        ],
+        "title": "DocumentRecord",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EvidenceList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EvidenceList",
+        "type": "object"
+      },
+      "EvidenceSource": {
+        "additionalProperties": false,
+        "properties": {
+          "content_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pdf",
+                  "abstract"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Source"
+          },
+          "fallback_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Code"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "EvidenceSource",
+        "type": "object"
+      },
+      "EvidenceView": {
+        "additionalProperties": false,
+        "properties": {
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "claim_type": {
+            "title": "Claim Type",
+            "type": "string"
+          },
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "relevance_score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Relevance Score",
+            "type": "number"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "source": {
+            "$ref": "#/components/schemas/EvidenceSource"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "paper_id",
+          "chunk_id",
+          "claim_type",
+          "quote",
+          "relevance_score",
+          "source"
+        ],
+        "title": "EvidenceView",
+        "type": "object"
+      },
+      "ManifestProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "component_versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Component Versions",
+            "type": "object"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/RunCounts"
+          },
+          "degradations": {
+            "items": {
+              "$ref": "#/components/schemas/RunIssue"
+            },
+            "title": "Degradations",
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/RunIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "retrieval_outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievalRecord"
+            },
+            "title": "Retrieval Outcomes",
+            "type": "array"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SafeRunSettings"
+          },
+          "stage_elapsed_seconds": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Stage Elapsed Seconds",
+            "type": "object"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "required": [
+          "counts",
+          "retrieval_outcomes",
+          "degradations",
+          "errors",
+          "stage_elapsed_seconds",
+          "usage",
+          "settings",
+          "component_versions"
+        ],
+        "title": "ManifestProjection",
+        "type": "object"
+      },
+      "Paper": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "default": "",
+            "title": "Abstract",
+            "type": "string"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "citation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Count"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "required": [
+          "paper_id",
+          "title",
+          "url",
+          "source"
+        ],
+        "title": "Paper",
+        "type": "object"
+      },
+      "PaperAnalysisResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis": {
+            "$ref": "#/components/schemas/CheckedPaperAnalysis"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paper": {
+            "$ref": "#/components/schemas/Paper"
+          },
+          "run_id": {
+            "format": "uuid4",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "paper",
+          "document",
+          "analysis"
+        ],
+        "title": "PaperAnalysisResponse",
+        "type": "object"
+      },
+      "PaperList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaperSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PaperList",
+        "type": "object"
+      },
+      "PaperSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "default": "",
+            "title": "Abstract",
+            "type": "string"
+          },
+          "analysis_available": {
+            "title": "Analysis Available",
+            "type": "boolean"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "citation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Count"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_count": {
+            "minimum": 0.0,
+            "title": "Evidence Count",
+            "type": "integer"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "required": [
+          "paper_id",
+          "title",
+          "url",
+          "source",
+          "document",
+          "analysis_available",
+          "evidence_count"
+        ],
+        "title": "PaperSummary",
+        "type": "object"
+      },
+      "RejectedCriticalClaim": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "source_section": {
+            "enum": [
+              "tldr_claims",
+              "key_findings"
+            ],
+            "title": "Source Section",
+            "type": "string"
+          },
+          "support_status": {
+            "enum": [
+              "supported",
+              "weakly_supported",
+              "unsupported"
+            ],
+            "title": "Support Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "evidence_ids",
+          "support_status",
+          "source_section"
+        ],
+        "title": "RejectedCriticalClaim",
+        "type": "object"
+      },
+      "ReportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "degradations": {
+            "items": {
+              "$ref": "#/components/schemas/RunIssue"
+            },
+            "title": "Degradations",
+            "type": "array"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/CheckedSurveyReport"
+          },
+          "run_id": {
+            "format": "uuid4",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "completed_with_degradation"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "report",
+          "markdown",
+          "degradations"
+        ],
+        "title": "ReportResponse",
+        "type": "object"
+      },
+      "RetrievalRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "actual_mode": {
+            "enum": [
+              "lexical",
+              "hybrid"
+            ],
+            "title": "Actual Mode",
+            "type": "string"
+          },
+          "degradation_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degradation Code"
+          },
+          "degraded": {
+            "title": "Degraded",
+            "type": "boolean"
+          },
+          "paper_id": {
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "requested_mode": {
+            "enum": [
+              "auto",
+              "lexical",
+              "hybrid"
+            ],
+            "title": "Requested Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "paper_id",
+          "requested_mode",
+          "actual_mode",
+          "degraded"
+        ],
+        "title": "RetrievalRecord",
+        "type": "object"
+      },
+      "RetrievalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_evidence_per_paper": {
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Analysis Evidence Per Paper",
+            "type": "integer"
+          },
+          "candidate_k": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Candidate K",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "auto",
+              "lexical",
+              "hybrid"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "rrf_k": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Rrf K",
+            "type": "integer"
+          },
+          "top_k": {
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "candidate_k",
+          "top_k",
+          "rrf_k",
+          "analysis_evidence_per_paper"
+        ],
+        "title": "RetrievalRequest",
+        "type": "object"
+      },
+      "RunCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract_documents": {
+            "minimum": 0.0,
+            "title": "Abstract Documents",
+            "type": "integer"
+          },
+          "evidence_items": {
+            "minimum": 0.0,
+            "title": "Evidence Items",
+            "type": "integer"
+          },
+          "excluded_papers": {
+            "minimum": 0.0,
+            "title": "Excluded Papers",
+            "type": "integer"
+          },
+          "explicit_abstract_documents": {
+            "minimum": 0.0,
+            "title": "Explicit Abstract Documents",
+            "type": "integer"
+          },
+          "pdf_documents": {
+            "minimum": 0.0,
+            "title": "Pdf Documents",
+            "type": "integer"
+          },
+          "pdf_fallback_documents": {
+            "minimum": 0.0,
+            "title": "Pdf Fallback Documents",
+            "type": "integer"
+          },
+          "selected_papers": {
+            "minimum": 0.0,
+            "title": "Selected Papers",
+            "type": "integer"
+          },
+          "successful_analyses": {
+            "minimum": 0.0,
+            "title": "Successful Analyses",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "selected_papers",
+          "pdf_documents",
+          "abstract_documents",
+          "explicit_abstract_documents",
+          "pdf_fallback_documents",
+          "excluded_papers",
+          "successful_analyses",
+          "evidence_items"
+        ],
+        "title": "RunCounts",
+        "type": "object"
+      },
+      "RunDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Run Id"
+          },
+          "available_artifacts": {
+            "items": {
+              "enum": [
+                "papers.json",
+                "documents.json",
+                "evidence.json",
+                "analyses.json",
+                "report.json",
+                "report.md",
+                "run_manifest.json",
+                "logs.jsonl"
+              ],
+              "type": "string"
+            },
+            "title": "Available Artifacts",
+            "type": "array"
+          },
+          "content_mode": {
+            "enum": [
+              "pdf_preferred",
+              "abstract_only"
+            ],
+            "title": "Content Mode",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "demo": {
+            "title": "Demo",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "has_report": {
+            "title": "Has Report",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManifestProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "enum": [
+              "live",
+              "bundled_demo"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "paper_limit": {
+            "title": "Paper Limit",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "queued",
+              "initializing",
+              "search",
+              "acquisition",
+              "chunking",
+              "retrieval",
+              "analysis",
+              "synthesis",
+              "citation_check",
+              "publishing",
+              "terminal"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/RunProgress"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "retrieval": {
+            "$ref": "#/components/schemas/RetrievalRequest"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "completed_with_degradation",
+              "failed",
+              "interrupted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_run_id",
+          "origin",
+          "status",
+          "phase",
+          "question",
+          "paper_limit",
+          "content_mode",
+          "retrieval",
+          "progress",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "has_report",
+          "demo",
+          "manifest",
+          "available_artifacts"
+        ],
+        "title": "RunDetail",
+        "type": "object"
+      },
+      "RunIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "paper_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paper Id"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "code"
+        ],
+        "title": "RunIssue",
+        "type": "object"
+      },
+      "RunList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RunList",
+        "type": "object"
+      },
+      "RunProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_units": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Units"
+          },
+          "paper_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paper Id"
+          },
+          "total_units": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Units"
+          }
+        },
+        "title": "RunProgress",
+        "type": "object"
+      },
+      "RunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Run Id"
+          },
+          "content_mode": {
+            "enum": [
+              "pdf_preferred",
+              "abstract_only"
+            ],
+            "title": "Content Mode",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "demo": {
+            "title": "Demo",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "has_report": {
+            "title": "Has Report",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "live",
+              "bundled_demo"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "paper_limit": {
+            "title": "Paper Limit",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "queued",
+              "initializing",
+              "search",
+              "acquisition",
+              "chunking",
+              "retrieval",
+              "analysis",
+              "synthesis",
+              "citation_check",
+              "publishing",
+              "terminal"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/RunProgress"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "retrieval": {
+            "$ref": "#/components/schemas/RetrievalRequest"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "completed_with_degradation",
+              "failed",
+              "interrupted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_run_id",
+          "origin",
+          "status",
+          "phase",
+          "question",
+          "paper_limit",
+          "content_mode",
+          "retrieval",
+          "progress",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "has_report",
+          "demo"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
+      "SafeRunSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_evidence_per_paper": {
+            "title": "Analysis Evidence Per Paper",
+            "type": "integer"
+          },
+          "chunk_max_words": {
+            "title": "Chunk Max Words",
+            "type": "integer"
+          },
+          "chunk_overlap_words": {
+            "title": "Chunk Overlap Words",
+            "type": "integer"
+          },
+          "embedding_model": {
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "generation_endpoint_host": {
+            "title": "Generation Endpoint Host",
+            "type": "string"
+          },
+          "generation_model": {
+            "title": "Generation Model",
+            "type": "string"
+          },
+          "generation_provider": {
+            "const": "dashscope",
+            "title": "Generation Provider",
+            "type": "string"
+          },
+          "generation_timeout_seconds": {
+            "title": "Generation Timeout Seconds",
+            "type": "number"
+          },
+          "pdf_download_timeout_seconds": {
+            "title": "Pdf Download Timeout Seconds",
+            "type": "number"
+          },
+          "pdf_max_bytes": {
+            "title": "Pdf Max Bytes",
+            "type": "integer"
+          },
+          "pdf_max_pages": {
+            "title": "Pdf Max Pages",
+            "type": "integer"
+          },
+          "retrieval_mode": {
+            "enum": [
+              "auto",
+              "lexical",
+              "hybrid"
+            ],
+            "title": "Retrieval Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "retrieval_mode",
+          "embedding_model",
+          "generation_provider",
+          "generation_endpoint_host",
+          "generation_model",
+          "generation_timeout_seconds",
+          "pdf_download_timeout_seconds",
+          "pdf_max_bytes",
+          "pdf_max_pages",
+          "analysis_evidence_per_paper",
+          "chunk_max_words",
+          "chunk_overlap_words"
+        ],
+        "title": "SafeRunSettings",
+        "type": "object"
+      },
+      "UsageTotals": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "http_attempts": {
+            "minimum": 0.0,
+            "title": "Http Attempts",
+            "type": "integer"
+          },
+          "operations": {
+            "minimum": 0.0,
+            "title": "Operations",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          }
+        },
+        "required": [
+          "operations",
+          "http_attempts"
+        ],
+        "title": "UsageTotals",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "MOMO Scholar Web API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "runs"
+        ]
+      },
+      "post": {
+        "operationId": "create_run_api_v1_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Create Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/artifacts/{name}": {
+      "get": {
+        "operationId": "download_artifact_api_v1_runs__run_id__artifacts__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Download Artifact",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/evidence": {
+      "get": {
+        "operationId": "get_evidence_api_v1_runs__run_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "paper_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Paper Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Evidence",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/evidence/{evidence_id}": {
+      "get": {
+        "operationId": "get_evidence_item_api_v1_runs__run_id__evidence__evidence_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Evidence Item",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/papers": {
+      "get": {
+        "operationId": "get_papers_api_v1_runs__run_id__papers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Papers",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/papers/{paper_id}/analysis": {
+      "get": {
+        "operationId": "get_paper_analysis_api_v1_runs__run_id__papers__paper_id__analysis_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "title": "Paper Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperAnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Paper Analysis",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/report": {
+      "get": {
+        "operationId": "get_report_api_v1_runs__run_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Report",
+        "tags": [
+          "runs"
+        ]
+      }
+    }
+  }
+}

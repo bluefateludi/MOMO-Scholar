@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .venv/
 outputs/
+output/
+.playwright-cli/
 .env
 .worktrees/
 
