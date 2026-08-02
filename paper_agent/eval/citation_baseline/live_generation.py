@@ -66,6 +66,10 @@ class ProviderModelAuthority(FrozenLiveModel):
     request_model: str = Field(min_length=1)
     expected_response_model: str = Field(min_length=1)
     identifier_kind: Literal["dated_immutable"]
+    deployment_scope: Literal["China (Beijing)"]
+    generation_base_url: str = Field(min_length=1)
+    deployment_authority_file: str = Field(min_length=1)
+    deployment_authority_sha256: str = Field(pattern=_SHA256_PATTERN)
     model_document_url: str = Field(min_length=1)
     model_document_retrieved_at_utc: str = Field(pattern=_UTC_TIMESTAMP_PATTERN)
     model_document_file: str = Field(min_length=1)
@@ -74,8 +78,9 @@ class ProviderModelAuthority(FrozenLiveModel):
     pricing_document_retrieved_at_utc: str = Field(pattern=_UTC_TIMESTAMP_PATTERN)
     pricing_document_file: str = Field(min_length=1)
     pricing_document_sha256: str = Field(pattern=_SHA256_PATTERN)
-    input_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
-    output_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
+    pricing_currency: Literal["CNY", "USD"]
+    input_cost_per_million_tokens: float = Field(gt=0.0, strict=True)
+    output_cost_per_million_tokens: float = Field(gt=0.0, strict=True)
     approved_by: str = Field(min_length=1)
     approved_at_utc: str = Field(pattern=_UTC_TIMESTAMP_PATTERN)
 
@@ -88,7 +93,9 @@ class ProviderModelAuthority(FrozenLiveModel):
             raise ValueError("model authority text must not be blank")
         return value
 
-    @field_validator("model_document_url", "pricing_document_url")
+    @field_validator(
+        "generation_base_url", "model_document_url", "pricing_document_url"
+    )
     @classmethod
     def _safe_authority_url(cls, value: str) -> str:
         parsed = urlsplit(value)
@@ -103,7 +110,9 @@ class ProviderModelAuthority(FrozenLiveModel):
             raise ValueError("authority URL must be a safe HTTPS URL")
         return value
 
-    @field_validator("model_document_file", "pricing_document_file")
+    @field_validator(
+        "deployment_authority_file", "model_document_file", "pricing_document_file"
+    )
     @classmethod
     def _safe_snapshot_name(cls, value: str) -> str:
         path = Path(value)
@@ -112,7 +121,7 @@ class ProviderModelAuthority(FrozenLiveModel):
         return value
 
     @field_validator(
-        "input_usd_per_million_tokens", "output_usd_per_million_tokens"
+        "input_cost_per_million_tokens", "output_cost_per_million_tokens"
     )
     @classmethod
     def _finite_price(cls, value: float) -> float:
@@ -128,6 +137,8 @@ class LiveGenerationConfig(FrozenLiveModel):
     model_authority_sha256: str = Field(pattern=_SHA256_PATTERN)
     campaign_id: str = Field(min_length=1)
     execution_id: str = Field(min_length=1)
+    deployment_scope: Literal["China (Beijing)"]
+    generation_base_url: str = Field(min_length=1)
     temperature: float = Field(ge=0.0, le=2.0, strict=True)
     max_tokens: int = Field(ge=1, strict=True)
     attempt_timeout_seconds: float = Field(gt=0.0, strict=True)
@@ -142,16 +153,17 @@ class LiveGenerationConfig(FrozenLiveModel):
     max_total_prompt_tokens: int = Field(ge=1, strict=True)
     max_total_completion_tokens: int = Field(ge=1, strict=True)
     pricing_authority: str = Field(min_length=1)
-    input_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
-    output_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
-    max_cost_usd: float = Field(gt=0.0, strict=True)
+    cost_currency: Literal["CNY", "USD"]
+    input_cost_per_million_tokens: float = Field(gt=0.0, strict=True)
+    output_cost_per_million_tokens: float = Field(gt=0.0, strict=True)
+    max_cost: float = Field(gt=0.0, strict=True)
 
     @field_validator(
         "temperature",
         "attempt_timeout_seconds",
-        "input_usd_per_million_tokens",
-        "output_usd_per_million_tokens",
-        "max_cost_usd",
+        "input_cost_per_million_tokens",
+        "output_cost_per_million_tokens",
+        "max_cost",
     )
     @classmethod
     def _finite_float(cls, value: float) -> float:
@@ -166,7 +178,7 @@ class LiveGenerationConfig(FrozenLiveModel):
             raise ValueError("generation identity fields must not be blank")
         return value
 
-    @field_validator("pricing_authority")
+    @field_validator("generation_base_url", "pricing_authority")
     @classmethod
     def _safe_pricing_authority(cls, value: str) -> str:
         parsed = urlsplit(value)
@@ -190,20 +202,20 @@ class LiveGenerationConfig(FrozenLiveModel):
                 raise ValueError("selected_case_ids must not contain blanks")
             if len(self.selected_case_ids) != len(set(self.selected_case_ids)):
                 raise ValueError("selected_case_ids must be unique")
-        if self.max_cost_per_send_usd > self.max_cost_usd + 1e-12:
-            raise ValueError("one send authorization exceeds max_cost_usd")
+        if self.max_cost_per_send > self.max_cost + 1e-12:
+            raise ValueError("one send authorization exceeds max_cost")
         return self
 
     @property
-    def max_cost_per_send_usd(self) -> float:
+    def max_cost_per_send(self) -> float:
         return (
-            self.max_prompt_tokens_per_send * self.input_usd_per_million_tokens
-            + self.max_tokens * self.output_usd_per_million_tokens
+            self.max_prompt_tokens_per_send * self.input_cost_per_million_tokens
+            + self.max_tokens * self.output_cost_per_million_tokens
         ) / 1_000_000
 
     @property
-    def max_total_authorized_cost_usd(self) -> float:
-        return self.max_total_sends * self.max_cost_per_send_usd
+    def max_total_authorized_cost(self) -> float:
+        return self.max_total_sends * self.max_cost_per_send
 
 
 class ProviderFactory(Protocol):
@@ -421,6 +433,10 @@ def load_provider_model_authority(path: Path) -> ProviderModelAuthority:
         raise ValueError("model authority is missing or contains secret material")
     authority = ProviderModelAuthority.model_validate(_load_json(resolved))
     for file_name, expected_hash in (
+        (
+            authority.deployment_authority_file,
+            authority.deployment_authority_sha256,
+        ),
         (authority.model_document_file, authority.model_document_sha256),
         (authority.pricing_document_file, authority.pricing_document_sha256),
     ):
@@ -444,16 +460,22 @@ def _validate_provider_authority(
     expected = (
         authority.request_model,
         authority.expected_response_model,
+        authority.deployment_scope,
+        authority.generation_base_url,
         authority.pricing_document_url,
-        authority.input_usd_per_million_tokens,
-        authority.output_usd_per_million_tokens,
+        authority.pricing_currency,
+        authority.input_cost_per_million_tokens,
+        authority.output_cost_per_million_tokens,
     )
     actual = (
         config.request_model,
         config.expected_response_model,
+        config.deployment_scope,
+        config.generation_base_url,
         config.pricing_authority,
-        config.input_usd_per_million_tokens,
-        config.output_usd_per_million_tokens,
+        config.cost_currency,
+        config.input_cost_per_million_tokens,
+        config.output_cost_per_million_tokens,
     )
     if expected != actual:
         raise ValueError("model or pricing configuration differs from authority")
@@ -526,6 +548,11 @@ def create_campaign_ledger(
                     "execution_id": execution_id,
                     "source_ledger_sha256": source_hash,
                     "source_send_sequence": source_row["send_sequence"],
+                    "cost_currency": "USD",
+                    "authorized_cost_ceiling": source_row[
+                        "authorized_cost_ceiling_usd"
+                    ],
+                    "actual_cost": source_row.get("actual_cost_usd"),
                 }
             )
             rows.append(row)
@@ -550,14 +577,20 @@ def create_campaign_ledger(
             )
             for row in rows
         ),
-        "prior_accounted_cost_usd": sum(
-            float(
-                row["actual_cost_usd"]
-                if row.get("actual_cost_usd") is not None
-                else row["authorized_cost_ceiling_usd"]
-            )
-            for row in rows
-        ),
+        "prior_accounted_costs": [
+            {
+                "currency": "USD",
+                "amount": sum(
+                    float(
+                        row["actual_cost"]
+                        if row.get("actual_cost") is not None
+                        else row["authorized_cost_ceiling"]
+                    )
+                    for row in rows
+                ),
+                "authority": "legacy_smoke_estimate",
+            }
+        ],
         "ledger_sha256": _sha256_file(resolved_output),
     }
 
@@ -618,7 +651,25 @@ class GenerationBudgetLedger:
             raise ValueError("campaign ledger budget accounting is incomplete")
         return float(value)
 
-    def _totals(self) -> tuple[int, int, float]:
+    @staticmethod
+    def _cost_record(row: Mapping[str, object]) -> tuple[str, float]:
+        currency = row.get("cost_currency")
+        if currency is None and (
+            "actual_cost_usd" in row or "authorized_cost_ceiling_usd" in row
+        ):
+            currency = "USD"
+            actual_field = "actual_cost_usd"
+            ceiling_field = "authorized_cost_ceiling_usd"
+        else:
+            actual_field = "actual_cost"
+            ceiling_field = "authorized_cost_ceiling"
+        if currency not in {"CNY", "USD"}:
+            raise ValueError("campaign ledger cost currency is missing or invalid")
+        return str(currency), GenerationBudgetLedger._accounted(
+            row, actual_field, ceiling_field
+        )
+
+    def _totals(self) -> tuple[int, int, dict[str, float]]:
         prompt = sum(
             self._accounted(row, "prompt_tokens", "prompt_token_upper_bound")
             for row in self._rows
@@ -627,16 +678,16 @@ class GenerationBudgetLedger:
             self._accounted(row, "completion_tokens", "max_tokens")
             for row in self._rows
         )
-        cost = sum(
-            self._accounted(row, "actual_cost_usd", "authorized_cost_ceiling_usd")
-            for row in self._rows
-        )
-        return int(prompt), int(completion), cost
+        costs: dict[str, float] = {}
+        for row in self._rows:
+            currency, amount = self._cost_record(row)
+            costs[currency] = costs.get(currency, 0.0) + amount
+        return int(prompt), int(completion), costs
 
     def assert_batch_capacity(self, case_count: int) -> None:
         """Require room for one worst-case primary send for every selected case."""
 
-        prompt, completion, cost = self._totals()
+        prompt, completion, costs = self._totals()
         if len(self._rows) + case_count > self.config.max_total_sends:
             self._raise_budget()
         if (
@@ -649,7 +700,11 @@ class GenerationBudgetLedger:
             > self.config.max_total_completion_tokens
         ):
             self._raise_budget()
-        if cost + case_count * self.config.max_cost_per_send_usd > self.config.max_cost_usd + 1e-12:
+        if (
+            costs.get(self.config.cost_currency, 0.0)
+            + case_count * self.config.max_cost_per_send
+            > self.config.max_cost + 1e-12
+        ):
             self._raise_budget()
 
     def reserve(
@@ -713,12 +768,16 @@ class GenerationBudgetLedger:
             self._raise_budget()
         if len(self._rows) >= self.config.max_total_sends:
             self._raise_budget()
-        prompt_total, completion_total, cost_total = self._totals()
+        prompt_total, completion_total, cost_totals = self._totals()
         if prompt_total + prompt_ceiling > self.config.max_total_prompt_tokens:
             self._raise_budget()
         if completion_total + max_tokens > self.config.max_total_completion_tokens:
             self._raise_budget()
-        if cost_total + self.config.max_cost_per_send_usd > self.config.max_cost_usd + 1e-12:
+        if (
+            cost_totals.get(self.config.cost_currency, 0.0)
+            + self.config.max_cost_per_send
+            > self.config.max_cost + 1e-12
+        ):
             self._raise_budget()
 
         sequence = len(self._rows) + 1
@@ -735,7 +794,8 @@ class GenerationBudgetLedger:
                 "max_tokens": max_tokens,
                 "timeout_seconds": float(timeout),
                 "prompt_token_upper_bound": prompt_ceiling,
-                "authorized_cost_ceiling_usd": self.config.max_cost_per_send_usd,
+                "cost_currency": self.config.cost_currency,
+                "authorized_cost_ceiling": self.config.max_cost_per_send,
                 "response_model": None,
                 "finish_reason": None,
                 "response_content_length": None,
@@ -743,7 +803,7 @@ class GenerationBudgetLedger:
                 "prompt_tokens": None,
                 "completion_tokens": None,
                 "total_tokens": None,
-                "actual_cost_usd": None,
+                "actual_cost": None,
                 "failure_reason_code": None,
             }
         )
@@ -785,8 +845,8 @@ class GenerationBudgetLedger:
             actual_cost = None
             if prompt_tokens is not None and completion_tokens is not None:
                 actual_cost = (
-                    prompt_tokens * self.config.input_usd_per_million_tokens
-                    + completion_tokens * self.config.output_usd_per_million_tokens
+                    prompt_tokens * self.config.input_cost_per_million_tokens
+                    + completion_tokens * self.config.output_cost_per_million_tokens
                 ) / 1_000_000
             row.update(
                 {
@@ -800,7 +860,7 @@ class GenerationBudgetLedger:
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "total_tokens": usage.total_tokens if usage is not None else None,
-                    "actual_cost_usd": actual_cost,
+                    "actual_cost": actual_cost,
                 }
             )
         else:
@@ -966,7 +1026,11 @@ def _initialize_run(
         shutil.copyfile(prepared / name, output / name)
     authority = load_provider_model_authority(model_authority)
     shutil.copyfile(model_authority, output / "model-authority.json")
-    for name in {authority.model_document_file, authority.pricing_document_file}:
+    for name in {
+        authority.deployment_authority_file,
+        authority.model_document_file,
+        authority.pricing_document_file,
+    }:
         shutil.copyfile(model_authority.parent / name, output / name)
     _atomic_write(output / "generation-config.json", _canonical_json(config_payload))
     _atomic_write(output / "environment.json", _canonical_json(dict(environment)))
@@ -1017,10 +1081,12 @@ def _manifest(
         output_sha256 = _sha256_bytes(_jsonl(ordered).encode("utf-8"))
     execution_rows = ledger.execution_rows
     actual_costs = [
-        float(row["actual_cost_usd"])
+        float(row["actual_cost"])
         for row in execution_rows
-        if row.get("actual_cost_usd") is not None
+        if row.get("cost_currency") == config.cost_currency
+        and row.get("actual_cost") is not None
     ]
+    campaign_costs = ledger._totals()[2]
     return {
         "schema_version": _SCHEMA_VERSION,
         "status": (
@@ -1037,11 +1103,22 @@ def _manifest(
         "output_sha256": output_sha256,
         "provider_send_count": len(execution_rows),
         "campaign_provider_send_count": len(ledger.rows),
-        "authorized_cost_ceiling_usd": (
-            len(execution_rows) * config.max_cost_per_send_usd
-        ),
-        "estimated_usage_cost_usd": sum(actual_costs) if actual_costs else None,
-        "cost_cap_usd": config.max_cost_usd,
+        "execution_authorized_cost_ceiling": {
+            "currency": config.cost_currency,
+            "amount": len(execution_rows) * config.max_cost_per_send,
+        },
+        "execution_estimated_usage_cost": {
+            "currency": config.cost_currency,
+            "amount": sum(actual_costs) if actual_costs else None,
+        },
+        "campaign_accounted_costs": [
+            {"currency": currency, "amount": amount}
+            for currency, amount in sorted(campaign_costs.items())
+        ],
+        "campaign_cost_cap": {
+            "currency": config.cost_currency,
+            "amount": config.max_cost,
+        },
         "case_send_cap": config.max_sends_per_case,
         "batch_send_cap": config.max_total_sends,
         "campaign_id": config.campaign_id,

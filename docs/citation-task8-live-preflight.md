@@ -15,7 +15,8 @@ evaluations/preflight/citation-task8-20case/
 It contains the five prepared authorities and the one cumulative campaign
 ledger. The ledger was created from all three historical smoke ledgers and
 accounts for 9 sends, 8,137 prompt tokens, 9,468 completion tokens, and
-USD 0.03450675 before a new transmission is permitted.
+USD 0.03450675 before a new transmission is permitted. That legacy estimate
+is retained as USD authority and is never added to the CNY launch budget.
 
 The prepared-authority SHA-256 values are:
 
@@ -34,9 +35,9 @@ has exactly one row for each selected case.
 
 ## Required provider authority
 
-No dated immutable DashScope/Qwen model identifier is proven by the repository
-or the local smoke artifacts. The smoke response reported the mutable alias
-`qwen3.7-plus`; that is not an immutable model-version authority.
+The frozen request and expected response model is
+`qwen3.7-plus-2026-05-26`. Official Alibaba Cloud documentation records the
+mutable `qwen3.7-plus` alias as currently equivalent to that snapshot.
 
 Before launch, an approver must place `provider-model-authority.json` and its
 two captured provider documents beside the prepared authorities. The JSON must
@@ -47,9 +48,13 @@ by the captured official provider documents:
 {
   "schema_version": "1.0",
   "provider": "dashscope",
-  "request_model": "<provider-documented dated immutable model ID>",
-  "expected_response_model": "<exact response model ID documented for that request>",
+  "request_model": "qwen3.7-plus-2026-05-26",
+  "expected_response_model": "qwen3.7-plus-2026-05-26",
   "identifier_kind": "dated_immutable",
+  "deployment_scope": "China (Beijing)",
+  "generation_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "deployment_authority_file": "beijing-endpoint-attestation.json",
+  "deployment_authority_sha256": "<lowercase SHA-256>",
   "model_document_url": "<official HTTPS provider URL without query or fragment>",
   "model_document_retrieved_at_utc": "<YYYY-MM-DDTHH:MM:SSZ>",
   "model_document_file": "<adjacent captured model document filename>",
@@ -58,16 +63,16 @@ by the captured official provider documents:
   "pricing_document_retrieved_at_utc": "<YYYY-MM-DDTHH:MM:SSZ>",
   "pricing_document_file": "<adjacent captured pricing document filename>",
   "pricing_document_sha256": "<lowercase SHA-256>",
-  "input_usd_per_million_tokens": 0.75,
-  "output_usd_per_million_tokens": 3.0,
+  "pricing_currency": "CNY",
+  "input_cost_per_million_tokens": 2.0,
+  "output_cost_per_million_tokens": 8.0,
   "approved_by": "<stable reviewer pseudonym>",
   "approved_at_utc": "<YYYY-MM-DDTHH:MM:SSZ>"
 }
 ```
 
-The rates shown are the smoke configuration, not a claim that they remain
-current. If the captured pricing authority differs, replace them and recompute
-the cost ceiling before approval. The preflight rejects mutable aliases,
+The rates are the standard China (Beijing), up-to-256K rates; promotional
+pricing is excluded. The preflight rejects mutable aliases,
 changed snapshot bytes, unsafe URLs or paths, secret-like material, and any
 model or pricing mismatch.
 
@@ -82,8 +87,9 @@ Subject to confirmation of the rates above, the conservative proposal is:
 - 32,768 prompt-token upper bound per send;
 - 729,033 cumulative prompt tokens and 31,996 cumulative completion tokens,
   both including the prior 9 sends;
-- USD 0.027648 maximum authorized cost per new send at the stated rates;
-- USD 0.65 cumulative campaign cost, including the prior USD 0.03450675.
+- CNY 0.073728 maximum authorized cost per new send;
+- CNY 1.622016 maximum for 22 new sends. The prior USD 0.03450675 remains a
+  separate legacy estimate and is not converted or added.
 
 These are hard ceilings, not estimates. A reservation is written before the
 provider transport is called. Unknown or interrupted usage remains charged at
@@ -96,11 +102,10 @@ repair requests as sends.
 2. Verify the five authority hashes and initial campaign-ledger hash above.
 3. Verify the provider authority and both captured document hashes; confirm the
    request and expected response IDs are dated and documented as immutable.
-4. Confirm the pricing rates and recalculate the per-send and campaign USD
-   ceilings if either rate changed.
+4. Confirm the standard Beijing CNY rates and the separate legacy USD record.
 5. Confirm the user explicitly approves: provider/model, exact 20 cases,
    60-second timeout, 31 cumulative sends, 2 sends per case, token ceilings,
-   and USD 0.65 cumulative cost.
+   and CNY 1.622016 new-send cost.
 6. Set `DASHSCOPE_API_KEY` only in the process environment. Do not put it under
    `evaluations/` or in command-line arguments.
 7. Choose one new execution ID and matching output directory using the clean
@@ -131,7 +136,7 @@ python -m paper_agent.cli citation-baseline preflight-live-generation `
   --max-prompt-tokens-per-send 32768 `
   --max-total-prompt-tokens 729033 `
   --max-total-completion-tokens 31996 `
-  --max-cost-usd 0.65
+  --max-cost 1.622016
 ```
 
 The paid launch uses the identical arguments, changes only the command name to
