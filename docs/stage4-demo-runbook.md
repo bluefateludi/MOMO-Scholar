@@ -1,110 +1,75 @@
 # Stage 4 demo runbook and release acceptance
 
-This runbook covers the local-only Stage 4 Web MVP. The safe demo path uses the
-bundled frontend contract fixture. It makes no provider, credential, benchmark,
-or evaluation call and must always be described as synthetic.
+This runbook covers the local-only Stage 4 Web MVP. The safe path is the packaged,
+read-only `synthetic-demo-v1` artifact bundle served by the real same-origin
+FastAPI/React assembly. It performs no provider, credential, benchmark, or
+evaluation call and must always be described as synthetic.
 
 ## Safe local demo
 
-Prerequisites: Python 3.10 or newer and Node.js 20 or newer.
+Prerequisites: Python 3.10+ and Node.js 20+.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-
+python -m pip install -e .
 Set-Location web
 npm ci
-npm run dev -- --host 127.0.0.1
+npm run build
+Set-Location ..
+python -m paper_agent.web
 ```
 
-Open `http://127.0.0.1:5173`. Do not set `VITE_API_MODE=live` for the synthetic
-demo. Confirm the top banner says `Contract fixture mode`, then open `Open offline
-demo`. The run, report, paper, Evidence, Markdown, and download areas must retain
-the `Synthetic offline demo` warning.
+Open `http://127.0.0.1:8000` and choose **Open offline demo**. Do not submit the
+create-run form. The packaged demo is validated through the production artifact
+reader and seeded into the local registry as `origin="bundled_demo"`; viewing it
+does not execute the pipeline.
 
-Recommended interview path:
+## 3–5 minute demo script
 
-1. Open the synthetic run and point out `completed with degradation`.
-2. Open the checked report and compare support labels with Evidence links.
-3. Switch to Markdown and confirm persisted Evidence markers resolve.
-4. Open the abstract-backed paper and its Evidence provenance.
-5. Show unknown page/section labels and the explicit fallback code.
-6. Show all eight download links and repeat that they contain fixture data.
+1. **0:00–0:30 — Scope.** Point to `Local research desk` and say the app is a
+   single-user local MVP. Open the offline demo and call it synthetic, not research
+   output or evaluation evidence.
+2. **0:30–1:15 — Completion state.** Show `completed with degradation`, the
+   terminal phase record, the abstract fallback, and the persistent demo warning.
+3. **1:15–2:15 — Checked report.** Open the report, compare visible support labels
+   with Evidence markers, then switch between checked and Markdown views.
+4. **2:15–3:15 — Paper and Evidence.** Open a paper analysis, follow an Evidence
+   link, and show the persisted quote, paper, chunk, score, source mode, and honest
+   `Unknown section` / `Unknown page` labels where provenance is unavailable.
+5. **3:15–4:00 — Portable artifacts.** Return to the run and show all eight
+   allowlisted downloads: papers, documents, Evidence, analyses, report JSON,
+   report Markdown, run manifest, and log. Repeat that these are fixture artifacts.
+6. **4:00–5:00 — Boundary.** Explain that a real create-run invokes the production
+   provider path and requires separate credential, network, and cost authorization.
 
-Never describe fixture claims as research output, evaluation evidence, provider
-results, or production-quality metrics. Do not add provider credentials for this
-demo.
-
-## Verification
+## Focused offline acceptance
 
 From the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/web -q
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m compileall -q paper_agent tests
-
+python -m pytest tests/web -q
 Set-Location web
 npm test
+npm run contracts:check
 npm run build
 ```
 
-The backend can be started read-only for API/OpenAPI inspection with:
+Then start `tests.web.fake_server:app` only for an explicit synthetic browser
+smoke. Submit one fake run, observe the progress/terminal record, and open its
+report, paper analysis, Evidence, and artifact links at desktop and 390 px widths.
+The fake runner records zero provider operations. Do not use the default production
+runner for this step.
 
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn paper_agent.web.app:create_app --factory --host 127.0.0.1 --port 8000
-```
+## Fixed completion-state and Evidence matrix
 
-This is not currently the synthetic demo path. Do not submit a run to that server
-during offline verification: the default executor is the production pipeline.
-The supported fake runner is injected by the backend test harness.
+| State / surface | Report | Paper / Evidence | Artifacts | User-facing rule |
+|---|---:|---:|---:|---|
+| `queued` / `running` | Not yet | Not yet | Only terminal-safe files | Poll and preserve last known state; connectivity loss never fabricates failure. |
+| `completed` | Required | Required | Eight allowlisted files | Render checked claims and exact persisted provenance. |
+| `completed_with_degradation` | Required | Required | Eight allowlisted files | Keep degradation and fallback warnings visible beside usable output. |
+| `failed` | Absent | Absent | Manifest/log only when present | Show the safe issue code; never invent a substitute report. |
+| `interrupted` | Absent | Absent | Existing safe files only | Registry terminal state; never rewrite or fabricate a pipeline manifest. |
+| bundled offline demo | Required | Required | Eight immutable fixture files | Persistent synthetic warning; zero provider/pipeline execution at view time. |
 
-## Known limitations on `origin/master@ae70b48`
-
-- Live frontend/backend integration is incomplete. The backend does not implement
-  `GET /api/v1/runs`, `GET /api/v1/runs/{id}/papers`, or
-  `GET /api/v1/runs/{id}/papers/{paper_id}/analysis`, although the frontend calls
-  all three.
-- The backend does not register or validate a bundled synthetic artifact row. The
-  current demo is an in-memory frontend contract fixture, so it does not yet prove
-  the frozen bundled-demo artifact-reader contract.
-- There is no same-origin production host for the built frontend and no verified
-  Content-Security-Policy delivery path.
-- Backend coverage does not yet include a complete degraded artifact run or every
-  required demo validation case. Frontend coverage does not independently exercise
-  every empty/interrupted/reconnect timing boundary.
-- The Vite page requests a missing `favicon.ico`, producing one harmless console
-  404 during browser smoke.
-- A cold Python install can be slow because the PyMuPDF wheel is large. Let the
-  install finish rather than falling back to an unverified global environment.
-
-## Acceptance matrix
-
-| Area | Result | Evidence / remaining work |
-|---|---|---|
-| Clean Python and Node install | Pass | Fresh venv editable dev install and `npm ci` completed. |
-| Backend focused tests | Pass | `tests/web`: 11 passed. |
-| Backend full regression | Pass after packaging fix | 1,324 passed and 1 skipped; the sole initial clean-venv wheel failure was fixed by declaring `setuptools` in the dev extra. |
-| Frontend tests and production build | Pass | 9 tests passed; TypeScript checks and Vite build completed. |
-| Synthetic labeling / no provider use | Pass for fixture UI | Persistent fixture/demo warnings; no provider or network execution was invoked. |
-| Successful fake run and Evidence | Pass | Fake backend run published a checked report; exact quote, chunk, and source resolved. |
-| Degraded display | Pass for fixture UI | Persistent degradation warning and fallback provenance verified. |
-| Failed / provider-offline display | Pass in deterministic tests | Safe `provider_configuration_missing` presentation; raw exception/secret canary absent. |
-| Interrupted and empty states | Partial | Backend restart interruption is tested; UI branches exist, but complete browser coverage is pending. |
-| Eight artifact downloads | Pass with fake backend | All allowlisted names returned attachment responses with expected content types. |
-| Markdown safety | Pass | Browser DOM contained no injected script or raw script text. |
-| Path and secret safety | Pass for covered cases | Traversal/private names denied; secret canary absent from API and downloads. |
-| Desktop and narrow-screen UI | Pass for fixture UI | 1440 px and 390 px Chromium smoke completed; no narrow-screen horizontal overflow. |
-| Live-mode end-to-end flow | Blocked | Missing list, papers, and analysis backend routes. |
-| Backend bundled demo | Blocked | No immutable validated bundle or demo registry row. |
-| Same-origin production security headers | Blocked | Built UI is not served by the backend; CSP path is absent. |
-
-## Re-run after integration lands
-
-Repeat the full commands above, then run one offline fake-executor browser flow in
-`VITE_API_MODE=live`: list runs, submit, observe queued/running progress, open both
-successful statuses, failed and interrupted runs, read report/paper/Evidence, and
-download all eight artifacts. Restart during a blocking fake run to verify
-reconciliation. Finally verify the validated backend demo row, same-origin built
-UI, CSP/frame protections, encoded opaque IDs, connection-loss recovery, and both
-desktop and 390 px layouts. Real-provider and evaluation runs remain out of scope.
+The verified release facts, source-to-report architecture, engineering tradeoffs,
+pending evaluation authorities, and final live action are maintained in
+[Final delivery](final-delivery.md).
