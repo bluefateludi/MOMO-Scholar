@@ -1,0 +1,20 @@
+[
+  {
+    "paper_id": "arxiv:synthetic.0001",
+    "content_source": "pdf",
+    "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "page_count": 8,
+    "warnings": [],
+    "fallback_code": null
+  },
+  {
+    "paper_id": "arxiv:synthetic.0002",
+    "content_source": "abstract",
+    "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "page_count": 1,
+    "warnings": [
+      "Abstract fallback used in this synthetic fixture."
+    ],
+    "fallback_code": "pdf_download_timeout"
+  }
+]

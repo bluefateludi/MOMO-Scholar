@@ -4,7 +4,7 @@ export const DEMO_ID = "00000000-0000-4000-8000-000000000001";
 const artifactId = "20260802-120000-000001-synthetic-demo";
 export const EV1 = `${artifactId}:paper:arxiv:2401.00001:ev_001`;
 export const EV2 = `${artifactId}:paper:arxiv:2401.00002:ev_001`;
-const degradation: RunIssue = { stage: "retrieval", code: "vector_network_unavailable", paper_id: "arxiv:2401.00002" };
+const degradation: RunIssue = { stage: "retrieval", code: "vector_network_unavailable", paper_id: "arxiv:2401.00002", message: null };
 
 export const evidence: EvidenceView[] = [
   { evidence_id: EV1, paper_id: "arxiv:2401.00001", chunk_id: "arxiv:2401.00001:chunk:0004", section: "Methods", page: 4, claim_type: "method", quote: "Reciprocal-rank fusion combines independently ranked lexical and semantic candidates without requiring score calibration.", relevance_score: 0.94, source: { title: "Synthetic Hybrid Retrieval Study", url: "https://arxiv.org/abs/2401.00001", pdf_url: "https://arxiv.org/pdf/2401.00001", content_source: "pdf", fallback_code: null } },
@@ -12,9 +12,9 @@ export const evidence: EvidenceView[] = [
 ];
 
 export const papers: PaperSummary[] = evidence.map((item, index) => ({
-  paper_id: item.paper_id, title: item.source.title, authors: index === 0 ? ["Ada Example", "Lin Fixture"] : ["Noor Sample"], year: 2024,
-  abstract: "Synthetic content prepared only for the bundled offline UI demonstration.", url: item.source.url, pdf_url: item.source.pdf_url,
-  source: "arxiv", citation_count: null, document: { paper_id: item.paper_id, content_source: item.source.content_source, content_sha256: "a".repeat(64), page_count: index === 0 ? 8 : 1, warnings: index ? ["Abstract fallback used in this synthetic fixture."] : [], fallback_code: item.source.fallback_code },
+  paper_id: item.paper_id, title: item.source.title ?? "Synthetic paper", authors: index === 0 ? ["Ada Example", "Lin Fixture"] : ["Noor Sample"], year: 2024,
+  abstract: "Synthetic content prepared only for the bundled offline UI demonstration.", url: item.source.url ?? "https://example.invalid", pdf_url: item.source.pdf_url,
+  source: "arxiv", citation_count: null, document: { paper_id: item.paper_id, content_source: item.source.content_source ?? "abstract", content_sha256: "a".repeat(64), page_count: index === 0 ? 8 : 1, warnings: index ? ["Abstract fallback used in this synthetic fixture."] : [], fallback_code: item.source.fallback_code },
   analysis_available: true, evidence_count: 1,
 }));
 
@@ -45,6 +45,12 @@ export const demoRun: RunDetail = {
   id: DEMO_ID, artifact_run_id: artifactId, origin: "bundled_demo", demo: true, status: "completed_with_degradation", phase: "terminal",
   question: report.report.question, paper_limit: 2, content_mode: "pdf_preferred", retrieval,
   progress: { completed_units: 2, total_units: 2, paper_id: null }, created_at: "2026-08-02T04:00:00Z", started_at: "2026-08-02T04:00:01Z", finished_at: "2026-08-02T04:00:12Z", has_report: true,
-  manifest: { counts: { selected_papers: 2, pdf_documents: 1, abstract_documents: 1, successful_analyses: 2, evidence_items: 2 }, retrieval_outcomes: [], degradations: [degradation], errors: [], stage_elapsed_seconds: { search: 1.2, retrieval: 2.4, synthesis: 1.8 }, usage: {}, settings: {}, component_versions: {} },
+  manifest: {
+    counts: { selected_papers: 2, pdf_documents: 1, abstract_documents: 1, explicit_abstract_documents: 0, pdf_fallback_documents: 1, excluded_papers: 0, successful_analyses: 2, evidence_items: 2 },
+    retrieval_outcomes: [], degradations: [degradation], errors: [], stage_elapsed_seconds: { search: 1.2, retrieval: 2.4, synthesis: 1.8 },
+    usage: { operations: 0, http_attempts: 0, prompt_tokens: null, completion_tokens: null, total_tokens: null },
+    settings: { retrieval_mode: "auto", embedding_model: "synthetic-embedding", generation_provider: "dashscope", generation_endpoint_host: "example.invalid", generation_model: "synthetic-generation", generation_timeout_seconds: 1, pdf_download_timeout_seconds: 1, pdf_max_bytes: 1000000, pdf_max_pages: 20, analysis_evidence_per_paper: 6, chunk_max_words: 180, chunk_overlap_words: 30 },
+    component_versions: {},
+  },
   available_artifacts: ["papers.json", "documents.json", "evidence.json", "analyses.json", "report.json", "report.md", "run_manifest.json", "logs.jsonl"],
 };

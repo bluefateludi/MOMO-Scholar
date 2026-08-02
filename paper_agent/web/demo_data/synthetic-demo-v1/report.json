@@ -1,0 +1,55 @@
+{
+  "question": "How can hybrid retrieval support resilient scientific literature review?",
+  "tldr_claims": [
+    {
+      "text": "Hybrid retrieval can combine complementary lexical and semantic rankings.",
+      "evidence_ids": [
+        "synthetic-demo-v1:paper:arxiv:synthetic.0001:ev_001"
+      ],
+      "support_status": "supported"
+    }
+  ],
+  "method_taxonomy": [
+    {
+      "text": "Reciprocal-rank fusion avoids direct score calibration.",
+      "evidence_ids": [
+        "synthetic-demo-v1:paper:arxiv:synthetic.0001:ev_001"
+      ],
+      "support_status": "supported"
+    }
+  ],
+  "comparisons": [],
+  "key_findings": [
+    {
+      "text": "Fallback behavior must remain explicit in research provenance.",
+      "evidence_ids": [
+        "synthetic-demo-v1:paper:arxiv:synthetic.0002:ev_001"
+      ],
+      "support_status": "supported"
+    }
+  ],
+  "limitations": [
+    {
+      "text": "Lexical fallback may reduce semantic recall.",
+      "evidence_ids": [
+        "synthetic-demo-v1:paper:arxiv:synthetic.0002:ev_001"
+      ],
+      "support_status": "weakly_supported"
+    }
+  ],
+  "open_questions": [
+    {
+      "text": "How should fusion parameters adapt across scientific fields?",
+      "evidence_ids": [],
+      "support_status": "unsupported"
+    }
+  ],
+  "rejected_critical_claims": [
+    {
+      "text": "The fixture proves production retrieval quality.",
+      "evidence_ids": [],
+      "support_status": "unsupported",
+      "source_section": "key_findings"
+    }
+  ]
+}

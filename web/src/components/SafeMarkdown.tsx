@@ -2,7 +2,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 
-const safeUrl = (url: string) => /^(https?:|mailto:|\/)/i.test(url) ? defaultUrlTransform(url) : "";
+const safeUrl = (url: string) => (/^\/(?![\\/])/.test(url) || /^(https?:|mailto:)/i.test(url)) ? defaultUrlTransform(url) : "";
 export function SafeMarkdown({ markdown, runId, evidenceIds }: { markdown: string; runId: string; evidenceIds: string[] }) {
   const linked = evidenceIds.reduce((text, id) => text.replaceAll(`[${id}]`, `[Evidence](/runs/${encodeURIComponent(runId)}/evidence/${encodeURIComponent(id)})`), markdown);
   const rewritten = linked.replace(/\[([^\]\n]+:ev_\d+)\]/g, "**Unresolved Evidence: `$1`**");

@@ -40,10 +40,11 @@ describe("create-run form", () => {
 
 describe("safe research reading", () => {
   it("removes raw HTML and resolves exact Evidence markers", () => {
-    render(<MemoryRouter><SafeMarkdown markdown={`Text [${EV1}] [missing:ev_999] <script>alert('x')</script> [bad](javascript:alert(1))`} runId={DEMO_ID} evidenceIds={[EV1]}/></MemoryRouter>);
+    render(<MemoryRouter><SafeMarkdown markdown={`Text [${EV1}] [missing:ev_999] <script>alert('x')</script> [bad](javascript:alert(1)) [remote](//evil.example/x)`} runId={DEMO_ID} evidenceIds={[EV1]}/></MemoryRouter>);
     expect(document.querySelector("script")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Evidence" })).toHaveAttribute("href", `/runs/${DEMO_ID}/evidence/${encodeURIComponent(EV1)}`);
     expect(screen.getByText("bad").closest("a")).toHaveAttribute("href", "");
+    expect(screen.getByText("remote").closest("a")).toHaveAttribute("href", "");
     expect(screen.getByText(/Unresolved Evidence/)).toBeInTheDocument();
   });
 
@@ -59,7 +60,7 @@ describe("safe research reading", () => {
   });
 
   it("presents terminal failures and corrupt artifacts without raw exceptions", () => {
-    const failed = { ...demoRun, demo: false, origin: "live" as const, status: "failed" as const, has_report: false, manifest: { ...demoRun.manifest!, degradations: [], errors: [{ stage: "initializing", code: "provider_configuration_missing" }] } };
+    const failed = { ...demoRun, demo: false, origin: "live" as const, status: "failed" as const, has_report: false, manifest: { ...demoRun.manifest!, degradations: [], errors: [{ stage: "initializing", code: "provider_configuration_missing", paper_id: null, message: null }] } };
     const { rerender } = render(<MemoryRouter><RunBanner run={failed}/></MemoryRouter>);
     expect(screen.getByRole("alert")).toHaveTextContent("generation provider is not configured");
     rerender(<MemoryRouter><ErrorPanel code="artifact_corrupt" message="A saved artifact could not be safely read."/></MemoryRouter>);

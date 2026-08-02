@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -141,6 +142,69 @@ class RunRegistry:
         with self._connect() as db:
             rows = db.execute("SELECT * FROM runs WHERE status IN ('queued','running') ORDER BY created_at").fetchall()
         return [self._parse(row) for row in rows]
+
+    def list(self, limit: int, cursor: str | None = None) -> tuple[list[RegistryRun], str | None]:
+        parameters: list[object] = []
+        where = ""
+        if cursor:
+            try:
+                decoded = urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+                created_at, run_id = decoded.split("\0", 1)
+            except (ValueError, UnicodeError) as exc:
+                raise WebError(422, "validation_error") from exc
+            where = "WHERE (created_at < ? OR (created_at = ? AND id < ?))"
+            parameters.extend((created_at, created_at, run_id))
+        with self._connect() as db:
+            rows = db.execute(
+                f"SELECT * FROM runs {where} ORDER BY created_at DESC,id DESC LIMIT ?",
+                (*parameters, limit + 1),
+            ).fetchall()
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        next_cursor = None
+        if has_more and page:
+            token = f"{page[-1]['created_at']}\0{page[-1]['id']}".encode("utf-8")
+            next_cursor = urlsafe_b64encode(token).decode("ascii")
+        return [self._parse(row) for row in page], next_cursor
+
+    def seed_demo(
+        self,
+        *,
+        run_id: str,
+        artifact_run_id: str,
+        request: CreateRunRequest,
+        started_at: datetime,
+        finished_at: datetime,
+        status: ApiStatus,
+    ) -> None:
+        if status not in ("completed", "completed_with_degradation"):
+            raise ValueError("bundled demo must be successful and terminal")
+        now = finished_at.isoformat()
+        with self._connect() as db:
+            existing = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if existing is not None:
+                row = self._parse(existing)
+                if row.origin != "bundled_demo" or row.artifact_run_id != artifact_run_id:
+                    raise RuntimeError("bundled demo registry row does not match packaged artifacts")
+                db.execute(
+                    """UPDATE runs SET status=?,phase='terminal',request_json=?,progress_json=?,
+                       error_json=NULL,started_at=?,finished_at=?,updated_at=? WHERE id=?""",
+                    (
+                        status, request.model_dump_json(),
+                        RunProgress(completed_units=request.paper_limit, total_units=request.paper_limit).model_dump_json(),
+                        started_at.isoformat(), now, now, run_id,
+                    ),
+                )
+                return
+            db.execute(
+                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    run_id, artifact_run_id, "bundled_demo", status, "terminal",
+                    request.model_dump_json(),
+                    RunProgress(completed_units=request.paper_limit, total_units=request.paper_limit).model_dump_json(),
+                    None, started_at.isoformat(), started_at.isoformat(), now, now,
+                ),
+            )
 
     def _update(self, run_id: str, **values: object) -> None:
         values["updated_at"] = utc_now().isoformat()

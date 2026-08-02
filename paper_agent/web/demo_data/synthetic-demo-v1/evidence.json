@@ -1,0 +1,22 @@
+[
+  {
+    "evidence_id": "synthetic-demo-v1:paper:arxiv:synthetic.0001:ev_001",
+    "paper_id": "arxiv:synthetic.0001",
+    "chunk_id": "arxiv:synthetic.0001:chunk:0004",
+    "section": "Methods",
+    "page": 4,
+    "claim_type": "method",
+    "quote": "Reciprocal-rank fusion combines independently ranked lexical and semantic candidates without requiring score calibration.",
+    "relevance_score": 0.94
+  },
+  {
+    "evidence_id": "synthetic-demo-v1:paper:arxiv:synthetic.0002:ev_001",
+    "paper_id": "arxiv:synthetic.0002",
+    "chunk_id": "arxiv:synthetic.0002:chunk:0002",
+    "section": null,
+    "page": null,
+    "claim_type": "limitation",
+    "quote": "Lexical fallback preserves availability when vector infrastructure is transiently unavailable, but may reduce semantic recall.",
+    "relevance_score": 0.82
+  }
+]

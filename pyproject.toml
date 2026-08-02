@@ -39,6 +39,9 @@ include = ["paper_agent", "paper_agent.*"]
 [tool.setuptools]
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 
+[tool.setuptools.package-data]
+"paper_agent.web" = ["demo_data/synthetic-demo-v1/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

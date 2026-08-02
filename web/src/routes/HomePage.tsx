@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, isMockMode } from "../api";
 import { ApiError } from "../api/client";
 import type { ContentMode, CreateRunRequest, RetrievalMode, RunSummary } from "../api/contracts";
-import { DEMO_ID } from "../api/fixtures";
 import { Empty, Loading, StatusBadge } from "../components/Feedback";
 
 const defaults: CreateRunRequest = { question: "", paper_limit: 3, content_mode: "pdf_preferred", retrieval: { mode: "auto", candidate_k: 30, top_k: 8, rrf_k: 60, analysis_evidence_per_paper: 6 } };
@@ -24,6 +23,7 @@ export function HomePage() {
     try { const { data } = await api.createRun({ ...form, question }); navigate(`/runs/${encodeURIComponent(data.id)}`); }
     catch (caught) { setError(caught instanceof ApiError ? caught.message : "The local API could not be reached."); setPending(false); }
   }
+  const demo = runs?.find((run) => run.demo);
   return <div className="home-page page-enter">
     <section className="hero"><div className="hero-copy"><p className="eyebrow">Stage 4 · local research workspace</p><h1>Ask precisely.<br/><em>Trace everything.</em></h1><p className="dek">Build a checked literature survey whose claims remain attached to exact paper Evidence—not a persuasive black box.</p></div><aside className="folio" aria-label="Workflow summary"><span>01</span><p>Question</p><span>02</span><p>Retrieve</p><span>03</span><p>Check</p><span>04</span><p>Read</p></aside></section>
     <section className="desk-grid">
@@ -34,7 +34,7 @@ export function HomePage() {
         <details><summary>Retrieval settings <span>Advanced</span></summary><div className="advanced-grid"><NumberField label="Candidate K" value={form.retrieval.candidate_k} min={1} max={100} onChange={(value) => setRetrieval("candidate_k", value)}/><NumberField label="Top K" value={form.retrieval.top_k} min={1} max={20} onChange={(value) => setRetrieval("top_k", value)}/><NumberField label="RRF K" value={form.retrieval.rrf_k} min={1} max={1000} onChange={(value) => setRetrieval("rrf_k", value)}/><NumberField label="Evidence / paper" value={form.retrieval.analysis_evidence_per_paper} min={1} max={20} onChange={(value) => setRetrieval("analysis_evidence_per_paper", value)}/></div></details>
         {error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={pending}>{pending ? "Opening file…" : "Create research run"}<span aria-hidden="true">↗</span></button>
       </form>
-      <aside className="demo-card"><p className="eyebrow">No network? Start here.</p><h2>A complete research file, already on the desk.</h2><p>Explore report, paper analysis, Evidence provenance and downloads using deterministic synthetic data.</p><Link className="text-link" to={`/runs/${DEMO_ID}`}>Open offline demo <span>→</span></Link><small>Synthetic demo · never presented as live output</small></aside>
+      <aside className="demo-card"><p className="eyebrow">No network? Start here.</p><h2>A complete research file, already on the desk.</h2><p>Explore report, paper analysis, Evidence provenance and downloads using deterministic synthetic data.</p>{demo ? <Link className="text-link" to={`/runs/${encodeURIComponent(demo.id)}`}>Open offline demo <span>→</span></Link> : <span className="text-link" aria-disabled="true">Offline demo unavailable</span>}<small>Synthetic demo · never presented as live output</small></aside>
     </section>
     <section className="recent"><div className="section-heading"><span>Recent files</span><small>Newest first</small></div>{runs === null ? <Loading label="Checking the local registry…"/> : runs.length === 0 ? <Empty title="No research files yet."/> : <div className="run-list">{runs.map((run, index) => <Link key={run.id} to={`/runs/${encodeURIComponent(run.id)}`}><span className="run-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{run.question}</strong><small>{run.demo ? "Synthetic offline demo" : new Date(run.created_at).toLocaleString()}</small></div><StatusBadge status={run.status}/><span aria-hidden="true">↗</span></Link>)}</div>}</section>
   </div>;

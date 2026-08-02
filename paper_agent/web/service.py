@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from paper_agent.observability.models import RunManifest
 from paper_agent.web.api_models import (
-    CreateRunRequest, EvidenceList, EvidenceView, ReportResponse, RunDetail,
-    RunSummary,
+    CreateRunRequest, EvidenceList, EvidenceView, PaperAnalysisResponse, PaperList,
+    ReportResponse, RunDetail, RunList, RunSummary,
 )
 from paper_agent.web.artifacts import ArtifactReader
 from paper_agent.web.errors import WebError
@@ -29,6 +29,14 @@ class RunService:
         row = self.registry.admit(str(uuid4()), request, self.capacity)
         self.executor.notify()
         return self._summary(row, None)
+
+    def list(self, limit: int, cursor: str | None = None) -> RunList:
+        rows, next_cursor = self.registry.list(limit, cursor)
+        items: list[RunSummary] = []
+        for row in rows:
+            manifest = self._manifest_and_reconcile(row)
+            items.append(self._summary(self.registry.get(row.id), manifest))
+        return RunList(items=items, next_cursor=next_cursor)
 
     def detail(self, run_id: str) -> RunDetail:
         row = self.registry.get(run_id)
@@ -67,6 +75,31 @@ class RunService:
             if item.evidence_id == evidence_id:
                 return item
         raise WebError(404, "evidence_not_found")
+
+    def papers(self, run_id: str) -> PaperList:
+        detail = self.detail(run_id)
+        if not detail.artifact_run_id:
+            raise WebError(409, "artifact_not_ready")
+        try:
+            items = self.artifacts.papers(detail.origin, detail.artifact_run_id)
+        except WebError as error:
+            if error.code == "artifact_not_found" and detail.status not in TERMINAL:
+                raise WebError(409, "artifact_not_ready") from error
+            raise
+        return PaperList(items=items)
+
+    def paper_analysis(self, run_id: str, paper_id: str) -> PaperAnalysisResponse:
+        detail = self.detail(run_id)
+        if not detail.artifact_run_id:
+            raise WebError(409, "artifact_not_ready")
+        try:
+            return self.artifacts.paper_analysis(
+                detail.origin, detail.artifact_run_id, paper_id, run_id,
+            )
+        except WebError as error:
+            if error.code == "artifact_not_found" and detail.status not in TERMINAL:
+                raise WebError(409, "artifact_not_ready") from error
+            raise
 
     def artifact(self, run_id: str, name: str):
         detail = self.detail(run_id)

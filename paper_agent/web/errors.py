@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 _MESSAGES = {
     "run_not_found": "The requested run was not found.",
+    "paper_not_found": "The requested paper was not found.",
     "evidence_not_found": "The requested evidence was not found.",
     "artifact_not_found": "The requested artifact was not found.",
     "artifact_not_ready": "The requested artifact is not available yet.",
@@ -13,6 +14,8 @@ _MESSAGES = {
     "validation_error": "The request did not satisfy the API contract.",
     "queue_full": "The run queue is full.",
     "execution_unavailable": "Run execution is unavailable.",
+    "run_busy": "The requested run is busy.",
+    "origin_not_allowed": "The request origin is not allowed.",
     "internal_error": "The request could not be completed.",
 }
 

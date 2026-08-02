@@ -3,19 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, UUID4, field_validator, model_validator
 
 from paper_agent.modeling import StrictModel
 from paper_agent.observability.models import (
     RetrievalRecord, RunCounts, RunIssue, SafeRunSettings, UsageTotals,
 )
+from paper_agent.fulltext.models import DocumentRecord
 from paper_agent.schemas import Evidence, Paper
-from paper_agent.synthesis.models import CheckedSurveyReport
+from paper_agent.synthesis.models import CheckedPaperAnalysis, CheckedSurveyReport
 
 
 ApiStatus = Literal[
     "queued", "running", "completed", "completed_with_degradation", "failed",
     "interrupted",
+]
+ArtifactName = Literal[
+    "papers.json", "documents.json", "evidence.json", "analyses.json",
+    "report.json", "report.md", "run_manifest.json", "logs.jsonl",
 ]
 Phase = Literal[
     "queued", "initializing", "search", "acquisition", "chunking", "retrieval",
@@ -58,7 +63,7 @@ class RunProgress(StrictModel):
 
 
 class RunSummary(StrictModel):
-    id: str
+    id: UUID4
     artifact_run_id: str | None
     origin: Literal["live", "bundled_demo"]
     status: ApiStatus
@@ -88,11 +93,16 @@ class ManifestProjection(StrictModel):
 
 class RunDetail(RunSummary):
     manifest: ManifestProjection | None
-    available_artifacts: list[str]
+    available_artifacts: list[ArtifactName]
+
+
+class RunList(StrictModel):
+    items: list[RunSummary]
+    next_cursor: str | None = None
 
 
 class ReportResponse(StrictModel):
-    run_id: str
+    run_id: UUID4
     status: Literal["completed", "completed_with_degradation"]
     report: CheckedSurveyReport
     markdown: str
@@ -113,6 +123,23 @@ class EvidenceView(Evidence):
 
 class EvidenceList(StrictModel):
     items: list[EvidenceView]
+
+
+class PaperSummary(Paper):
+    document: DocumentRecord | None
+    analysis_available: bool
+    evidence_count: int = Field(ge=0)
+
+
+class PaperList(StrictModel):
+    items: list[PaperSummary]
+
+
+class PaperAnalysisResponse(StrictModel):
+    run_id: UUID4
+    paper: Paper
+    document: DocumentRecord | None
+    analysis: CheckedPaperAnalysis
 
 
 class ErrorBody(StrictModel):

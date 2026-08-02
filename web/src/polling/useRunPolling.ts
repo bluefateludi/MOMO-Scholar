@@ -21,9 +21,12 @@ export function useRunPolling(id: string, api: RunApi) {
       setLoading(false);
       if (caught instanceof ApiError) {
         setError(caught);
+        setConnectionLost(false);
         if (caught.status === 404 && caught.code === "run_not_found") return;
+      } else {
+        setConnectionLost(true);
       }
-      setConnectionLost(true); failures.current += 1;
+      failures.current += 1;
       const base = Math.min(30, 2 * 2 ** (failures.current - 1));
       timer.current = window.setTimeout(poll, (base + Math.random() * Math.min(1, base * 0.2)) * 1000);
     }

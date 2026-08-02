@@ -1,49 +1,48 @@
-// Typed projection of docs/superpowers/specs/2026-08-02-web-mvp-scope-api-ui-contract.md.
-// Replace generation source with openapi/web-v1.json when the backend snapshot lands.
-export type RunStatus = "queued" | "running" | "completed" | "completed_with_degradation" | "failed" | "interrupted";
-export type RunPhase = "queued" | "initializing" | "search" | "acquisition" | "chunking" | "retrieval" | "analysis" | "synthesis" | "citation_check" | "publishing" | "terminal";
-export type SupportStatus = "supported" | "weakly_supported" | "unsupported";
-export type ContentMode = "pdf_preferred" | "abstract_only";
-export type RetrievalMode = "auto" | "lexical" | "hybrid";
+// Runtime API schemas are generated from openapi/web-v1.json. This file only
+// adds client conveniences and marks defaulted response fields as always present,
+// matching FastAPI's serialized response_model behavior.
+import type { components } from "./openapi.generated";
 
-export interface RetrievalSettings { mode: RetrievalMode; candidate_k: number; top_k: number; rrf_k: number; analysis_evidence_per_paper: number }
-export interface CreateRunRequest { question: string; paper_limit: number; content_mode: ContentMode; retrieval: RetrievalSettings }
-export interface RunProgress { completed_units: number | null; total_units: number | null; paper_id: string | null }
-export interface RunIssue { stage: string; code: string; paper_id?: string | null; message?: string | null }
-export interface ManifestProjection {
-  counts: Record<string, number>;
-  retrieval_outcomes: Array<Record<string, unknown>>;
-  degradations: RunIssue[];
-  errors: RunIssue[];
-  stage_elapsed_seconds: Record<string, number>;
-  usage: Record<string, number | null>;
-  settings: Record<string, unknown>;
-  component_versions: Record<string, string>;
-}
-export interface RunSummary extends CreateRunRequest {
-  id: string; artifact_run_id: string | null; origin: "live" | "bundled_demo"; status: RunStatus; phase: RunPhase;
-  progress: RunProgress; created_at: string; started_at: string | null; finished_at: string | null; has_report: boolean; demo: boolean;
-}
-export interface RunDetail extends RunSummary { manifest: ManifestProjection | null; available_artifacts: ArtifactName[] }
-export interface RunList { items: RunSummary[]; next_cursor: string | null }
-export interface ApiErrorBody { error: { code: string; message: string; details: Record<string, unknown> } }
+type Schemas = components["schemas"];
+type RequiredDeep<T> = T extends readonly (infer Item)[]
+  ? RequiredDeep<Item>[]
+  : T extends object
+    ? { [Key in keyof T]-?: RequiredDeep<Exclude<T[Key], undefined>> }
+    : T;
 
-export interface CheckedClaim { text: string; evidence_ids: string[]; support_status: SupportStatus }
-export interface RejectedCriticalClaim extends CheckedClaim { source_section: "tldr_claims" | "key_findings" }
-export interface CheckedSurveyReport {
-  question: string; tldr_claims: CheckedClaim[]; method_taxonomy: CheckedClaim[]; comparisons: CheckedClaim[];
-  key_findings: CheckedClaim[]; limitations: CheckedClaim[]; open_questions: CheckedClaim[]; rejected_critical_claims: RejectedCriticalClaim[];
-}
-export interface ReportResponse { run_id: string; status: "completed" | "completed_with_degradation"; report: CheckedSurveyReport; markdown: string; degradations: RunIssue[] }
-export interface Paper { paper_id: string; title: string; authors: string[]; year: number | null; abstract: string; url: string; pdf_url: string | null; source: string; citation_count: number | null }
-export interface DocumentRecord { paper_id: string; content_source: "pdf" | "abstract"; content_sha256: string; page_count: number; warnings: string[]; fallback_code: string | null }
-export interface PaperSummary extends Paper { document: DocumentRecord | null; analysis_available: boolean; evidence_count: number }
-export interface CheckedPaperAnalysis { paper_id: string; contributions: CheckedClaim[]; methods: CheckedClaim[]; experiments: CheckedClaim[]; results: CheckedClaim[]; limitations: CheckedClaim[] }
-export interface PaperAnalysisResponse { run_id: string; paper: Paper; document: DocumentRecord | null; analysis: CheckedPaperAnalysis }
-export interface EvidenceView { evidence_id: string; paper_id: string; chunk_id: string; section: string | null; page: number | null; claim_type: string; quote: string; relevance_score: number; source: { title: string; url: string; pdf_url: string | null; content_source: "pdf" | "abstract"; fallback_code: string | null } }
-export type ArtifactName = "papers.json" | "documents.json" | "evidence.json" | "analyses.json" | "report.json" | "report.md" | "run_manifest.json" | "logs.jsonl";
+export type RetrievalSettings = RequiredDeep<Schemas["RetrievalRequest"]>;
+export type CreateRunRequest = RequiredDeep<Schemas["CreateRunRequest"]>;
+export type RunProgress = RequiredDeep<Schemas["RunProgress"]>;
+export type RunIssue = RequiredDeep<Schemas["RunIssue"]>;
+export type ManifestProjection = RequiredDeep<Schemas["ManifestProjection"]>;
+export type RunSummary = RequiredDeep<Schemas["RunSummary"]>;
+export type RunDetail = RequiredDeep<Schemas["RunDetail"]>;
+export type RunList = RequiredDeep<Schemas["RunList"]>;
+export type ApiErrorBody = RequiredDeep<Schemas["ErrorResponse"]>;
+export type CheckedClaim = RequiredDeep<Schemas["CheckedClaim"]>;
+export type RejectedCriticalClaim = RequiredDeep<Schemas["RejectedCriticalClaim"]>;
+export type CheckedSurveyReport = RequiredDeep<Schemas["CheckedSurveyReport"]>;
+export type ReportResponse = RequiredDeep<Schemas["ReportResponse"]>;
+export type Paper = RequiredDeep<Schemas["Paper"]>;
+export type DocumentRecord = RequiredDeep<Schemas["DocumentRecord"]>;
+export type PaperSummary = RequiredDeep<Schemas["PaperSummary"]>;
+export type CheckedPaperAnalysis = RequiredDeep<Schemas["CheckedPaperAnalysis"]>;
+export type PaperAnalysisResponse = RequiredDeep<Schemas["PaperAnalysisResponse"]>;
+export type EvidenceView = RequiredDeep<Schemas["EvidenceView"]>;
 
-export interface ApiResponse<T> { data: T; retryAfterSeconds?: number }
+export type RunStatus = RunSummary["status"];
+export type RunPhase = RunSummary["phase"];
+export type SupportStatus = CheckedClaim["support_status"];
+export type ContentMode = CreateRunRequest["content_mode"];
+export type RetrievalMode = RetrievalSettings["mode"];
+export type ArtifactName = RunDetail["available_artifacts"][number];
+
+export interface ApiResponse<T> {
+  data: T;
+  retryAfterSeconds?: number;
+  location?: string;
+}
+
 export interface RunApi {
   listRuns(): Promise<ApiResponse<RunList>>;
   createRun(request: CreateRunRequest): Promise<ApiResponse<RunSummary>>;
