@@ -83,8 +83,25 @@ def test_every_approved_pdf_failure_falls_back_and_degrades(tmp_path, code):
 
 
 def test_explicit_no_pdf_is_not_a_degradation(tmp_path):
-    result = run_pipeline("question", output_base=tmp_path, no_pdf=True, settings=Settings(dashscope_api_key="offline", retrieval_mode="hybrid"), dependencies=_deps())
+    progress = []
+    artifact_ids = []
+    result = run_pipeline(
+        "question", output_base=tmp_path, no_pdf=True,
+        settings=Settings(dashscope_api_key="offline", retrieval_mode="hybrid"),
+        dependencies=_deps(), progress_sink=progress.append,
+        artifact_created_sink=artifact_ids.append,
+    )
     assert result.status == "completed"
+    assert artifact_ids == [result.run_dir.name]
+    assert [event.phase for event in progress] == [
+        "initializing", "search",
+        "acquisition", "chunking", "retrieval", "analysis",
+        "acquisition", "chunking", "retrieval", "analysis",
+        "synthesis", "citation_check", "publishing",
+    ]
+    assert progress[2].completed_units == 0
+    assert progress[6].completed_units == 1
+    assert progress[6].total_units == 2
 
 
 def test_pdf_failure_without_abstract_excludes_paper_when_minimum_still_met(tmp_path):
