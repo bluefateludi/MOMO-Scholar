@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
@@ -42,6 +44,8 @@ _AUTHORITY_FILES = (
 _SECRET_PATTERN = re.compile(
     r'(?i)(?:"(?:api[_-]?key|authorization)"\s*:|bearer\s+[a-z0-9._-]+|sk-[a-z0-9])'
 )
+_SHA256_PATTERN = r"^[0-9a-f]{64}$"
+_UTC_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 
 
 class FrozenLiveModel(StrictModel):
@@ -54,9 +58,76 @@ class _LiveCaseError(RuntimeError):
         super().__init__(reason_code)
 
 
+class ProviderModelAuthority(FrozenLiveModel):
+    """Offline snapshot proving the exact model identifier and pricing used."""
+
+    schema_version: Literal["1.0"] = _SCHEMA_VERSION
+    provider: Literal["dashscope"]
+    request_model: str = Field(min_length=1)
+    expected_response_model: str = Field(min_length=1)
+    identifier_kind: Literal["dated_immutable"]
+    model_document_url: str = Field(min_length=1)
+    model_document_retrieved_at_utc: str = Field(pattern=_UTC_TIMESTAMP_PATTERN)
+    model_document_file: str = Field(min_length=1)
+    model_document_sha256: str = Field(pattern=_SHA256_PATTERN)
+    pricing_document_url: str = Field(min_length=1)
+    pricing_document_retrieved_at_utc: str = Field(pattern=_UTC_TIMESTAMP_PATTERN)
+    pricing_document_file: str = Field(min_length=1)
+    pricing_document_sha256: str = Field(pattern=_SHA256_PATTERN)
+    input_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
+    output_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
+    approved_by: str = Field(min_length=1)
+    approved_at_utc: str = Field(pattern=_UTC_TIMESTAMP_PATTERN)
+
+    @field_validator(
+        "request_model", "expected_response_model", "approved_by"
+    )
+    @classmethod
+    def _nonblank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model authority text must not be blank")
+        return value
+
+    @field_validator("model_document_url", "pricing_document_url")
+    @classmethod
+    def _safe_authority_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("authority URL must be a safe HTTPS URL")
+        return value
+
+    @field_validator("model_document_file", "pricing_document_file")
+    @classmethod
+    def _safe_snapshot_name(cls, value: str) -> str:
+        path = Path(value)
+        if path.name != value or value in {".", ".."}:
+            raise ValueError("authority snapshot must be a safe adjacent filename")
+        return value
+
+    @field_validator(
+        "input_usd_per_million_tokens", "output_usd_per_million_tokens"
+    )
+    @classmethod
+    def _finite_price(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("authority pricing must be finite")
+        return value
+
+
 class LiveGenerationConfig(FrozenLiveModel):
     schema_version: Literal["1.0"] = _SCHEMA_VERSION
     request_model: str = Field(min_length=1)
+    expected_response_model: str = Field(min_length=1)
+    model_authority_sha256: str = Field(pattern=_SHA256_PATTERN)
+    campaign_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
     temperature: float = Field(ge=0.0, le=2.0, strict=True)
     max_tokens: int = Field(ge=1, strict=True)
     attempt_timeout_seconds: float = Field(gt=0.0, strict=True)
@@ -68,6 +139,8 @@ class LiveGenerationConfig(FrozenLiveModel):
     case_limit: int = Field(ge=1, strict=True)
     selected_case_ids: tuple[str, ...] = ()
     max_prompt_tokens_per_send: int = Field(ge=1, strict=True)
+    max_total_prompt_tokens: int = Field(ge=1, strict=True)
+    max_total_completion_tokens: int = Field(ge=1, strict=True)
     pricing_authority: str = Field(min_length=1)
     input_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
     output_usd_per_million_tokens: float = Field(gt=0.0, strict=True)
@@ -86,11 +159,11 @@ class LiveGenerationConfig(FrozenLiveModel):
             raise ValueError("generation numeric configuration must be finite")
         return value
 
-    @field_validator("request_model")
+    @field_validator("request_model", "expected_response_model", "campaign_id", "execution_id")
     @classmethod
     def _nonblank_model(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("request_model must not be blank")
+            raise ValueError("generation identity fields must not be blank")
         return value
 
     @field_validator("pricing_authority")
@@ -117,13 +190,8 @@ class LiveGenerationConfig(FrozenLiveModel):
                 raise ValueError("selected_case_ids must not contain blanks")
             if len(self.selected_case_ids) != len(set(self.selected_case_ids)):
                 raise ValueError("selected_case_ids must be unique")
-        required_sends = self.case_limit * self.max_sends_per_case
-        if self.max_total_sends > required_sends:
-            raise ValueError("max_total_sends exceeds the selected case send ceiling")
-        if self.max_total_sends < self.case_limit:
-            raise ValueError("max_total_sends cannot attempt every selected case")
-        if self.max_total_authorized_cost_usd > self.max_cost_usd + 1e-12:
-            raise ValueError("worst-case send authorization exceeds max_cost_usd")
+        if self.max_cost_per_send_usd > self.max_cost_usd + 1e-12:
+            raise ValueError("one send authorization exceeds max_cost_usd")
         return self
 
     @property
@@ -169,6 +237,20 @@ def _atomic_write(path: Path, content: str) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+@contextmanager
+def _exclusive_ledger_lock(path: Path) -> Iterator[None]:
+    lock_path = path.with_name(f".{path.name}.lock")
+    try:
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as error:
+        raise ValueError("campaign ledger is already locked by another launcher") from error
+    try:
+        yield
+    finally:
+        os.close(descriptor)
+        lock_path.unlink(missing_ok=True)
 
 
 def _sha256_bytes(content: bytes) -> str:
@@ -273,6 +355,54 @@ def _prepared_cases(
     return tuple(parsed)
 
 
+def _validate_prepared_authorities(
+    prepared: Path, cases: Sequence[tuple[str, str, tuple[Chunk, ...]]]
+) -> None:
+    dataset = _load_json(prepared / "dataset-manifest.json")
+    corpus = _load_json(prepared / "corpus-manifest.json")
+    config = _load_json(prepared / "resolved-config.json")
+    if not all(isinstance(item, dict) for item in (dataset, corpus, config)):
+        raise ValueError("prepared authorities must be JSON objects")
+    assert isinstance(dataset, dict) and isinstance(corpus, dict) and isinstance(config, dict)
+    if config.get("dataset_fingerprint_sha256") != dataset.get(
+        "dataset_fingerprint_sha256"
+    ):
+        raise ValueError("dataset fingerprint authority mismatch")
+    if config.get("corpus_sha256") != corpus.get("corpus_sha256"):
+        raise ValueError("corpus fingerprint authority mismatch")
+
+    case_ids = [case_id for case_id, _, _ in cases]
+    gold_ids = [row.get("case_id") for row in _load_jsonl(prepared / "gold-judgments.jsonl")]
+    if gold_ids != case_ids:
+        raise ValueError("Gold judgments must cover every prepared case in order")
+
+    corpus_payload = corpus.get("chunks")
+    if not isinstance(corpus_payload, list):
+        raise ValueError("corpus manifest requires frozen chunks")
+    try:
+        corpus_chunks = [
+            (str(item["case_id"]), Chunk.model_validate(item["chunk"]))
+            for item in corpus_payload
+        ]
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("corpus manifest contains invalid chunks") from error
+    prepared_chunks = [
+        (case_id, chunk) for case_id, _, chunks in cases for chunk in chunks
+    ]
+    corpus_by_id = {
+        (case_id, chunk.chunk_id): chunk for case_id, chunk in corpus_chunks
+    }
+    prepared_by_id = {
+        (case_id, chunk.chunk_id): chunk for case_id, chunk in prepared_chunks
+    }
+    if (
+        len(corpus_by_id) != len(corpus_chunks)
+        or len(prepared_by_id) != len(prepared_chunks)
+        or corpus_by_id != prepared_by_id
+    ):
+        raise ValueError("prepared case chunks differ from the corpus authority")
+
+
 def _authority_hashes(prepared: Path) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for name in _AUTHORITY_FILES:
@@ -281,6 +411,53 @@ def _authority_hashes(prepared: Path) -> dict[str, str]:
             raise ValueError(f"{name} is missing or contains secret material")
         hashes[name] = _sha256_file(path)
     return hashes
+
+
+def load_provider_model_authority(path: Path) -> ProviderModelAuthority:
+    """Validate a local provider-document snapshot without network access."""
+
+    resolved = path.resolve(strict=True)
+    if not resolved.is_file() or _contains_secret_material(resolved):
+        raise ValueError("model authority is missing or contains secret material")
+    authority = ProviderModelAuthority.model_validate(_load_json(resolved))
+    for file_name, expected_hash in (
+        (authority.model_document_file, authority.model_document_sha256),
+        (authority.pricing_document_file, authority.pricing_document_sha256),
+    ):
+        snapshot = resolved.parent / file_name
+        if (
+            not snapshot.is_file()
+            or snapshot.is_symlink()
+            or _contains_secret_material(snapshot)
+            or _sha256_file(snapshot) != expected_hash
+        ):
+            raise ValueError("provider authority snapshot is missing, unsafe, or changed")
+    return authority
+
+
+def _validate_provider_authority(
+    path: Path, config: LiveGenerationConfig
+) -> ProviderModelAuthority:
+    authority = load_provider_model_authority(path)
+    if _sha256_file(path.resolve(strict=True)) != config.model_authority_sha256:
+        raise ValueError("model authority hash does not match frozen configuration")
+    expected = (
+        authority.request_model,
+        authority.expected_response_model,
+        authority.pricing_document_url,
+        authority.input_usd_per_million_tokens,
+        authority.output_usd_per_million_tokens,
+    )
+    actual = (
+        config.request_model,
+        config.expected_response_model,
+        config.pricing_authority,
+        config.input_usd_per_million_tokens,
+        config.output_usd_per_million_tokens,
+    )
+    if expected != actual:
+        raise ValueError("model or pricing configuration differs from authority")
+    return authority
 
 
 def _select_cases(
@@ -303,32 +480,199 @@ def _prompt_token_upper_bound(messages: Sequence[GenerationMessage]) -> int:
     return len(_canonical_json(payload).encode("utf-8"))
 
 
-class GenerationBudgetLedger:
-    """Persist a conservative authorization before every possibly billable send."""
+def create_campaign_ledger(
+    *, output: Path, campaign_id: str, prior_ledgers: Sequence[Path]
+) -> dict[str, object]:
+    """Create one sanitized cumulative ledger from all prior attempt ledgers."""
 
-    def __init__(self, root: Path, config: LiveGenerationConfig) -> None:
-        self.root = root
+    if not campaign_id.strip():
+        raise ValueError("campaign_id must not be blank")
+    resolved_output = output.resolve(strict=False)
+    if resolved_output.exists() or not resolved_output.parent.is_dir():
+        raise ValueError("campaign ledger output must be a new file in an existing directory")
+    rows: list[dict[str, object]] = []
+    source_hashes: set[str] = set()
+    for source in prior_ledgers:
+        resolved = source.resolve(strict=True)
+        if not resolved.is_file() or resolved.is_symlink() or _contains_secret_material(resolved):
+            raise ValueError("prior ledger is missing, unsafe, or contains secret material")
+        source_hash = _sha256_file(resolved)
+        if source_hash in source_hashes:
+            raise ValueError("prior ledger was supplied more than once")
+        source_hashes.add(source_hash)
+        source_rows = _load_jsonl(resolved)
+        if [row.get("send_sequence") for row in source_rows] != list(
+            range(1, len(source_rows) + 1)
+        ):
+            raise ValueError("prior provider ledger is not contiguous")
+        execution_id = resolved.parent.name
+        for source_row in source_rows:
+            required = (
+                "case_id",
+                "status",
+                "request_model",
+                "max_tokens",
+                "prompt_token_upper_bound",
+                "authorized_cost_ceiling_usd",
+            )
+            if any(source_row.get(field) is None for field in required):
+                raise ValueError("prior provider ledger lacks budget authority fields")
+            row = dict(source_row)
+            row.update(
+                {
+                    "schema_version": _SCHEMA_VERSION,
+                    "send_sequence": len(rows) + 1,
+                    "campaign_id": campaign_id,
+                    "execution_id": execution_id,
+                    "source_ledger_sha256": source_hash,
+                    "source_send_sequence": source_row["send_sequence"],
+                }
+            )
+            rows.append(row)
+    _atomic_write(resolved_output, _jsonl(rows))
+    return {
+        "campaign_id": campaign_id,
+        "prior_ledger_count": len(prior_ledgers),
+        "prior_send_count": len(rows),
+        "prior_prompt_tokens": sum(
+            int(
+                row["prompt_tokens"]
+                if row.get("prompt_tokens") is not None
+                else row["prompt_token_upper_bound"]
+            )
+            for row in rows
+        ),
+        "prior_completion_tokens": sum(
+            int(
+                row["completion_tokens"]
+                if row.get("completion_tokens") is not None
+                else row["max_tokens"]
+            )
+            for row in rows
+        ),
+        "prior_accounted_cost_usd": sum(
+            float(
+                row["actual_cost_usd"]
+                if row.get("actual_cost_usd") is not None
+                else row["authorized_cost_ceiling_usd"]
+            )
+            for row in rows
+        ),
+        "ledger_sha256": _sha256_file(resolved_output),
+    }
+
+
+class GenerationBudgetLedger:
+    """Enforce one cumulative campaign authority before every billable send."""
+
+    def __init__(self, path: Path, config: LiveGenerationConfig) -> None:
         self.config = config
-        self.path = root / "provider-sends.jsonl"
-        self._rows = _load_jsonl(self.path) if self.path.exists() else []
+        self.path = path.resolve(strict=True)
+        if not self.path.is_file() or self.path.is_symlink():
+            raise ValueError("campaign ledger must be a regular existing file")
+        self._rows = _load_jsonl(self.path)
         self._validate_existing()
 
     @property
     def rows(self) -> tuple[dict[str, object], ...]:
         return tuple(dict(row) for row in self._rows)
 
+    @property
+    def execution_rows(self) -> tuple[dict[str, object], ...]:
+        return tuple(
+            dict(row)
+            for row in self._rows
+            if row.get("execution_id") == self.config.execution_id
+        )
+
     def _validate_existing(self) -> None:
         expected = list(range(1, len(self._rows) + 1))
         actual = [row.get("send_sequence") for row in self._rows]
         if actual != expected:
             raise ValueError("provider send ledger is not contiguous")
-        if any(row.get("schema_version") != _SCHEMA_VERSION for row in self._rows):
+        if any(
+            row.get("schema_version") != _SCHEMA_VERSION
+            or row.get("campaign_id") != self.config.campaign_id
+            or not isinstance(row.get("execution_id"), str)
+            or not isinstance(row.get("case_id"), str)
+            or row.get("status") not in {"reserved", "succeeded", "failed"}
+            for row in self._rows
+        ):
             raise ValueError("provider send ledger schema is invalid")
 
     def _persist(self) -> None:
         _atomic_write(self.path, _jsonl(self._rows))
 
+    @staticmethod
+    def _accounted(row: Mapping[str, object], actual: str, ceiling: str) -> float:
+        value = row.get(actual)
+        if value is None:
+            value = row.get(ceiling)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or float(value) < 0
+            or ("tokens" in actual and not isinstance(value, int))
+        ):
+            raise ValueError("campaign ledger budget accounting is incomplete")
+        return float(value)
+
+    def _totals(self) -> tuple[int, int, float]:
+        prompt = sum(
+            self._accounted(row, "prompt_tokens", "prompt_token_upper_bound")
+            for row in self._rows
+        )
+        completion = sum(
+            self._accounted(row, "completion_tokens", "max_tokens")
+            for row in self._rows
+        )
+        cost = sum(
+            self._accounted(row, "actual_cost_usd", "authorized_cost_ceiling_usd")
+            for row in self._rows
+        )
+        return int(prompt), int(completion), cost
+
+    def assert_batch_capacity(self, case_count: int) -> None:
+        """Require room for one worst-case primary send for every selected case."""
+
+        prompt, completion, cost = self._totals()
+        if len(self._rows) + case_count > self.config.max_total_sends:
+            self._raise_budget()
+        if (
+            prompt + case_count * self.config.max_prompt_tokens_per_send
+            > self.config.max_total_prompt_tokens
+        ):
+            self._raise_budget()
+        if (
+            completion + case_count * self.config.max_tokens
+            > self.config.max_total_completion_tokens
+        ):
+            self._raise_budget()
+        if cost + case_count * self.config.max_cost_per_send_usd > self.config.max_cost_usd + 1e-12:
+            self._raise_budget()
+
     def reserve(
+        self,
+        *,
+        case_id: str,
+        messages: Sequence[GenerationMessage | Mapping[str, Any]],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        timeout: float,
+    ) -> int:
+        with _exclusive_ledger_lock(self.path):
+            return self._reserve_locked(
+                case_id=case_id,
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+
+    def _reserve_locked(
         self,
         *,
         case_id: str,
@@ -356,13 +700,25 @@ class GenerationBudgetLedger:
         if float(timeout) != self.config.attempt_timeout_seconds:
             self._raise_budget()
 
-        case_sends = sum(row.get("case_id") == case_id for row in self._rows)
+        # Reload immediately before authorization so a previous process or resume
+        # cannot leave this instance with stale campaign accounting.
+        self._rows = _load_jsonl(self.path)
+        self._validate_existing()
+        case_sends = sum(
+            row.get("execution_id") == self.config.execution_id
+            and row.get("case_id") == case_id
+            for row in self._rows
+        )
         if case_sends >= self.config.max_sends_per_case:
             self._raise_budget()
         if len(self._rows) >= self.config.max_total_sends:
             self._raise_budget()
-        next_cost = (len(self._rows) + 1) * self.config.max_cost_per_send_usd
-        if next_cost > self.config.max_cost_usd + 1e-12:
+        prompt_total, completion_total, cost_total = self._totals()
+        if prompt_total + prompt_ceiling > self.config.max_total_prompt_tokens:
+            self._raise_budget()
+        if completion_total + max_tokens > self.config.max_total_completion_tokens:
+            self._raise_budget()
+        if cost_total + self.config.max_cost_per_send_usd > self.config.max_cost_usd + 1e-12:
             self._raise_budget()
 
         sequence = len(self._rows) + 1
@@ -370,6 +726,8 @@ class GenerationBudgetLedger:
             {
                 "schema_version": _SCHEMA_VERSION,
                 "send_sequence": sequence,
+                "campaign_id": self.config.campaign_id,
+                "execution_id": self.config.execution_id,
                 "case_id": case_id,
                 "status": "reserved",
                 "request_model": model,
@@ -393,6 +751,22 @@ class GenerationBudgetLedger:
         return sequence
 
     def complete(
+        self,
+        sequence: int,
+        *,
+        response: GenerationHttpResponse | None = None,
+        failure_reason_code: str | None = None,
+    ) -> None:
+        with _exclusive_ledger_lock(self.path):
+            self._rows = _load_jsonl(self.path)
+            self._validate_existing()
+            self._complete_locked(
+                sequence,
+                response=response,
+                failure_reason_code=failure_reason_code,
+            )
+
+    def _complete_locked(
         self,
         sequence: int,
         *,
@@ -544,26 +918,41 @@ def _existing_by_case(root: Path, name: str) -> dict[str, dict[str, object]]:
     return mapped
 
 
-def _initialize_run(
+def _expected_run_state(
     prepared: Path,
-    output: Path,
     config: LiveGenerationConfig,
     environment: Mapping[str, object],
+    campaign_ledger: Path,
 ) -> dict[str, object]:
     if environment.get("git_dirty") is not False:
         raise ValueError("live citation generation requires a clean Git worktree")
     git_sha = environment.get("git_sha")
     if not isinstance(git_sha, str) or len(git_sha) != 40:
         raise ValueError("environment requires an exact Git SHA")
-    hashes = _authority_hashes(prepared)
     config_payload = config.model_dump(mode="json")
-    config_sha = _sha256_bytes(_canonical_json(config_payload).encode("utf-8"))
-    state = {
+    return {
         "schema_version": _SCHEMA_VERSION,
-        "authority_sha256": hashes,
-        "generation_config_sha256": config_sha,
+        "authority_sha256": _authority_hashes(prepared),
+        "generation_config_sha256": _sha256_bytes(
+            _canonical_json(config_payload).encode("utf-8")
+        ),
         "git_sha": git_sha,
+        "campaign_ledger_path_sha256": _sha256_bytes(
+            str(campaign_ledger.resolve(strict=True)).encode("utf-8")
+        ),
     }
+
+
+def _initialize_run(
+    prepared: Path,
+    output: Path,
+    config: LiveGenerationConfig,
+    environment: Mapping[str, object],
+    model_authority: Path,
+    campaign_ledger: Path,
+) -> dict[str, object]:
+    config_payload = config.model_dump(mode="json")
+    state = _expected_run_state(prepared, config, environment, campaign_ledger)
     state_path = output / "run-state.json"
     if output.exists():
         if not output.is_dir() or not state_path.is_file():
@@ -575,11 +964,14 @@ def _initialize_run(
     output.mkdir(parents=True)
     for name in _AUTHORITY_FILES:
         shutil.copyfile(prepared / name, output / name)
+    authority = load_provider_model_authority(model_authority)
+    shutil.copyfile(model_authority, output / "model-authority.json")
+    for name in {authority.model_document_file, authority.pricing_document_file}:
+        shutil.copyfile(model_authority.parent / name, output / name)
     _atomic_write(output / "generation-config.json", _canonical_json(config_payload))
     _atomic_write(output / "environment.json", _canonical_json(dict(environment)))
     _atomic_write(state_path, _canonical_json(state))
     for name in (
-        "provider-sends.jsonl",
         "generation-drafts.jsonl",
         "case-results.jsonl",
         "pipeline-outputs.jsonl",
@@ -623,9 +1015,10 @@ def _manifest(
             output_rows, key=lambda row: selected_case_ids.index(str(row["case_id"]))
         )
         output_sha256 = _sha256_bytes(_jsonl(ordered).encode("utf-8"))
+    execution_rows = ledger.execution_rows
     actual_costs = [
         float(row["actual_cost_usd"])
-        for row in ledger.rows
+        for row in execution_rows
         if row.get("actual_cost_usd") is not None
     ]
     return {
@@ -642,14 +1035,19 @@ def _manifest(
         "resolved_response_models": models,
         "generation_config_sha256": _sha256_file(root / "generation-config.json"),
         "output_sha256": output_sha256,
-        "provider_send_count": len(ledger.rows),
+        "provider_send_count": len(execution_rows),
+        "campaign_provider_send_count": len(ledger.rows),
         "authorized_cost_ceiling_usd": (
-            len(ledger.rows) * config.max_cost_per_send_usd
+            len(execution_rows) * config.max_cost_per_send_usd
         ),
         "estimated_usage_cost_usd": sum(actual_costs) if actual_costs else None,
         "cost_cap_usd": config.max_cost_usd,
         "case_send_cap": config.max_sends_per_case,
         "batch_send_cap": config.max_total_sends,
+        "campaign_id": config.campaign_id,
+        "execution_id": config.execution_id,
+        "campaign_prompt_token_cap": config.max_total_prompt_tokens,
+        "campaign_completion_token_cap": config.max_total_completion_tokens,
     }
 
 
@@ -659,6 +1057,8 @@ def run_live_generation(
     output: Path,
     config: LiveGenerationConfig,
     environment: Mapping[str, object],
+    model_authority: Path,
+    campaign_ledger: Path,
     provider_factory: ProviderFactory,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
@@ -666,11 +1066,22 @@ def run_live_generation(
 
     prepared_root, output_root = _safe_roots(prepared, output)
     cases = _prepared_cases(prepared_root)
+    _validate_prepared_authorities(prepared_root, cases)
+    if config.case_limit == 20 and len(cases) != 20:
+        raise ValueError("20-case Citation launch requires exactly 20 prepared cases")
     selected = _select_cases(cases, config)
     selected_ids = tuple(item[0] for item in selected)
-    _initialize_run(prepared_root, output_root, config, environment)
+    _validate_provider_authority(model_authority, config)
+    _initialize_run(
+        prepared_root,
+        output_root,
+        config,
+        environment,
+        model_authority,
+        campaign_ledger,
+    )
 
-    ledger = GenerationBudgetLedger(output_root, config)
+    ledger = GenerationBudgetLedger(campaign_ledger, config)
     results = _existing_by_case(output_root, "case-results.jsonl")
     drafts = _existing_by_case(output_root, "generation-drafts.jsonl")
     outputs = _existing_by_case(output_root, "pipeline-outputs.jsonl")
@@ -705,14 +1116,14 @@ def run_live_generation(
                 )
             else:
                 provider = provider_factory(case_id, ledger)
-                send_count_before = len(ledger.rows)
+                send_count_before = len(ledger.execution_rows)
                 generation = provider.generate_structured(
                     operation=f"citation_live_generation:{case_id}",
                     messages=messages,
                     response_schema=SurveyDraft,
                     timeout=config.attempt_timeout_seconds,
                 )
-                if generation.attempts != len(ledger.rows) - send_count_before:
+                if generation.attempts != len(ledger.execution_rows) - send_count_before:
                     raise _LiveCaseError("generation_attempt_ledger_mismatch")
                 if any(
                     value is None
@@ -728,6 +1139,8 @@ def run_live_generation(
                     for row in results.values()
                     if row.get("status") == "completed" and row.get("response_model")
                 }
+                if generation.model != config.expected_response_model:
+                    raise _LiveCaseError("generation_model_authority_mismatch")
                 if frozen_models and generation.model not in frozen_models:
                     raise _LiveCaseError("generation_model_version_mismatch")
                 drafts[case_id] = {
@@ -904,6 +1317,11 @@ def run_live_generation(
         _write_materialized(output_root, "failures.jsonl", failures)
         _write_materialized(output_root, "logs.jsonl", logs)
         _write_materialized(output_root, "traces.jsonl", traces)
+        _write_materialized(
+            output_root,
+            "provider-sends.jsonl",
+            list(ledger.execution_rows),
+        )
         _atomic_write(
             output_root / "generation-manifest.json",
             _canonical_json(_manifest(output_root, config, selected_ids, results, ledger)),
@@ -920,18 +1338,42 @@ def preflight_live_generation(
     output: Path,
     config: LiveGenerationConfig,
     environment: Mapping[str, object],
+    model_authority: Path,
+    campaign_ledger: Path,
 ) -> tuple[str, ...]:
     """Validate every offline gate before credentials or provider construction."""
 
-    prepared_root, _ = _safe_roots(prepared, output)
+    prepared_root, output_root = _safe_roots(prepared, output)
     cases = _prepared_cases(prepared_root)
+    _validate_prepared_authorities(prepared_root, cases)
+    if config.case_limit == 20 and len(cases) != 20:
+        raise ValueError("20-case Citation launch requires exactly 20 prepared cases")
     selected = _select_cases(cases, config)
     _authority_hashes(prepared_root)
+    _validate_provider_authority(model_authority, config)
+    ledger = GenerationBudgetLedger(campaign_ledger, config)
+    remaining_count = len(selected)
+    if output_root.exists():
+        state_path = output_root / "run-state.json"
+        if not output_root.is_dir() or not state_path.is_file():
+            raise ValueError("existing output is not a resumable citation run")
+        results = _existing_by_case(output_root, "case-results.jsonl")
+        remaining_count = sum(
+            results.get(case_id, {}).get("status") != "completed"
+            for case_id, _, _ in selected
+        )
+    elif ledger.execution_rows:
+        raise ValueError("campaign ledger contains an execution without resumable output")
+    ledger.assert_batch_capacity(remaining_count)
     if environment.get("git_dirty") is not False:
         raise ValueError("live citation generation requires a clean Git worktree")
     git_sha = environment.get("git_sha")
     if not isinstance(git_sha, str) or len(git_sha) != 40:
         raise ValueError("environment requires an exact Git SHA")
+    if output_root.exists() and _load_json(output_root / "run-state.json") != _expected_run_state(
+        prepared_root, config, environment, campaign_ledger
+    ):
+        raise ValueError("resume authorities, generation config, or Git SHA changed")
     for _, question, chunks in selected:
         _, evidence = _evidence_for_case("preflight", chunks)
         if (
@@ -944,8 +1386,11 @@ def preflight_live_generation(
 
 __all__ = [
     "BudgetedDashScopeTransport",
+    "ProviderModelAuthority",
     "GenerationBudgetLedger",
     "LiveGenerationConfig",
+    "create_campaign_ledger",
+    "load_provider_model_authority",
     "preflight_live_generation",
     "run_live_generation",
 ]

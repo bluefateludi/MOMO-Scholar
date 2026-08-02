@@ -24,6 +24,8 @@ from paper_agent.generation import DashScopeChatTransport, DashScopeGenerationPr
 from .live_generation import (
     BudgetedDashScopeTransport,
     LiveGenerationConfig,
+    create_campaign_ledger,
+    load_provider_model_authority,
     preflight_live_generation,
     run_live_generation,
 )
@@ -779,11 +781,77 @@ def score(
     typer.echo(f"Sealed citation package: {output}")
 
 
-@app.command("run-live-generation")
-def run_live_generation_command(
+def _live_generation_config(
+    *,
+    model_authority: Path,
+    campaign_id: str,
+    execution_id: str,
+    temperature: float,
+    max_tokens: int,
+    attempt_timeout_seconds: float,
+    case_limit: int,
+    case_id: list[str] | None,
+    max_sends_per_case: int,
+    max_total_sends: int,
+    max_prompt_tokens_per_send: int,
+    max_total_prompt_tokens: int,
+    max_total_completion_tokens: int,
+    max_cost_usd: float,
+) -> LiveGenerationConfig:
+    authority = load_provider_model_authority(model_authority)
+    return LiveGenerationConfig(
+        request_model=authority.request_model,
+        expected_response_model=authority.expected_response_model,
+        model_authority_sha256=hashlib.sha256(model_authority.read_bytes()).hexdigest(),
+        campaign_id=campaign_id,
+        execution_id=execution_id,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        attempt_timeout_seconds=attempt_timeout_seconds,
+        max_sends_per_case=max_sends_per_case,
+        max_total_sends=max_total_sends,
+        case_limit=case_limit,
+        selected_case_ids=tuple(case_id or ()),
+        max_prompt_tokens_per_send=max_prompt_tokens_per_send,
+        max_total_prompt_tokens=max_total_prompt_tokens,
+        max_total_completion_tokens=max_total_completion_tokens,
+        pricing_authority=authority.pricing_document_url,
+        input_usd_per_million_tokens=authority.input_usd_per_million_tokens,
+        output_usd_per_million_tokens=authority.output_usd_per_million_tokens,
+        max_cost_usd=max_cost_usd,
+    )
+
+
+@app.command("create-campaign-ledger")
+def create_campaign_ledger_command(
+    output: Path = typer.Option(...),
+    campaign_id: str = typer.Option(...),
+    prior_ledger: list[Path] = typer.Option(
+        ..., "--prior-ledger", exists=True, dir_okay=False
+    ),
+) -> None:
+    """Consolidate every prior provider send into one offline campaign ledger."""
+
+    try:
+        summary = create_campaign_ledger(
+            output=output, campaign_id=campaign_id, prior_ledgers=prior_ledger
+        )
+    except (OSError, ValueError):
+        typer.echo(
+            "Campaign ledger creation failed: invalid or unsafe prior ledger", err=True
+        )
+        raise typer.Exit(code=_EXIT_INPUT) from None
+    typer.echo(_canonical_json(summary).strip())
+
+
+@app.command("preflight-live-generation")
+def preflight_live_generation_command(
     prepared: Path = typer.Option(..., exists=True, file_okay=False),
     output: Path = typer.Option(...),
-    request_model: str = typer.Option("qwen3.7-plus"),
+    model_authority: Path = typer.Option(..., exists=True, dir_okay=False),
+    campaign_ledger: Path = typer.Option(..., exists=True, dir_okay=False),
+    campaign_id: str = typer.Option(...),
+    execution_id: str = typer.Option(...),
     temperature: float = typer.Option(0.0, min=0.0, max=2.0),
     max_tokens: int = typer.Option(..., min=1),
     attempt_timeout_seconds: float = typer.Option(60.0, min=0.001),
@@ -796,9 +864,67 @@ def run_live_generation_command(
     max_sends_per_case: int = typer.Option(4, min=1, max=4),
     max_total_sends: int = typer.Option(..., min=1),
     max_prompt_tokens_per_send: int = typer.Option(..., min=1),
-    pricing_authority: str = typer.Option(...),
-    input_usd_per_million_tokens: float = typer.Option(..., min=0.000001),
-    output_usd_per_million_tokens: float = typer.Option(..., min=0.000001),
+    max_total_prompt_tokens: int = typer.Option(..., min=1),
+    max_total_completion_tokens: int = typer.Option(..., min=1),
+    max_cost_usd: float = typer.Option(0.25, min=0.000001),
+) -> None:
+    """Run every deterministic launch gate without reading credentials or sending."""
+
+    try:
+        config = _live_generation_config(
+            model_authority=model_authority,
+            campaign_id=campaign_id,
+            execution_id=execution_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            attempt_timeout_seconds=attempt_timeout_seconds,
+            case_limit=case_limit,
+            case_id=case_id,
+            max_sends_per_case=max_sends_per_case,
+            max_total_sends=max_total_sends,
+            max_prompt_tokens_per_send=max_prompt_tokens_per_send,
+            max_total_prompt_tokens=max_total_prompt_tokens,
+            max_total_completion_tokens=max_total_completion_tokens,
+            max_cost_usd=max_cost_usd,
+        )
+        selected_ids = preflight_live_generation(
+            prepared=prepared,
+            output=output,
+            config=config,
+            environment=_git_environment(),
+            model_authority=model_authority,
+            campaign_ledger=campaign_ledger,
+        )
+    except (OSError, subprocess.SubprocessError, ValidationError, ValueError):
+        typer.echo(
+            "Live generation preflight failed: authority, budget, path, or Git gate",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_INPUT) from None
+    typer.echo(
+        f"PASS: {len(selected_ids)} cases are offline-preflight ready; "
+        "no provider call was made"
+    )
+
+
+@app.command("run-live-generation")
+def run_live_generation_command(
+    prepared: Path = typer.Option(..., exists=True, file_okay=False),
+    output: Path = typer.Option(...),
+    model_authority: Path = typer.Option(..., exists=True, dir_okay=False),
+    campaign_ledger: Path = typer.Option(..., exists=True, dir_okay=False),
+    campaign_id: str = typer.Option(...),
+    execution_id: str = typer.Option(...),
+    temperature: float = typer.Option(0.0, min=0.0, max=2.0),
+    max_tokens: int = typer.Option(..., min=1),
+    attempt_timeout_seconds: float = typer.Option(60.0, min=0.001),
+    case_limit: int = typer.Option(2, min=1),
+    case_id: list[str] | None = typer.Option(None, "--case-id"),
+    max_sends_per_case: int = typer.Option(4, min=1, max=4),
+    max_total_sends: int = typer.Option(..., min=1),
+    max_prompt_tokens_per_send: int = typer.Option(..., min=1),
+    max_total_prompt_tokens: int = typer.Option(..., min=1),
+    max_total_completion_tokens: int = typer.Option(..., min=1),
     max_cost_usd: float = typer.Option(0.25, min=0.000001),
     acknowledge_provider_costs: bool = typer.Option(
         False,
@@ -814,19 +940,20 @@ def run_live_generation_command(
         )
         raise typer.Exit(code=_EXIT_INPUT)
     try:
-        config = LiveGenerationConfig(
-            request_model=request_model,
+        config = _live_generation_config(
+            model_authority=model_authority,
+            campaign_id=campaign_id,
+            execution_id=execution_id,
             temperature=temperature,
             max_tokens=max_tokens,
             attempt_timeout_seconds=attempt_timeout_seconds,
             max_sends_per_case=max_sends_per_case,
             max_total_sends=max_total_sends,
             case_limit=case_limit,
-            selected_case_ids=tuple(case_id or ()),
+            case_id=case_id,
             max_prompt_tokens_per_send=max_prompt_tokens_per_send,
-            pricing_authority=pricing_authority,
-            input_usd_per_million_tokens=input_usd_per_million_tokens,
-            output_usd_per_million_tokens=output_usd_per_million_tokens,
+            max_total_prompt_tokens=max_total_prompt_tokens,
+            max_total_completion_tokens=max_total_completion_tokens,
             max_cost_usd=max_cost_usd,
         )
         environment = _git_environment()
@@ -835,6 +962,8 @@ def run_live_generation_command(
             output=output,
             config=config,
             environment=environment,
+            model_authority=model_authority,
+            campaign_ledger=campaign_ledger,
         )
         settings = load_settings()
         if settings.dashscope_generation_model != config.request_model:
@@ -861,6 +990,8 @@ def run_live_generation_command(
                 output=output,
                 config=config,
                 environment=environment,
+                model_authority=model_authority,
+                campaign_ledger=campaign_ledger,
                 provider_factory=provider_factory,
             )
     except (OSError, subprocess.SubprocessError, ValidationError, ValueError):
