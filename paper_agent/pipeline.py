@@ -58,6 +58,22 @@ from paper_agent.text.loader import load_paper_text
 SearchFn = Callable[[str, int], list[Paper]]
 
 
+@dataclass(frozen=True, slots=True)
+class PipelineProgress:
+    phase: Literal[
+        "initializing", "search", "acquisition", "chunking", "retrieval",
+        "analysis", "synthesis", "citation_check", "publishing",
+    ]
+    operation: str
+    paper_id: str | None = None
+    completed_units: int | None = None
+    total_units: int | None = None
+
+
+ProgressSink = Callable[[PipelineProgress], None]
+ArtifactCreatedSink = Callable[[str], None]
+
+
 class RecorderFactory(Protocol):
     def __call__(self, **kwargs: object) -> RunRecorder: ...
 
@@ -219,6 +235,8 @@ def run_pipeline(
     dependencies: PipelineDependencies | None = None,
     retrieval_service: EvidenceRetrievalService | None = None,
     correlation: PipelineCorrelationInput | None = None,
+    progress_sink: ProgressSink | None = None,
+    artifact_created_sink: ArtifactCreatedSink | None = None,
 ) -> PipelineResult:
     if retrieval_service is not None:
         papers = dedupe_papers((search_fn or search_arxiv)(question, limit))[:limit]
@@ -248,6 +266,21 @@ def run_pipeline(
         preflight_otlp()
 
     with ExitStack() as stack:
+        def progress(
+            phase: PipelineProgress.__annotations__["phase"],
+            operation: str,
+            *,
+            paper_id: str | None = None,
+            completed_units: int | None = None,
+            total_units: int | None = None,
+        ) -> None:
+            if progress_sink is not None:
+                progress_sink(PipelineProgress(
+                    phase=phase, operation=operation, paper_id=paper_id,
+                    completed_units=completed_units, total_units=total_units,
+                ))
+
+        progress("initializing", "initialize_pipeline")
         deps = dependencies or _production_dependencies(active_settings, stack)
         if search_fn is not None:
             deps = PipelineDependencies(
@@ -267,6 +300,7 @@ def run_pipeline(
             correlation=correlation,
             trace_secrets=(active_settings.dashscope_api_key,),
             trace_enabled=active_settings.trace_enabled,
+            artifact_created_sink=artifact_created_sink,
         )
         if active_settings.otlp_enabled:
             assert active_settings.otlp_endpoint is not None
@@ -313,6 +347,7 @@ def run_pipeline(
                 timings[stage] = timings.get(stage, 0.0) + max(0.0, time.monotonic() - started)
 
         try:
+            progress("search", "search_papers")
             papers = timed(
                 "search", lambda: dedupe_papers(deps.search(question, limit))[:limit]
             )
@@ -326,7 +361,8 @@ def run_pipeline(
             recorder.write_papers(papers)
             acquirer = DocumentAcquirer(downloader=deps.downloader, parser=deps.parser)
 
-            for paper in papers:
+            for paper_index, paper in enumerate(papers):
+                progress("acquisition", "acquire_document", paper_id=paper.paper_id, completed_units=paper_index, total_units=len(papers))
                 outcome = timed(
                     "acquisition",
                     lambda paper=paper: acquire_paper_document(
@@ -360,6 +396,7 @@ def run_pipeline(
                 )
                 if outcome.document is None or outcome.record is None:
                     continue
+                progress("chunking", "chunk_document", paper_id=paper.paper_id, completed_units=paper_index, total_units=len(papers))
                 chunked = timed("chunking", lambda document=outcome.document: chunk_document(document))
                 record = outcome.record.model_copy(
                     update={"warnings": list(dict.fromkeys([*outcome.record.warnings, *chunked.warnings]))}
@@ -378,6 +415,7 @@ def run_pipeline(
                 def retrieval_event(event: object, paper_id: str = paper.paper_id) -> None:
                     recorder.emit(RunEvent(timestamp=utc_now(), run_id=recorder.run_id, stage="retrieval", operation="retrieve_evidence", status=event.status, paper_id=paper_id, code=event.degradation_code or event.error_code, attributes=event.model_dump(mode="json")))
 
+                progress("retrieval", "retrieve_evidence", paper_id=paper.paper_id, completed_units=paper_index, total_units=len(papers))
                 pack = timed("retrieval", lambda paper=paper, chunked=chunked: deps.evidence_packs.build(question=question, paper_id=paper.paper_id, chunks=chunked.chunks, run_id=recorder.run_id, event_sink=retrieval_event))
                 retrieval_code = (
                     pack.retrieval.degradation_code
@@ -411,6 +449,7 @@ def run_pipeline(
                 if pack.retrieval.degraded:
                     degradations.append(RunIssue(stage="retrieval", code=pack.retrieval.degradation_code or "retrieval_degraded", paper_id=paper.paper_id))
                 try:
+                    progress("analysis", "analyze_paper", paper_id=paper.paper_id, completed_units=paper_index, total_units=len(papers))
                     generated = timed("analysis", lambda paper=paper, pack=pack: deps.analyzer.analyze(paper=paper, evidence_pack=pack, timeout=active_settings.dashscope_generation_timeout_seconds))
                 except _SKIPPABLE_ANALYSIS_ERRORS as error:
                     usage = _add_failure_usage(usage, error)
@@ -469,6 +508,7 @@ def run_pipeline(
             minimum = 2 if len(papers) >= 2 else 1
             if len(analyses) < minimum:
                 raise ValueError("insufficient_successful_analyses")
+            progress("synthesis", "synthesize_report")
             survey = timed("synthesis", lambda: deps.synthesizer.synthesize(question=question, analyses=analyses, evidence=evidence, timeout=active_settings.dashscope_generation_timeout_seconds))
             usage = _add_usage(usage, survey)
             recorder.trace_event(
@@ -479,6 +519,7 @@ def run_pipeline(
                     'attempts': survey.attempts,
                 },
             )
+            progress("citation_check", "validate_report_citations")
             report = check_survey_draft(question, survey.result, evidence, run_id=recorder.run_id)
             sanitized = sum(claim.support_status != "supported" for claim in [*report.method_taxonomy, *report.comparisons, *report.limitations, *report.open_questions, *report.rejected_critical_claims])
             recorder.trace_event(
@@ -495,6 +536,7 @@ def run_pipeline(
             require_publishable_report(report)
             status: Literal["completed", "completed_with_degradation"] = "completed_with_degradation" if degradations else "completed"
             markdown = render_formal_report(status=status, papers=[paper for paper in papers if any(record.paper_id == paper.paper_id for record in records)], documents=records, evidence=evidence, report=report)
+            progress("publishing", "publish_report")
             recorder.publish_report(report, markdown)
             recorder.trace_event(
                 'paper_agent.pipeline.output',

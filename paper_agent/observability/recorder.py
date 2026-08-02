@@ -72,6 +72,7 @@ class RunRecorder:
         correlation: PipelineCorrelationInput | None = None,
         trace_secrets: tuple[str, ...] = (),
         trace_enabled: bool = True,
+        artifact_created_sink: Callable[[str], None] | None = None,
     ) -> RunRecorder:
         started_at = clock()
         run_dir = create_run_dir(output_base, question)
@@ -106,6 +107,8 @@ class RunRecorder:
         recorder = cls(run_dir=run_dir, manifest=manifest, clock=clock)
         recorder._write_manifest()
         (run_dir / "logs.jsonl").touch(exist_ok=False)
+        if artifact_created_sink is not None:
+            artifact_created_sink(run_dir.name)
         if trace_enabled:
             recorder._trace = trace_factory(
                 path=run_dir / 'traces.jsonl',
