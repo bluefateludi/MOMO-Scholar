@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -30,7 +31,7 @@ def _canonical_json(value: object) -> str:
     ) + "\n"
 
 
-def _ranking(mode: str) -> RawRanking:
+def _ranking(mode: str, *, case_id: str = "case-1") -> RawRanking:
     sources = {
         "keyword": ("lexical",),
         "vector": ("vector",),
@@ -38,7 +39,7 @@ def _ranking(mode: str) -> RawRanking:
     }[mode]
     return RawRanking(
         schema_version="1.0",
-        case_id="case-1",
+        case_id=case_id,
         mode=mode,
         candidates=(
             RankedCandidate(
@@ -54,13 +55,21 @@ def _ranking(mode: str) -> RawRanking:
     )
 
 
-def _sealed_package(root: Path, *, corrupt_aggregate: bool = False) -> Path:
+def _sealed_package(
+    root: Path,
+    *,
+    corrupt_aggregate: bool = False,
+    data_kind: str = "synthetic",
+    case_count: int = 1,
+    bootstrap_resamples: int = 10_000,
+) -> Path:
     package = root / "experiment"
     builder = EvidencePackageBuilder(package)
+    case_ids = tuple(f"case-{index + 1}" for index in range(case_count))
     config = RetrievalBenchmarkConfig(
         schema_version="1.0",
         dataset_fingerprint_sha256="a" * 64,
-        ordered_case_ids=("case-1",),
+        ordered_case_ids=case_ids,
         corpus_sha256="b" * 64,
         ordered_chunk_sha256=("c" * 64,),
         candidate_limit=10,
@@ -74,14 +83,21 @@ def _sealed_package(root: Path, *, corrupt_aggregate: bool = False) -> Path:
         primary_k=8,
         modes=("keyword", "vector", "hybrid_rrf"),
     )
-    case = CaseRetrievalResult(
-        case_id="case-1",
-        rankings=tuple(_ranking(mode) for mode in ("keyword", "vector", "hybrid_rrf")),
-        failures=(),
+    cases = tuple(
+        CaseRetrievalResult(
+            case_id=case_id,
+            rankings=tuple(
+                _ranking(mode, case_id=case_id)
+                for mode in ("keyword", "vector", "hybrid_rrf")
+            ),
+            failures=(),
+        )
+        for case_id in case_ids
     )
     statistics = score_benchmark(
-        cases=(case,),
-        relevance_by_case={"case-1": {"chunk-r": 3}},
+        cases=cases,
+        relevance_by_case={case_id: {"chunk-r": 3} for case_id in case_ids},
+        bootstrap_resamples=bootstrap_resamples,
     )
     aggregate = {
         "ks": statistics["ks"],
@@ -96,11 +112,14 @@ def _sealed_package(root: Path, *, corrupt_aggregate: bool = False) -> Path:
         "aggregate_ci_95": statistics["aggregate_ci_95"],
         "paired_deltas": statistics["paired_deltas"],
     }
-    builder.write_json("dataset-manifest.json", {"data_kind": "synthetic"})
+    builder.write_json("dataset-manifest.json", {"data_kind": data_kind})
     builder.write_json("corpus-manifest.json", {"corpus_sha256": "b" * 64})
     builder.write_text(
         "gold-judgments.jsonl",
-        _canonical_json({"case_id": "case-1", "relevance": {"chunk-r": 3}}),
+        "".join(
+            _canonical_json({"case_id": case_id, "relevance": {"chunk-r": 3}})
+            for case_id in case_ids
+        ),
     )
     builder.write_json("resolved-config.json", config.model_dump(mode="json"))
     builder.write_json(
@@ -113,7 +132,11 @@ def _sealed_package(root: Path, *, corrupt_aggregate: bool = False) -> Path:
     )
     builder.write_text(
         "raw-rankings.jsonl",
-        "".join(_canonical_json(item.model_dump(mode="json")) for item in case.rankings),
+        "".join(
+            _canonical_json(item.model_dump(mode="json"))
+            for case in cases
+            for item in case.rankings
+        ),
     )
     builder.write_text(
         "case-metrics.jsonl",
@@ -493,6 +516,138 @@ def test_recompute_writes_verification_copy_and_detects_projection_mismatch(
     )
     assert mismatch.exit_code == 3
     assert "aggregate.json" in mismatch.output
+
+
+def test_recompute_seals_publishable_authority_without_mutating_real_source(
+    tmp_path, monkeypatch
+) -> None:
+    from paper_agent.eval.retrieval_benchmark import cli
+
+    monkeypatch.setattr(
+        cli,
+        "score_benchmark",
+        lambda **kwargs: score_benchmark(**kwargs, bootstrap_resamples=1),
+    )
+    source = _sealed_package(
+        tmp_path / "real",
+        data_kind="real",
+        case_count=40,
+        bootstrap_resamples=1,
+    )
+    source_manifest = (source / "artifact-manifest.json").read_bytes()
+    authority = tmp_path / "authority"
+
+    result = runner.invoke(
+        cli.app,
+        ["recompute", "--package", str(source), "--output", str(authority)],
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads(
+        (authority / "recompute-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["sealed"] is True
+    assert manifest["recomputed"] is True
+    assert manifest["publishable"] is True
+    assert manifest["source"]["artifact_manifest_sha256"] == hashlib.sha256(
+        source_manifest
+    ).hexdigest()
+    resume = (authority / "resume-evidence.md").read_text(encoding="utf-8")
+    assert "On 40 real cases" in resume
+    assert "No resume-ready numeric claims" not in resume
+    assert (source / "artifact-manifest.json").read_bytes() == source_manifest
+    verified = runner.invoke(cli.app, ["verify", str(authority)])
+    assert verified.exit_code == 0, verified.output
+
+
+def test_recomputed_authority_rejects_tampering_and_invalid_chain_state(
+    tmp_path, monkeypatch
+) -> None:
+    from paper_agent.eval.retrieval_benchmark import cli
+
+    monkeypatch.setattr(
+        cli,
+        "score_benchmark",
+        lambda **kwargs: score_benchmark(**kwargs, bootstrap_resamples=1),
+    )
+    source = _sealed_package(
+        tmp_path / "source",
+        data_kind="real",
+        case_count=40,
+        bootstrap_resamples=1,
+    )
+
+    projection_authority = tmp_path / "projection-tamper"
+    assert runner.invoke(
+        cli.app,
+        ["recompute", "--package", str(source), "--output", str(projection_authority)],
+    ).exit_code == 0
+    with (projection_authority / "report.md").open("a", encoding="utf-8") as handle:
+        handle.write("tampered\n")
+    projection_manifest_path = projection_authority / "recompute-manifest.json"
+    projection_manifest = json.loads(
+        projection_manifest_path.read_text(encoding="utf-8")
+    )
+    report_entry = next(
+        entry
+        for entry in projection_manifest["artifacts"]
+        if entry["path"] == "report.md"
+    )
+    report_bytes = (projection_authority / "report.md").read_bytes()
+    report_entry["byte_length"] = len(report_bytes)
+    report_entry["sha256"] = hashlib.sha256(report_bytes).hexdigest()
+    projection_manifest_path.write_text(
+        _canonical_json(projection_manifest), encoding="utf-8"
+    )
+    assert runner.invoke(cli.app, ["verify", str(projection_authority)]).exit_code == 3
+
+    for directory, mutation in (
+        ("source-hash", lambda value: value["source"].update(
+            {"artifact_manifest_sha256": "0" * 64}
+        )),
+        ("recomputed-state", lambda value: value.update({"recomputed": False})),
+    ):
+        authority = tmp_path / directory
+        assert runner.invoke(
+            cli.app,
+            ["recompute", "--package", str(source), "--output", str(authority)],
+        ).exit_code == 0
+        path = authority / "recompute-manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        mutation(manifest)
+        path.write_text(_canonical_json(manifest), encoding="utf-8")
+        assert runner.invoke(cli.app, ["verify", str(authority)]).exit_code == 3
+
+
+def test_synthetic_recomputed_authority_remains_non_publishable(
+    tmp_path, monkeypatch
+) -> None:
+    from paper_agent.eval.retrieval_benchmark import cli
+
+    monkeypatch.setattr(
+        cli,
+        "score_benchmark",
+        lambda **kwargs: score_benchmark(**kwargs, bootstrap_resamples=1),
+    )
+    source = _sealed_package(
+        tmp_path / "synthetic", case_count=40, bootstrap_resamples=1
+    )
+    authority = tmp_path / "authority"
+    result = runner.invoke(
+        cli.app,
+        ["recompute", "--package", str(source), "--output", str(authority)],
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads(
+        (authority / "recompute-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["publishable"] is False
+    resume = (authority / "resume-evidence.md").read_text(encoding="utf-8")
+    assert "No resume-ready numeric claims" in resume
+    assert "Recall@8 was" not in resume
+    verified = runner.invoke(cli.app, ["verify", str(authority)])
+    assert verified.exit_code == 0, verified.output
 
 
 def test_recompute_rejects_a_corrupt_seal_with_integrity_exit_code(tmp_path) -> None:
