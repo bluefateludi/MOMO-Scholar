@@ -4,6 +4,7 @@ import typer
 
 from paper_agent.eval.citation_baseline.cli import app as citation_baseline_app
 from paper_agent.eval.retrieval_benchmark.cli import app as retrieval_benchmark_app
+from paper_agent.eval.validation_package import app as validation_package_app
 from paper_agent.pipeline import PipelineRunFailed, run_pipeline
 
 app = typer.Typer(help="Paper Agent: citation-traceable paper survey assistant")
@@ -14,6 +15,10 @@ app.add_typer(
 app.add_typer(
     citation_baseline_app,
     name="citation-baseline",
+)
+app.add_typer(
+    validation_package_app,
+    name="validation-package",
 )
 
 _ARTIFACTS = (
