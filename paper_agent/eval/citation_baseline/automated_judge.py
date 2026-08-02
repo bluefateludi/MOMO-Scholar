@@ -20,7 +20,11 @@ from pydantic import (
     model_validator,
 )
 
-from paper_agent.generation import GenerationMessage
+from paper_agent.generation import (
+    GenerationFailureMetadata,
+    GenerationMessage,
+    GenerationProviderError,
+)
 from paper_agent.generation.dashscope_transport import DashScopeChatTransport
 from paper_agent.eval.evidence_package import (
     EvidencePackageBuilder,
@@ -350,6 +354,11 @@ class AutomatedJudgeFailure(FrozenJudgeModel):
     cost_accounted: StrictFloat = Field(ge=0)
     latency_ms: StrictFloat = Field(ge=0)
     reason_code: str
+    http_status: StrictInt | None = Field(default=None, ge=100, le=599)
+    provider_error_code: str | None = None
+    provider_error_type: str | None = None
+    provider_error_parameter: str | None = None
+    provider_request_id: str | None = None
 
     _required = field_validator(
         "failure_id", "case_id", "assertion_id", "judge_model_version", "reason_code"
@@ -525,7 +534,11 @@ def run_automated_judge(
         if len(prior_sends) >= maximum_attempts:
             raise AutomatedJudgeError("automated judge pass retry budget exhausted")
 
-        def record_failure(reason_code: str, started: float) -> None:
+        def record_failure(
+            reason_code: str,
+            started: float,
+            metadata: GenerationFailureMetadata | None = None,
+        ) -> None:
             related = [record for record in sends if record.send_index in send_indices]
             failure_payload = {
                 "assertion_id": item.assertion_id,
@@ -554,6 +567,13 @@ def run_automated_judge(
                     cost_accounted=sum(record.cost_accounted for record in related),
                     latency_ms=max(0.0, (monotonic() - started) * 1000),
                     reason_code=reason_code,
+                    http_status=metadata.http_status if metadata else None,
+                    provider_error_code=metadata.provider_error_code if metadata else None,
+                    provider_error_type=metadata.provider_error_type if metadata else None,
+                    provider_error_parameter=(
+                        metadata.provider_error_parameter if metadata else None
+                    ),
+                    provider_request_id=metadata.provider_request_id if metadata else None,
                 )
             )
             persist()
@@ -611,14 +631,15 @@ def run_automated_judge(
                 persist()
                 record_failure("judge_contract_error", started)
                 raise
-            except Exception:
+            except Exception as error:
                 sends[-1] = reserved.model_copy(
                     update={"status": "failed", "failure_reason_code": "judge_provider_error"}
                 )
                 persist()
                 if attempt_index < maximum_attempts:
                     continue
-                record_failure("judge_provider_error", started)
+                metadata = error.metadata if isinstance(error, GenerationProviderError) else None
+                record_failure("judge_provider_error", started, metadata)
                 raise AutomatedJudgeError("automated judge pass failed") from None
             sends[-1] = reserved.model_copy(
                 update={
