@@ -3,17 +3,29 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+import httpx
 import typer
 from pydantic import ValidationError
 
+from paper_agent.config import load_settings
 from paper_agent.eval.evidence_package import (
     EvidencePackageBuilder,
     EvidencePackageError,
     verify_evidence_package,
+)
+from paper_agent.generation import DashScopeChatTransport, DashScopeGenerationProvider
+
+from .live_generation import (
+    BudgetedDashScopeTransport,
+    LiveGenerationConfig,
+    preflight_live_generation,
+    run_live_generation,
 )
 
 from .contracts import (
@@ -120,6 +132,24 @@ def _atomic_write(path: Path, content: str) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _git_environment() -> dict[str, object]:
+    def git(*args: str) -> str:
+        result = subprocess.run(
+            ("git", *args),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        return result.stdout.strip()
+
+    return {
+        "git_sha": git("rev-parse", "HEAD"),
+        "git_dirty": bool(git("status", "--porcelain")),
+        "python_version": sys.version.split()[0],
+    }
 
 
 def _new_directory(path: Path) -> None:
@@ -705,6 +735,106 @@ def score(
         typer.echo(f"Sealed citation package with case failures: {output}", err=True)
         raise typer.Exit(code=_EXIT_REVIEW)
     typer.echo(f"Sealed citation package: {output}")
+
+
+@app.command("run-live-generation")
+def run_live_generation_command(
+    prepared: Path = typer.Option(..., exists=True, file_okay=False),
+    output: Path = typer.Option(...),
+    request_model: str = typer.Option("qwen3.7-plus"),
+    temperature: float = typer.Option(0.0, min=0.0, max=2.0),
+    max_tokens: int = typer.Option(..., min=1),
+    attempt_timeout_seconds: float = typer.Option(60.0, min=0.001),
+    case_limit: int = typer.Option(2, min=1),
+    case_id: list[str] | None = typer.Option(
+        None,
+        "--case-id",
+        help="Select an exact frozen case; repeat in the intended execution order.",
+    ),
+    max_sends_per_case: int = typer.Option(4, min=1, max=4),
+    max_total_sends: int = typer.Option(..., min=1),
+    max_prompt_tokens_per_send: int = typer.Option(..., min=1),
+    pricing_authority: str = typer.Option(...),
+    input_usd_per_million_tokens: float = typer.Option(..., min=0.000001),
+    output_usd_per_million_tokens: float = typer.Option(..., min=0.000001),
+    max_cost_usd: float = typer.Option(0.25, min=0.000001),
+    acknowledge_provider_costs: bool = typer.Option(
+        False,
+        "--acknowledge-provider-costs",
+        help="Acknowledge the frozen provider call and USD ceilings.",
+    ),
+) -> None:
+    """Run or resume frozen Citation cases with hard send and cost authorization."""
+
+    if not acknowledge_provider_costs:
+        typer.echo(
+            "run-live-generation requires --acknowledge-provider-costs", err=True
+        )
+        raise typer.Exit(code=_EXIT_INPUT)
+    try:
+        config = LiveGenerationConfig(
+            request_model=request_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            attempt_timeout_seconds=attempt_timeout_seconds,
+            max_sends_per_case=max_sends_per_case,
+            max_total_sends=max_total_sends,
+            case_limit=case_limit,
+            selected_case_ids=tuple(case_id or ()),
+            max_prompt_tokens_per_send=max_prompt_tokens_per_send,
+            pricing_authority=pricing_authority,
+            input_usd_per_million_tokens=input_usd_per_million_tokens,
+            output_usd_per_million_tokens=output_usd_per_million_tokens,
+            max_cost_usd=max_cost_usd,
+        )
+        environment = _git_environment()
+        selected_ids = preflight_live_generation(
+            prepared=prepared,
+            output=output,
+            config=config,
+            environment=environment,
+        )
+        settings = load_settings()
+        if settings.dashscope_generation_model != config.request_model:
+            raise ValueError("configured request model does not match frozen settings")
+        api_key = settings.dashscope_api_key
+        if not api_key or not api_key.strip():
+            raise ValueError("generation provider credential is unavailable")
+
+        with httpx.Client() as client:
+            transport = DashScopeChatTransport(client)
+
+            def provider_factory(case_id, ledger):
+                return DashScopeGenerationProvider(
+                    api_key=api_key,
+                    model=config.request_model,
+                    base_url=settings.dashscope_generation_base_url,
+                    transport=BudgetedDashScopeTransport(transport, ledger, case_id),
+                    temperature=config.temperature,
+                    max_tokens=config.max_tokens,
+                )
+
+            manifest = run_live_generation(
+                prepared=prepared,
+                output=output,
+                config=config,
+                environment=environment,
+                provider_factory=provider_factory,
+            )
+    except (OSError, subprocess.SubprocessError, ValidationError, ValueError):
+        typer.echo(
+            "Live generation preflight failed: invalid, unsafe, dirty, or unavailable inputs",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_INPUT) from None
+
+    if manifest["status"] != "completed":
+        typer.echo(
+            f"Live generation incomplete; completed cases were preserved: {output}",
+            err=True,
+        )
+        raise typer.Exit(code=_EXIT_REVIEW)
+    typer.echo(f"Generated {len(selected_ids)} frozen Citation cases: {output}")
 
 
 @app.command()

@@ -120,6 +120,8 @@ class DashScopeChatTransport:
         api_key: str,
         base_url: str,
         timeout: float,
+        temperature: float,
+        max_tokens: int,
     ) -> GenerationHttpResponse:
         if (
             isinstance(timeout, bool)
@@ -128,6 +130,19 @@ class DashScopeChatTransport:
             or timeout <= 0
         ):
             raise ValueError("timeout must be a positive finite number")
+        if (
+            isinstance(temperature, bool)
+            or not isinstance(temperature, (int, float))
+            or not math.isfinite(float(temperature))
+            or not 0 <= temperature <= 2
+        ):
+            raise ValueError("temperature must be a finite number between 0 and 2")
+        if (
+            isinstance(max_tokens, bool)
+            or not isinstance(max_tokens, int)
+            or max_tokens < 1
+        ):
+            raise ValueError("max_tokens must be a positive integer")
 
         url = f"{base_url.removesuffix('/')}/chat/completions"
         error_type: type[GenerationTimeoutError | GenerationNetworkError] | None = None
@@ -139,6 +154,8 @@ class DashScopeChatTransport:
                     "model": model,
                     "messages": [_message_payload(message) for message in messages],
                     "response_format": {"type": "json_object"},
+                    "temperature": float(temperature),
+                    "max_tokens": max_tokens,
                 },
                 timeout=timeout,
             )
