@@ -65,3 +65,17 @@ Do not interrupt implementation with long conceptual explanations unless the use
 - Report the branch, commit, pull request, merge result, and cleanup result during handoff.
 - Before handoff, summarize changed files, verification commands and results, and known remaining limitations.
 - Keep interview preparation and learning documentation separate from development delivery unless the user explicitly requests both.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default canonical triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context domain documentation layout. See `docs/agents/domain.md`.
