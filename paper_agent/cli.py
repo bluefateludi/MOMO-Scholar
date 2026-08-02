@@ -2,6 +2,7 @@ from pathlib import Path
 
 import typer
 
+from paper_agent.eval.citation_baseline.cli import app as citation_baseline_app
 from paper_agent.eval.retrieval_benchmark.cli import app as retrieval_benchmark_app
 from paper_agent.pipeline import PipelineRunFailed, run_pipeline
 
@@ -9,6 +10,10 @@ app = typer.Typer(help="Paper Agent: citation-traceable paper survey assistant")
 app.add_typer(
     retrieval_benchmark_app,
     name="retrieval-benchmark",
+)
+app.add_typer(
+    citation_baseline_app,
+    name="citation-baseline",
 )
 
 _ARTIFACTS = (
