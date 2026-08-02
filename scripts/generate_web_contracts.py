@@ -42,6 +42,14 @@ def generate_typescript(schema_path: Path, output_path: Path) -> None:
     )
 
 
+def generated_typescript_matches(expected_path: Path, generated_path: Path) -> bool:
+    if not expected_path.is_file():
+        return False
+    return expected_path.read_text(encoding="utf-8") == generated_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
@@ -57,7 +65,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="momo-web-types-") as directory:
         generated = Path(directory) / "openapi.generated.ts"
         generate_typescript(OPENAPI_PATH, generated)
-        if not TYPESCRIPT_PATH.is_file() or TYPESCRIPT_PATH.read_bytes() != generated.read_bytes():
+        if not generated_typescript_matches(TYPESCRIPT_PATH, generated):
             raise SystemExit("web TypeScript contracts are stale; run npm run contracts:generate")
 
 
