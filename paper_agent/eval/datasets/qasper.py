@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from typing import Literal
 
 from pydantic import (
     StrictBool,
@@ -32,24 +33,12 @@ def _require_stable_id(value: str) -> str:
 
 
 class QasperSection(FrozenEvalModel):
-    section_name: str
+    section_name: str | None
     paragraphs: tuple[str, ...]
 
     _section_is_non_blank = field_validator("section_name")(
-        _require_non_blank
+        lambda value: _require_non_blank(value) if value is not None else None
     )
-
-    @field_validator("paragraphs")
-    @classmethod
-    def _paragraphs_are_valid(
-        cls, paragraphs: tuple[str, ...]
-    ) -> tuple[str, ...]:
-        if not paragraphs:
-            raise ValueError("paragraphs must not be empty")
-        if any(not paragraph.strip() for paragraph in paragraphs):
-            raise ValueError("paragraphs must not contain blank text")
-        return paragraphs
-
 
 class QasperAnswer(FrozenEvalModel):
     unanswerable: StrictBool
@@ -57,6 +46,7 @@ class QasperAnswer(FrozenEvalModel):
     yes_no: StrictBool | None
     free_form_answer: str
     evidence: tuple[str, ...]
+    highlighted_evidence: tuple[str, ...] = ()
 
     @field_validator("extractive_spans", "evidence")
     @classmethod
@@ -74,8 +64,6 @@ class QasperAnswer(FrozenEvalModel):
         free_form_present = bool(self.free_form_answer.strip())
         extractive_present = bool(self.extractive_spans)
         yes_no_present = self.yes_no is not None
-        if not self.evidence:
-            raise ValueError("annotation evidence must not be empty")
         if self.unanswerable:
             if free_form_present or extractive_present or yes_no_present:
                 raise ValueError(
@@ -118,16 +106,25 @@ class QasperAnnotation(FrozenEvalModel):
 class QasperQuestion(FrozenEvalModel):
     question: str
     question_id: str
-    nlp_background: str
-    topic_background: str
-    paper_read: StrictBool
+    nlp_background: str | None
+    topic_background: str | None
+    paper_read: StrictBool | Literal["no", "somewhat", "yes"] | None
     search_query: str
+    question_writer: str | None = None
     answers: tuple[QasperAnnotation, ...]
 
     _question_is_non_blank = field_validator("question")(_require_non_blank)
     _question_id_is_stable = field_validator("question_id")(
         _require_stable_id
     )
+    _question_writer_is_non_blank = field_validator("question_writer")(
+        lambda value: _require_non_blank(value) if value is not None else None
+    )
+
+    @field_validator("paper_read", mode="before")
+    @classmethod
+    def _empty_paper_read_is_missing(cls, value: object) -> object:
+        return None if value == "" else value
 
     @model_validator(mode="after")
     def _annotation_ids_are_unique(self) -> QasperQuestion:
@@ -141,6 +138,7 @@ class QasperPaperRecord(FrozenEvalModel):
     title: str
     abstract: str
     full_text: tuple[QasperSection, ...]
+    figures_and_tables: tuple[dict[str, str], ...] = ()
     qas: tuple[QasperQuestion, ...]
 
     _title_is_non_blank = field_validator("title")(_require_non_blank)
@@ -219,7 +217,7 @@ def materialize_qasper_content(record: QasperPaperRecord) -> bytes:
 def _resolve_evidence(
     record: QasperPaperRecord,
     evidence_text: str,
-) -> tuple[int, int, str]:
+) -> tuple[int, int, str | None]:
     matches = [
         (section_index, paragraph_index, section.section_name)
         for section_index, section in enumerate(record.full_text)
@@ -231,6 +229,20 @@ def _resolve_evidence(
             "annotation evidence must match exactly one paragraph"
         )
     return matches[0]
+
+
+def _evidence_is_resolvable(
+    record: QasperPaperRecord,
+    evidence: tuple[str, ...],
+) -> bool:
+    paragraphs = [
+        paragraph
+        for section in record.full_text
+        for paragraph in section.paragraphs
+    ]
+    return bool(evidence) and all(
+        paragraphs.count(quote) == 1 for quote in evidence
+    )
 
 
 def _map_annotation(
@@ -341,6 +353,7 @@ def convert_qasper(
         for annotation in sorted(
             question.answers, key=lambda item: item.annotation_id
         )
+        if _evidence_is_resolvable(paper, annotation.answer.evidence)
     ]
     return tuple(sorted(cases, key=lambda item: item.case_id))
 

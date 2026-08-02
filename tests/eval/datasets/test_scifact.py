@@ -199,6 +199,24 @@ def test_scifact_materialization_preserves_sentence_bytes() -> None:
     assert materialize_scifact_content(record) == b" first \nsecond\n"
 
 
+def test_scifact_accepts_upstream_claim_without_evidence() -> None:
+    claims, corpus = _fixture_bytes()
+
+    def mutate(rows: list[dict[str, object]]) -> None:
+        rows[0]["evidence"] = {}
+        rows[0]["cited_doc_ids"] = [101, 101]
+
+    cases = convert_scifact(
+        split="development",
+        claims_bytes=_rewrite_jsonl(claims, mutate),
+        corpus_bytes=corpus,
+        corpus_source_url="https://example.test/scifact/corpus.jsonl",
+    )
+
+    assert all("claim-201-" not in case.case_id for case in cases)
+    assert len(cases) == 3
+
+
 def test_scifact_maps_each_evidence_set_to_a_strict_case() -> None:
     cases = _convert()
 

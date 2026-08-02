@@ -39,16 +39,15 @@ Before preparing a Development smoke input:
 7. Review the two-case limit, explicit timeout, model version, and maximum
    provider budget before any separately authorized live command.
 
-## Current Two-Case Status
+## Real Validation Inputs
 
-No real two-case input is present. The repository contains only deterministic
-SciFact and QASPER test fixtures with example domains, placeholder content, and
-placeholder hashes. They are synthetic test evidence and cannot satisfy the
-real-data, provenance, license-review, content-hash, or Gold requirements.
+`DATASETS.md` pins the reviewed SciFact and QASPER versions, archive and inner
+asset hashes, byte lengths, licenses, and redistribution decisions. When those
+exact assets are available locally, converters can produce the source-balanced
+40-case Retrieval and 20-case Citation inputs described there without provider
+access.
 
-Preparing one SciFact and one QASPER Development case remains blocked until the
-source versions and asset URLs are selected, license and redistribution
-decisions are reviewed, an authorized offline download is supplied, asset and
-content hashes are verified, Gold annotations are approved, and provider
-model/timeout/budget choices are authorized. Do not substitute fixture content
-for any of these inputs.
+No real records or generated manifests are committed. A clean clone therefore
+still contains only deterministic synthetic fixtures; local materialization
+must obtain and verify the registered public assets. Preparing inputs is not a
+live smoke or baseline run and does not authorize model calls or provider cost.
