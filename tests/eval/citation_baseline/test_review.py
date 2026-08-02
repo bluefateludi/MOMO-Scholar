@@ -12,10 +12,12 @@ from paper_agent.eval.citation_baseline.review import (
     adjudicate,
     assign_reviews,
     calibration_statistics,
+    export_response_template_jsonl,
     export_review_jsonl,
     freeze_rubric,
     import_review_jsonl,
     judgments_for_scoring,
+    merge_review_judgments,
     require_scoring_ready,
     stable_reviewer_pseudonym,
 )
@@ -300,6 +302,66 @@ def test_export_is_blinded_deterministic_and_bound_to_frozen_payload() -> None:
     assert row["assignment_sha256"] == assignment.assignment_sha256
     assert "private-case-1" not in first
     assert "alice@example.com" not in first
+
+
+def test_response_template_is_deterministic_blinded_and_import_shaped() -> None:
+    rubric = freeze_rubric("citation-support-v1", "calibration-v1")
+    pseudonym = stable_reviewer_pseudonym("reviewer-a", namespace="study-1")
+    assignment = assign_reviews(
+        (_item(),),
+        {"assertion-1": (pseudonym,)},
+        rubric,
+    )[0]
+
+    first = export_response_template_jsonl((assignment,))
+    second = export_response_template_jsonl((assignment,))
+    row = json.loads(first)
+
+    assert first == second
+    assert set(row) == {
+        "schema_version",
+        "assignment_id",
+        "assignment_sha256",
+        "reviewer_pseudonym",
+        "rubric_version",
+        "calibration_set_version",
+        "output_sha256",
+        "evidence_sha256",
+        "config_sha256",
+        "semantic_verdict",
+        "reason_code",
+        "support_match_ids",
+        "notes",
+        "reviewed_at",
+    }
+    assert row["semantic_verdict"] == "__REQUIRED__"
+    assert "private-case-1" not in first
+    with pytest.raises(ReviewIntegrityError, match="invalid"):
+        import_review_jsonl(first, (assignment,))
+
+
+def test_merge_review_judgments_resumes_without_replacement() -> None:
+    rubric = freeze_rubric("citation-support-v1", "calibration-v1")
+    pseudonym = stable_reviewer_pseudonym("reviewer-a", namespace="study-1")
+    assignments = assign_reviews(
+        (_item("assertion-1"), _item("assertion-2")),
+        {
+            "assertion-1": (pseudonym,),
+            "assertion-2": (pseudonym,),
+        },
+        rubric,
+    )
+    first = import_review_jsonl(_jsonl(_response(assignments[0])), assignments)
+    second = import_review_jsonl(_jsonl(_response(assignments[1])), assignments)
+
+    merged = merge_review_judgments(first, second, assignments)
+
+    assert tuple(item.assertion_id for item in merged) == (
+        "assertion-1",
+        "assertion-2",
+    )
+    with pytest.raises(ReviewIntegrityError, match="duplicate"):
+        merge_review_judgments(first, first, assignments)
 
 
 def test_import_accepts_only_assigned_hash_bound_blinded_reviews() -> None:

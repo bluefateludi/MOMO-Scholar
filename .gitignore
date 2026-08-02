@@ -21,3 +21,4 @@ evaluations/templates/**
 !evaluations/templates/gold-judgments.template.json
 !evaluations/templates/license-provenance-registry.template.json
 !evaluations/templates/resolved-config.template.json
+!evaluations/templates/citation-calibration-bundle.template.json

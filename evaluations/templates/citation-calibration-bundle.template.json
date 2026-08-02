@@ -1,0 +1,21 @@
+{
+  "adjudications": [],
+  "calibration_answer_key": [],
+  "calibration_assertion_ids": [],
+  "calibration_records": [],
+  "calibration_set_version": "citation-calibration-v1",
+  "contains_real_data": false,
+  "frozen_authorities": {
+    "config_sha256": null,
+    "evidence_sha256": null,
+    "generation_manifest_sha256": null,
+    "output_sha256": null
+  },
+  "required_role_pseudonyms": {
+    "adjudicator": null,
+    "reviewers": []
+  },
+  "rubric_version": "citation-support-v1",
+  "schema_version": "1.0",
+  "status": "awaiting_frozen_generation"
+}

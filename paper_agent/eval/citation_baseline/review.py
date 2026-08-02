@@ -422,6 +422,43 @@ def export_review_jsonl(assignments: Sequence[ReviewAssignment]) -> str:
     )
 
 
+def export_response_template_jsonl(
+    assignments: Sequence[ReviewAssignment],
+) -> str:
+    """Emit deterministic import-shaped rows with explicit decision placeholders."""
+
+    rows: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for assignment in assignments:
+        if assignment.assignment_id in seen:
+            raise ReviewIntegrityError("duplicate review assignment")
+        seen.add(assignment.assignment_id)
+        _validate_frozen_assignment(assignment)
+        item = assignment.item
+        rows.append(
+            {
+                "schema_version": "1.0",
+                "assignment_id": assignment.assignment_id,
+                "assignment_sha256": assignment.assignment_sha256,
+                "reviewer_pseudonym": assignment.reviewer_pseudonym,
+                "rubric_version": assignment.rubric_version,
+                "calibration_set_version": assignment.calibration_set_version,
+                "output_sha256": item.output_sha256,
+                "evidence_sha256": item.evidence_sha256,
+                "config_sha256": item.config_sha256,
+                "semantic_verdict": "__REQUIRED__",
+                "reason_code": "__REQUIRED__",
+                "support_match_ids": [],
+                "notes": None,
+                "reviewed_at": "__REQUIRED_ISO_8601_UTC__",
+            }
+        )
+    return "".join(
+        _canonical_json(row) + "\n"
+        for row in sorted(rows, key=lambda row: str(row["assignment_id"]))
+    )
+
+
 def _contains_identity_leak(value: object, *, key: str | None = None) -> bool:
     if key is not None:
         lowered = key.lower()
@@ -541,6 +578,51 @@ def import_review_jsonl(
             raise ReviewIntegrityError("review judgment is invalid") from error
         judgments.append(judgment)
     return tuple(judgments)
+
+
+def merge_review_judgments(
+    existing: Sequence[SupportJudgment],
+    imported: Sequence[SupportJudgment],
+    assignments: Sequence[ReviewAssignment],
+) -> tuple[SupportJudgment, ...]:
+    """Merge completed batches for resume without allowing replacement or drift."""
+
+    assignments_by_key: dict[tuple[str, str], ReviewAssignment] = {}
+    for assignment in assignments:
+        _validate_frozen_assignment(assignment)
+        key = (assignment.item.assertion_id, assignment.reviewer_pseudonym)
+        if key in assignments_by_key:
+            raise ReviewIntegrityError("assignment registry contains duplicates")
+        assignments_by_key[key] = assignment
+
+    merged: dict[tuple[str, str], SupportJudgment] = {}
+    for judgment in (*existing, *imported):
+        key = (judgment.assertion_id, judgment.reviewer_pseudonym)
+        assignment = assignments_by_key.get(key)
+        if assignment is None:
+            raise ReviewIntegrityError("judgment is for an unassigned item")
+        if key in merged:
+            raise ReviewIntegrityError("judgment merge contains duplicate assignments")
+        item = assignment.item
+        if (
+            judgment.case_id != item.case_id
+            or judgment.run_id != item.run_id
+            or judgment.citation_occurrence_ids != item.citation_occurrence_ids
+            or judgment.rubric_version != assignment.rubric_version
+            or judgment.calibration_set_version
+            != assignment.calibration_set_version
+            or judgment.output_sha256 != item.output_sha256
+            or judgment.evidence_sha256 != item.evidence_sha256
+            or judgment.config_sha256 != item.config_sha256
+        ):
+            raise ReviewIntegrityError("judgment changed frozen assignment authorities")
+        merged[key] = judgment
+
+    return tuple(
+        merged[key]
+        for key in assignments_by_key
+        if key in merged
+    )
 
 
 def calibration_statistics(
@@ -781,10 +863,12 @@ __all__ = [
     "adjudicate",
     "assign_reviews",
     "calibration_statistics",
+    "export_response_template_jsonl",
     "export_review_jsonl",
     "freeze_rubric",
     "import_review_jsonl",
     "judgments_for_scoring",
+    "merge_review_judgments",
     "require_scoring_ready",
     "stable_reviewer_pseudonym",
 ]
