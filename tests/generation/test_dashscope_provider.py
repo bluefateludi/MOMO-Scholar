@@ -35,6 +35,15 @@ class ConstrainedAnswer(StrictModel):
     answers: list[str] = Field(min_length=2)
 
 
+class SixFieldAnswer(StrictModel):
+    alpha: list[str]
+    beta: list[str]
+    gamma: list[str]
+    delta: list[str]
+    epsilon: list[str]
+    zeta: list[str]
+
+
 class ScriptedTransport:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
@@ -121,6 +130,18 @@ def test_one_send_success_preserves_timeout_and_usage():
     assert clock.sleeps == []
 
 
+def test_every_required_schema_field_is_disclosed_before_generation_and_repair():
+    valid = json.dumps({field: [] for field in SixFieldAnswer.model_fields})
+    instance, transport, _ = provider([response("{}"), response(valid)])
+
+    generate(instance, SixFieldAnswer)
+
+    for call in transport.calls:
+        combined = "\n".join(message.content for message in call["messages"])
+        assert all(field in combined for field in SixFieldAnswer.model_fields)
+        assert '"additionalProperties":false' in combined
+
+
 @pytest.mark.parametrize(
     "error_type",
     [
@@ -189,14 +210,16 @@ def test_invalid_json_is_repaired_once_with_original_grounding_and_safe_delimite
     assert result.attempts == 2
     repair_messages = transport.calls[1]["messages"]
     assert tuple(repair_messages[:2]) == MESSAGES
-    assert repair_messages[2].role == "assistant"
-    assert "UNTRUSTED_INVALID_RESPONSE_BEGIN" in repair_messages[2].content
-    assert "UNTRUSTED_INVALID_RESPONSE_END" in repair_messages[2].content
+    assert repair_messages[2].role == "user"
+    assert "TRUSTED_JSON_SCHEMA_BEGIN" in repair_messages[2].content
+    assert repair_messages[3].role == "assistant"
+    assert "UNTRUSTED_INVALID_RESPONSE_BEGIN" in repair_messages[3].content
+    assert "UNTRUSTED_INVALID_RESPONSE_END" in repair_messages[3].content
     assert len(invalid[:MAX_REPAIR_CONTENT_CHARS]) == 20_000
-    assert invalid[:MAX_REPAIR_CONTENT_CHARS] in repair_messages[2].content
-    assert invalid not in repair_messages[2].content
-    assert repair_messages[3].role == "user"
-    assert "Answer" in repair_messages[3].content
+    assert invalid[:MAX_REPAIR_CONTENT_CHARS] in repair_messages[3].content
+    assert invalid not in repair_messages[3].content
+    assert repair_messages[4].role == "user"
+    assert "Answer" in repair_messages[4].content
     assert [call["temperature"] for call in transport.calls] == [0.0, 0.0]
     assert [call["max_tokens"] for call in transport.calls] == [2048, 2048]
 

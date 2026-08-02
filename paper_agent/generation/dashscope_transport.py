@@ -32,6 +32,7 @@ class GenerationUsage(_ImmutableModel):
 class GenerationHttpResponse(_ImmutableModel):
     content: str = Field(min_length=1)
     model: str = Field(min_length=1)
+    finish_reason: str | None = Field(default=None, min_length=1)
     usage: GenerationUsage | None = None
 
 
@@ -98,6 +99,7 @@ def _parse_response(response: httpx.Response) -> GenerationHttpResponse:
             {
                 "content": message["content"],
                 "model": payload["model"],
+                "finish_reason": first_choice.get("finish_reason"),
                 "usage": usage,
             }
         )
@@ -154,6 +156,7 @@ class DashScopeChatTransport:
                     "model": model,
                     "messages": [_message_payload(message) for message in messages],
                     "response_format": {"type": "json_object"},
+                    "enable_thinking": False,
                     "temperature": float(temperature),
                     "max_tokens": max_tokens,
                 },

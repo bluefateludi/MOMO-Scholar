@@ -379,6 +379,9 @@ class GenerationBudgetLedger:
                 "prompt_token_upper_bound": prompt_ceiling,
                 "authorized_cost_ceiling_usd": self.config.max_cost_per_send_usd,
                 "response_model": None,
+                "finish_reason": None,
+                "response_content_length": None,
+                "response_content_sha256": None,
                 "prompt_tokens": None,
                 "completion_tokens": None,
                 "total_tokens": None,
@@ -415,6 +418,11 @@ class GenerationBudgetLedger:
                 {
                     "status": "succeeded",
                     "response_model": response.model,
+                    "finish_reason": response.finish_reason,
+                    "response_content_length": len(response.content),
+                    "response_content_sha256": _sha256_bytes(
+                        response.content.encode("utf-8")
+                    ),
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "total_tokens": usage.total_tokens if usage is not None else None,
