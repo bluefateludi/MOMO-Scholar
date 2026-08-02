@@ -54,9 +54,12 @@ Do not interrupt implementation with long conceptual explanations unless the use
 ## Git and Delivery
 
 - Check the working tree before editing and distinguish current Task changes from pre-existing user work.
-- Agents may stage and commit changes that belong to the active Task after relevant verification. Do not stage unrelated user changes.
-- Push, merge, rebase, reset, clean, amend, force operations, pull request creation or updates, and branch or worktree deletion require explicit user authorization.
+- For implementation Tasks that produce verified tracked changes, delivery is an automatic part of the Task. Without requesting additional confirmation, create or use a `codex/` branch, stage only the active Task's files, create a scoped commit, push the branch with a normal non-force push, and create or update a Draft pull request targeting `master`.
+- Treat the preceding automatic delivery workflow as standing user authorization for branch creation, scoped staging, commit creation, normal push, and Draft pull request creation or updates. Do not ask the user to perform these steps manually when the required credentials and tools are available.
+- Do not create an empty commit or pull request when a Task produces no tracked changes or only gitignored/local artifacts. Do not stage unrelated user changes.
+- Merge, rebase, reset, clean, amend, force push, pull request conversion to Ready, branch deletion, and worktree deletion still require explicit user authorization.
 - Deleting or renaming source files is allowed when it is a necessary, scoped part of the approved Task and is visible in the final diff.
-- Report created commits during handoff.
+- If authentication, repository policy, or tooling blocks automatic delivery, complete all safe local work and report the exact blocker instead of delegating routine Git commands back to the user.
+- Report the branch, commit, push, and Draft pull request during handoff.
 - Before handoff, summarize changed files, verification commands and results, and known remaining limitations.
 - Keep interview preparation and learning documentation separate from development delivery unless the user explicitly requests both.
