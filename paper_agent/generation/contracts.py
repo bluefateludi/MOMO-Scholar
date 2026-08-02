@@ -31,6 +31,19 @@ class GenerationFailureMetadata(StrictModel):
     total_tokens: int | None = Field(default=None, ge=0)
     attempts: int = Field(ge=0)
     elapsed_seconds: float = Field(ge=0.0)
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    provider_error_code: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:/-]+$"
+    )
+    provider_error_type: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:/-]+$"
+    )
+    provider_error_parameter: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:/-]+$"
+    )
+    provider_request_id: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:/-]+$"
+    )
 
 
 class GenerationProvider(Protocol):

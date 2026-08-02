@@ -25,6 +25,7 @@ from paper_agent.eval.citation_baseline.automated_judge import (
     verify_automated_citation_package,
 )
 from paper_agent.eval.citation_baseline.contracts import AtomicAssertion, CitationOccurrence
+from paper_agent.generation.dashscope_transport import DashScopeChatTransport
 
 
 OUTPUT_SHA = "a" * 64
@@ -216,6 +217,48 @@ def test_local_semantic_schema_failure_is_not_mislabeled_as_provider_error(
 
     failure = json.loads((tmp_path / "automated-judge-failures.jsonl").read_text())
     assert failure["reason_code"] == "judge_contract_error"
+
+
+def test_provider_failure_persists_only_safe_http_diagnostics(tmp_path) -> None:
+    authority = _authority(max_retries_per_pass=0)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "code": "InvalidParameter",
+                "type": "invalid_request_error",
+                "param": "response_format",
+                "request_id": "req-safe-123",
+                "message": "must-never-persist sk-secret prompt-body",
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        provider = DashScopeAutomatedJudgeProvider(
+            api_key="must-never-persist-key",
+            base_url=authority.judge_base_url,
+            authority=authority,
+            transport=DashScopeChatTransport(client),
+        )
+        with pytest.raises(AutomatedJudgeError):
+            run_automated_judge(
+                output=tmp_path,
+                authority=authority,
+                inputs=(_input("safe-http-diagnostics"),),
+                provider=provider,
+            )
+
+    failure_text = (tmp_path / "automated-judge-failures.jsonl").read_text()
+    failure = json.loads(failure_text)
+    assert failure["http_status"] == 400
+    assert failure["provider_error_code"] == "InvalidParameter"
+    assert failure["provider_error_type"] == "invalid_request_error"
+    assert failure["provider_error_parameter"] == "response_format"
+    assert failure["provider_request_id"] == "req-safe-123"
+    assert "must-never-persist" not in failure_text
+    assert "prompt-body" not in failure_text
+    assert "secret" not in failure_text
 
 
 def test_retry_accounting_survives_process_restart(tmp_path) -> None:

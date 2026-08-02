@@ -1,5 +1,6 @@
 from collections.abc import Mapping, Sequence
 import math
+import re
 from typing import Any
 
 import httpx
@@ -36,8 +37,42 @@ class GenerationHttpResponse(_ImmutableModel):
     usage: GenerationUsage | None = None
 
 
-def _failure_metadata() -> GenerationFailureMetadata:
-    return GenerationFailureMetadata(attempts=1, elapsed_seconds=0.0)
+_SAFE_PROVIDER_VALUE = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
+
+
+def _safe_provider_value(value: object) -> str | None:
+    return value if isinstance(value, str) and _SAFE_PROVIDER_VALUE.fullmatch(value) else None
+
+
+def _failure_metadata(response: httpx.Response | None = None) -> GenerationFailureMetadata:
+    if response is None:
+        return GenerationFailureMetadata(attempts=1, elapsed_seconds=0.0)
+    payload: object = None
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        pass
+    values = payload if isinstance(payload, dict) else {}
+    error = values.get("error")
+    details = error if isinstance(error, dict) else values
+    request_id = values.get("request_id") or values.get("requestId")
+    if request_id is None:
+        request_id = (
+            response.headers.get("x-request-id")
+            or response.headers.get("x-dashscope-request-id")
+            or response.headers.get("request-id")
+        )
+    return GenerationFailureMetadata(
+        attempts=1,
+        elapsed_seconds=0.0,
+        http_status=response.status_code,
+        provider_error_code=_safe_provider_value(details.get("code")),
+        provider_error_type=_safe_provider_value(details.get("type")),
+        provider_error_parameter=_safe_provider_value(
+            details.get("param") or details.get("parameter")
+        ),
+        provider_request_id=_safe_provider_value(request_id),
+    )
 
 
 def _retry_delay(response: httpx.Response) -> float | None:
@@ -170,16 +205,16 @@ class DashScopeChatTransport:
             raise error_type(metadata=_failure_metadata())
 
         if response.status_code in (401, 403):
-            raise GenerationAuthenticationError(metadata=_failure_metadata())
+            raise GenerationAuthenticationError(metadata=_failure_metadata(response))
         if response.status_code in (400, 404, 422):
-            raise GenerationRequestError(metadata=_failure_metadata())
+            raise GenerationRequestError(metadata=_failure_metadata(response))
         if response.status_code == 429:
             raise GenerationRateLimitError(
-                metadata=_failure_metadata(), retry_delay_seconds=_retry_delay(response)
+                metadata=_failure_metadata(response), retry_delay_seconds=_retry_delay(response)
             )
         if 500 <= response.status_code <= 599:
-            raise GenerationServerError(metadata=_failure_metadata())
+            raise GenerationServerError(metadata=_failure_metadata(response))
         if not response.is_success:
-            raise GenerationResponseError(metadata=_failure_metadata())
+            raise GenerationResponseError(metadata=_failure_metadata(response))
 
         return _parse_response(response)
