@@ -4,7 +4,9 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -43,6 +45,14 @@ _EXIT_ACKNOWLEDGEMENT = 2
 _EXIT_INTEGRITY = 3
 _CHUNKING_VERSION = "abstract-per-paper/1.0"
 _METRIC_VERSION = "retrieval-metrics/1.0"
+_RECOMPUTE_MANIFEST = "recompute-manifest.json"
+_RECOMPUTE_ARTIFACTS = (
+    "case-metrics.jsonl",
+    "aggregate.json",
+    "confidence-intervals.json",
+    "report.md",
+    "resume-evidence.md",
+)
 
 
 def _canonical_json(value: object) -> str:
@@ -329,7 +339,7 @@ def _report_metadata(
     operations = statistics["operations"]
     return {
         "case_count": len(config.ordered_case_ids),
-        "data_kind": dataset_manifest.get("data_kind", "real"),
+        "data_kind": dataset_manifest.get("data_kind", "unknown"),
         "git_sha": environment.get("git_sha", "unknown"),
         "git_dirty": environment.get("git_dirty"),
         "embedding_model_version": model_version,
@@ -385,6 +395,133 @@ def _parse_authorities(
             raise ValueError("gold-judgments.jsonl is invalid")
         relevance[row["case_id"]] = row["relevance"]
     return tuple(cases), relevance
+
+
+def _recompute_publishable(metadata: dict[str, object]) -> bool:
+    return (
+        metadata.get("data_kind") == "real"
+        and metadata.get("case_count") == 40
+        and metadata.get("git_dirty") is False
+        and metadata.get("sealed") is True
+        and metadata.get("recomputed") is True
+        and metadata.get("complete", True) is True
+    )
+
+
+def _seal_recompute_authority(
+    *,
+    source: Path,
+    output: Path,
+    metadata: dict[str, object],
+) -> None:
+    manifest = {
+        "schema_version": "1.0",
+        "package_kind": "retrieval_benchmark_recompute",
+        "sealed": True,
+        "recomputed": True,
+        "publishable": _recompute_publishable(metadata),
+        "sealed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "source": {
+            "path": str(source.resolve()),
+            "package_kind": "retrieval_benchmark",
+            "artifact_manifest_sha256": _sha256_file(
+                source / "artifact-manifest.json"
+            ),
+        },
+        "artifacts": [
+            {
+                "path": name,
+                "role": "recomputed_projection",
+                "byte_length": (output / name).stat().st_size,
+                "sha256": _sha256_file(output / name),
+            }
+            for name in _RECOMPUTE_ARTIFACTS
+        ],
+    }
+    _atomic_write(output / _RECOMPUTE_MANIFEST, _canonical_json(manifest))
+
+
+def _verify_recompute_artifacts(
+    root: Path, manifest: dict[str, object]
+) -> None:
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list) or len(artifacts) != len(
+        _RECOMPUTE_ARTIFACTS
+    ):
+        raise ValueError("recompute artifact entries are invalid")
+    seen: set[str] = set()
+    for entry in artifacts:
+        if (
+            not isinstance(entry, dict)
+            or entry.get("path") not in _RECOMPUTE_ARTIFACTS
+            or entry.get("role") != "recomputed_projection"
+        ):
+            raise ValueError("recompute artifact entries are invalid")
+        name = str(entry["path"])
+        if name in seen:
+            raise ValueError("recompute artifact entries contain duplicates")
+        seen.add(name)
+        path = root / name
+        if not path.is_file():
+            raise ValueError(f"recomputed artifact is missing: {name}")
+        if path.stat().st_size != entry.get("byte_length"):
+            raise ValueError(f"recomputed artifact length mismatch: {name}")
+        if _sha256_file(path) != entry.get("sha256"):
+            raise ValueError(f"recomputed artifact hash mismatch: {name}")
+    if seen != set(_RECOMPUTE_ARTIFACTS):
+        raise ValueError("recompute artifact coverage is incomplete")
+
+
+def _verify_recompute_authority(root: Path) -> dict[str, object]:
+    manifest = _load_json(root / _RECOMPUTE_MANIFEST)
+    if not isinstance(manifest, dict):
+        raise ValueError("recompute manifest is invalid")
+    if (
+        manifest.get("package_kind") != "retrieval_benchmark_recompute"
+        or manifest.get("sealed") is not True
+        or manifest.get("recomputed") is not True
+        or not isinstance(manifest.get("publishable"), bool)
+    ):
+        raise ValueError("recompute authority state is invalid")
+    source_record = manifest.get("source")
+    if not isinstance(source_record, dict):
+        raise ValueError("recompute source authority is invalid")
+    source_path = source_record.get("path")
+    source_hash = source_record.get("artifact_manifest_sha256")
+    if (
+        not isinstance(source_path, str)
+        or not source_path.strip()
+        or source_record.get("package_kind") != "retrieval_benchmark"
+        or not isinstance(source_hash, str)
+        or len(source_hash) != 64
+        or any(character not in "0123456789abcdef" for character in source_hash)
+    ):
+        raise ValueError("recompute source authority is invalid")
+    source = Path(source_path)
+    source_manifest = verify_evidence_package(source)
+    if source_manifest.get("package_kind") != "retrieval_benchmark":
+        raise ValueError("recompute source package kind is invalid")
+    if _sha256_file(source / "artifact-manifest.json") != source_hash:
+        raise ValueError("recompute source hash mismatch")
+    _verify_recompute_artifacts(root, manifest)
+
+    with tempfile.TemporaryDirectory(prefix="momo-retrieval-authority-") as temporary:
+        expected = Path(temporary) / "recomputed"
+        mismatches = _recompute(source, expected)
+        if mismatches:
+            raise ValueError(
+                "recompute source projections mismatch: " + ", ".join(mismatches)
+            )
+        expected_manifest = _load_json(expected / _RECOMPUTE_MANIFEST)
+        if (
+            not isinstance(expected_manifest, dict)
+            or manifest["publishable"] != expected_manifest.get("publishable")
+        ):
+            raise ValueError("recompute publication status is inconsistent")
+        for name in _RECOMPUTE_ARTIFACTS:
+            if (root / name).read_bytes() != (expected / name).read_bytes():
+                raise ValueError(f"recomputed projection mismatch: {name}")
+    return manifest
 
 
 def _write_live_package(prepared: Path, output: Path) -> None:
@@ -523,6 +660,12 @@ def _recompute(package: Path, output: Path) -> list[str]:
         for name, content in projections.items()
         if (package / name).read_bytes() != content.encode("utf-8")
     ]
+    if not mismatches:
+        _seal_recompute_authority(
+            source=package,
+            output=output,
+            metadata=metadata,
+        )
     return mismatches
 
 
@@ -605,17 +748,20 @@ def recompute(
             err=True,
         )
         raise typer.Exit(code=_EXIT_INTEGRITY)
-    typer.echo(f"Recomputed projections: {output}")
+    typer.echo(f"Sealed recomputed authority: {output}")
 
 
 @app.command()
 def verify(
     package: Path = typer.Argument(..., exists=True, file_okay=False),
 ) -> None:
-    """Verify a sealed package's artifact coverage, lengths, and hashes."""
+    """Verify a sealed source package or recomputed publication authority."""
     try:
-        verify_evidence_package(package)
-    except EvidencePackageError as error:
+        if (package / _RECOMPUTE_MANIFEST).is_file():
+            _verify_recompute_authority(package)
+        else:
+            verify_evidence_package(package)
+    except (EvidencePackageError, OSError, ValueError) as error:
         typer.echo(f"Verification failed: {error}", err=True)
         raise typer.Exit(code=_EXIT_INTEGRITY) from None
     typer.echo(f"Verified package: {package}")
