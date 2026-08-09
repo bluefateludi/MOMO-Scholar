@@ -1,0 +1,20 @@
+{
+  "schema_version": "techscout-eval-case-v1",
+  "fixture_kind": "synthetic_frozen_evaluation",
+  "case_id": "techscout-final-fault-05",
+  "kind": "fault",
+  "source_fixture": "tests/fixtures/techscout/final/offline-observations.json",
+  "cache_mode": "offline",
+  "supports_poc": false,
+  "fault_plan": {
+    "stage": "research",
+    "failure_code": "schema_repairable",
+    "trigger_on_call": 1
+  },
+  "expected_contract": {
+    "contract_kind": "fault",
+    "injected_failure_code": "schema_repairable",
+    "recovery_succeeded": true
+  },
+  "observed_metrics": {}
+}

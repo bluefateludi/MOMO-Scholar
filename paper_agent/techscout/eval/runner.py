@@ -34,14 +34,20 @@ class EvaluationCaseTimeout(TimeoutError):
     pass
 
 
+class EvaluationSuiteTimeout(TimeoutError):
+    pass
+
+
 def _run_bounded_jobs(
     jobs: list[tuple[str, Callable[[], tuple[str, object]]]],
     *,
     workers: int,
     timeout_seconds: int,
+    total_timeout_seconds: int,
     output_dir: Path,
     cancel: Callable[[str], None],
 ) -> tuple[tuple[str, object], ...]:
+    suite_started = time.monotonic()
     pool = ThreadPoolExecutor(max_workers=workers)
     starts: dict[int, float] = {}
     lock = Lock()
@@ -64,6 +70,10 @@ def _run_bounded_jobs(
                 remaining.remove(future)
                 completed[futures[future][0]] = future.result()
             now = time.monotonic()
+            if now - suite_started >= total_timeout_seconds:
+                for future in remaining:
+                    cancel(futures[future][1])
+                raise EvaluationSuiteTimeout("evaluation suite exceeded total hard timeout")
             overdue = [
                 futures[future][0]
                 for future in remaining
@@ -87,6 +97,8 @@ def _run_bounded_jobs(
             failure_code=(
                 "case_timeout"
                 if isinstance(error, EvaluationCaseTimeout)
+                else "suite_timeout"
+                if isinstance(error, EvaluationSuiteTimeout)
                 else "runner_failure"
             ),
         )
@@ -206,6 +218,7 @@ def run_evaluation_suite(
             jobs,
             workers=suite.execution_policy.workers,
             timeout_seconds=suite.execution_policy.timeout_seconds,
+            total_timeout_seconds=suite.execution_policy.total_timeout_seconds,
             output_dir=output_dir,
             cancel=executor.cancel,
         )

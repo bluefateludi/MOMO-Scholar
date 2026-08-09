@@ -88,12 +88,30 @@ class EvaluationCase(TechScoutModel):
         return self
 
 
+class FrozenRetrievalObservation(TechScoutModel):
+    retrieved_source_ids: tuple[NonEmptyStr, ...]
+    relevant_source_ids: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    expected_version_match: bool
+    actual_version_match: bool
+
+
+class FrozenFaultObservation(TechScoutModel):
+    stage: NonEmptyStr
+
+
+class FrozenOfflineObservationSource(TechScoutModel):
+    schema_version: Literal["techscout-final-observations-v1"]
+    retrieval_observations: dict[NonEmptyStr, FrozenRetrievalObservation]
+    fault_observations: dict[NonEmptyStr, FrozenFaultObservation]
+
+
 class ExecutionPolicy(TechScoutModel):
     model: NonEmptyStr
     temperature: float = Field(ge=0)
     search_snapshot_id: NonEmptyStr
     workers: int = Field(ge=1, le=4)
     timeout_seconds: int = Field(ge=1, le=120)
+    total_timeout_seconds: int = Field(default=3600, ge=1, le=3600)
     max_infrastructure_reruns: int = Field(ge=0, le=1)
     tuning_iterations: Literal[0] = 0
 
@@ -105,6 +123,8 @@ class SuiteDefinition(TechScoutModel):
     case_files: tuple[NonEmptyStr, ...]
     executor_version: NonEmptyStr
     execution_policy: ExecutionPolicy
+    fixture_case_tree_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_tree_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def unique_case_files(self) -> "SuiteDefinition":
@@ -117,6 +137,9 @@ class EvaluationEnvironment(TechScoutModel):
     git_dirty: Literal[False]
     models: dict[NonEmptyStr, NonEmptyStr]
     executor_version: NonEmptyStr
+    baseline_git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    execution_git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    network_policy: Literal["offline", "live"] | None = None
 
 
 class TaskExecutionResult(TechScoutModel):
@@ -250,6 +273,8 @@ class TaskMetricSummary(TechScoutModel):
     tool_call_schema_success_count: int = Field(ge=0)
     tool_call_execution_success_count: int = Field(ge=0)
     tool_call_count: int = Field(ge=0)
+    average_recovery_stages: float | None = Field(default=None, ge=0, le=1)
+    average_retries: float = Field(ge=0, le=1)
     prompt_tokens_per_successful_task: float | None = Field(default=None, ge=0)
     total_tokens_per_successful_task: float | None = Field(default=None, ge=0)
     estimated_cost_per_successful_task: float | None = Field(default=None, ge=0)
@@ -268,6 +293,7 @@ class EvaluationSummary(TechScoutModel):
     retrieval_recall_at_5: float | None = Field(default=None, ge=0, le=1)
     version_filter_accuracy: float | None = Field(default=None, ge=0, le=1)
     average_fault_recovery_stages: float | None = Field(default=None, ge=0, le=1)
+    average_fault_retries: float | None = Field(default=None, ge=0, le=1)
     task_metrics: dict[HarnessVariant, TaskMetricSummary]
 
 

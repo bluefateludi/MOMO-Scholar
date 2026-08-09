@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 FIXTURES = Path("tests/fixtures/techscout/eval")
+FINAL_SOURCES = Path("tests/fixtures/techscout/final")
 EXPECTED_SHA256 = {
     "smoke-bounded-recovery.json": "06c0a0268bd14a7970f61e217e729f953e07f2ee3f6607d088ab24a3976cb90f",
     "smoke-happy-path.json": "75eee8b1a6d1cc4278b717fce9b1f953321c470b496ede4d50e96960e522138b",
@@ -12,13 +13,36 @@ EXPECTED_SHA256 = {
 }
 
 
+def _canonical_bytes(path: Path) -> bytes:
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
 def test_frozen_eval_fixtures_have_expected_hashes_and_no_observations():
     actual = {
-        path.name: hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
-        for path in sorted(FIXTURES.glob("*.json"))
+        path.name: hashlib.sha256(_canonical_bytes(path)).hexdigest()
+        for path in sorted(FIXTURES.glob("smoke-*.json"))
     }
     assert actual == EXPECTED_SHA256
     for path in FIXTURES.glob("smoke-*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") == "techscout-eval-case-v1":
+            assert payload["observed_metrics"] == {}
+
+
+def test_final_eval_fixture_tree_is_frozen_before_execution():
+    final_cases = sorted(
+        path for path in FIXTURES.glob("final-*.json") if path.name != "final-suite.json"
+    )
+    final_sources = sorted(FINAL_SOURCES.glob("*.json"))
+    assert len(final_cases) == 60
+    assert len(final_sources) == 13
+    assert hashlib.sha256(b"".join(_canonical_bytes(path) for path in final_cases)).hexdigest() == (
+        "e8b90f5e7025155d0a114be1cfade705a8c7be2dafa9d6fdf589ad140243ed0d"
+    )
+    assert hashlib.sha256(b"".join(_canonical_bytes(path) for path in final_sources)).hexdigest() == (
+        "9e16042c061d0ecc6b1074c7e7c1453c9c5dbd8c5eca64b16e35f52e95cdf6c0"
+    )
+    for path in final_cases:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if payload.get("schema_version") == "techscout-eval-case-v1":
             assert payload["observed_metrics"] == {}

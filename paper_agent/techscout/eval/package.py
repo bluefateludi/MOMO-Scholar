@@ -62,11 +62,17 @@ def publish_partial_results(
 
 
 def _resume_projection(summary: EvaluationSummary) -> str:
+    def display(value: object) -> str:
+        return "N/A" if value is None else str(value)
+
     lines = [
         "# MOMO TechScout evaluation evidence",
         "",
         f"- Profile: `{summary.profile.value}`",
         f"- Fault Recovery Success: `{summary.fault_recovery_success_count}/{summary.fault_recovery_attempt_count}`",
+        f"- Retrieval Recall@5: `{display(summary.retrieval_recall_at_5)}`",
+        f"- Version-filter accuracy: `{display(summary.version_filter_accuracy)}`",
+        f"- Average fault recovery stages/retries: `{display(summary.average_fault_recovery_stages)}/{display(summary.average_fault_retries)}`",
     ]
     for variant, metrics in summary.task_metrics.items():
         lines.extend(
@@ -74,15 +80,23 @@ def _resume_projection(summary: EvaluationSummary) -> str:
                 f"- {variant.value.upper()} Task Success: `{metrics.task_success_count}/{metrics.task_count}`",
                 f"- {variant.value.upper()} First-pass Success: `{metrics.first_pass_success_count}/{metrics.task_count}`",
                 f"- {variant.value.upper()} Recovery Success: `{metrics.recovery_success_count}/{metrics.recovery_attempt_count}`",
-                f"- {variant.value.upper()} Cold-live latency p50/p95 ms: `{metrics.latency['cold_live'].p50_ms}/{metrics.latency['cold_live'].p95_ms}`",
-                f"- {variant.value.upper()} Warm-cache latency p50/p95 ms: `{metrics.latency['warm_cache'].p50_ms}/{metrics.latency['warm_cache'].p95_ms}`",
+                f"- {variant.value.upper()} Tool schema/execution success: `{metrics.tool_call_schema_success_count}/{metrics.tool_call_execution_success_count}/{metrics.tool_call_count}`",
+                f"- {variant.value.upper()} Average recovery stages/retries: `{display(metrics.average_recovery_stages)}/{metrics.average_retries}`",
+                f"- {variant.value.upper()} Prompt/total tokens per successful task: `{display(metrics.prompt_tokens_per_successful_task)}/{display(metrics.total_tokens_per_successful_task)}`",
+                f"- {variant.value.upper()} Estimated cost per successful task: `{display(metrics.estimated_cost_per_successful_task)}`",
+                f"- {variant.value.upper()} Cold-live latency p50/p95 ms: `{display(metrics.latency['cold_live'].p50_ms)}/{display(metrics.latency['cold_live'].p95_ms)}`",
+                f"- {variant.value.upper()} Warm-cache latency p50/p95 ms: `{display(metrics.latency['warm_cache'].p50_ms)}/{display(metrics.latency['warm_cache'].p95_ms)}`",
             ]
         )
     lines.extend(
         [
             "",
             "Cold-live and warm-cache observations are intentionally not combined.",
-            "Synthetic smoke results are acceptance evidence, not live benchmark claims.",
+            (
+                "Synthetic smoke results are acceptance evidence, not live benchmark claims."
+                if summary.profile.value == "smoke"
+                else "Final results use frozen offline fixtures; cold-live is N/A and no live-network claim is made."
+            ),
             "",
         ]
     )

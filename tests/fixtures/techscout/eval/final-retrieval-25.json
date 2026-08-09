@@ -1,0 +1,17 @@
+{
+  "schema_version": "techscout-eval-case-v1",
+  "fixture_kind": "synthetic_frozen_evaluation",
+  "case_id": "techscout-final-retrieval-25",
+  "kind": "retrieval",
+  "source_fixture": "tests/fixtures/techscout/final/offline-observations.json",
+  "cache_mode": "offline",
+  "supports_poc": false,
+  "expected_contract": {
+    "contract_kind": "retrieval",
+    "relevant_source_ids": [
+      "official:dimension-25"
+    ],
+    "expected_version_match": true
+  },
+  "observed_metrics": {}
+}
