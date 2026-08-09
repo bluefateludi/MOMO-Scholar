@@ -11,6 +11,13 @@
   expected outcome, runner behavior, or other fixture.
 - Amended run: `AMENDED_AUTHORITY`, sealed manifest SHA-256
   `662cfcffc81e95763296bf9598ff9bda529ebd1f5c2c6720a39d64c853516641`.
+- Final audit: `FINAL_AUDIT_AUTHORITY`; it preserves both runs but authorizes no
+  numeric resume metric.
+
+The failed run, amended run, initial index, final audit authority, and a sealed
+post-run preflight attestation are committed under `docs/evaluations/artifacts/`.
+The preflight result was captured in the task console before the amended run but
+was only sealed afterward; that timing limitation is explicit in the artifact.
 
 The original run produced zero authoritative observations because the frozen
 input failed `ResearchRequest` construction. Its sealed trace is retained as
@@ -24,10 +31,12 @@ tree SHA-256 is
 the unchanged case tree SHA-256 is
 `e8b90f5e7025155d0a114be1cfade705a8c7be2dafa9d6fdf589ad140243ed0d`.
 
-## Amended authority results
+## Recorded amended synthetic diagnostics
 
-The authoritative population is 12 E2E tasks (24 V0/V1 observations), 40
-retrieval cases, and eight injected fault cases.
+The runner completed 12 E2E tasks (24 V0/V1 observations), 40 retrieval cases,
+and eight injected fault cases. Audit found that rankings, fault outcomes, token
+counts, and E2E services were authored in the synthetic fixtures. The following
+values are preserved diagnostics, not independent product/model measurements.
 
 | Metric | V0 | V1 |
 |---|---:|---:|
@@ -50,5 +59,6 @@ retrieval cases, and eight injected fault cases.
 - Version-filter accuracy: 0.925 (37/40).
 
 All cases used frozen offline synthetic inputs with network policy `offline` and
-no paid calls. These numbers are bounded acceptance evidence, not cold-live or
-production-performance claims. No further complete run is authorized.
+no paid calls. Resume-authoritative Task Success, First-pass, Recovery,
+Recall@5, retries, tokens, latency, and cost are all **N/A**. No further complete
+run is authorized.

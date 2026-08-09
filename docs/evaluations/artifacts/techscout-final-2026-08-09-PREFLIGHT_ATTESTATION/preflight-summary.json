@@ -1,0 +1,19 @@
+{
+  "schema_version": "techscout-final-amended-preflight-attestation-v1",
+  "status": "PASS",
+  "execution_order_attestation": "Completed before the single amended full run.",
+  "attestation_recorded_after_amended_run": true,
+  "evidence_source": "Captured pre-run task console output; not independently sealed at execution time.",
+  "execution_commit": "659bc76aefdfd7cb062af02fc7b866217ff0a6fc",
+  "checks": {
+    "e2e_request_constructor": {"passed": 12, "total": 12},
+    "retrieval_contract": {"passed": 40, "total": 40},
+    "fault_injector": {"passed": 8, "total": 8}
+  },
+  "case_tree_sha256": "e8b90f5e7025155d0a114be1cfade705a8c7be2dafa9d6fdf589ad140243ed0d",
+  "source_tree_sha256": "9e16042c061d0ecc6b1074c7e7c1453c9c5dbd8c5eca64b16e35f52e95cdf6c0",
+  "workers": 4,
+  "case_timeout_seconds": 120,
+  "maximum_scheduled_seconds": 2160,
+  "network_policy": "offline"
+}

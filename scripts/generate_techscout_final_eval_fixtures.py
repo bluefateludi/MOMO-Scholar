@@ -48,6 +48,11 @@ def main() -> None:
     for number, (slug, constraint) in enumerate(dimensions, 1):
         case_id = f"techscout-final-e2e-{number:02d}"
         source_path = SOURCES / f"e2e-{number:02d}-{slug}.json"
+        hard_constraints = (
+            [constraint]
+            if slug == "metadata-filter"
+            else [constraint, "metadata equality filtering"]
+        )
         source = {
             "schema_version": "techscout-final-task-v1",
             "fixture_kind": "frozen_offline_final_input",
@@ -57,7 +62,7 @@ def main() -> None:
             "request": {
                 "question": f"Choose a local vector store satisfying {constraint}.",
                 "project_context": "Python 3.11 single-node local RAG service.",
-                "hard_constraints": list(dict.fromkeys((constraint, "metadata equality filtering"))),
+                "hard_constraints": hard_constraints,
                 "candidates": [{"candidate_id": "chroma", "display_name": "Chroma"}],
             },
             "frozen_inputs": {"provenance": "offline synthetic final fixture", "dimension": slug},

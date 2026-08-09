@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sys
 from pathlib import Path
 
 from paper_agent.eval.evidence_package import EvidencePackageBuilder, verify_evidence_package
+from paper_agent.techscout.eval.contracts import EvaluationSummary, HarnessVariant
 
 
 def _sha256(path: Path) -> str:
@@ -15,7 +15,9 @@ def _sha256(path: Path) -> str:
 def main(failed: Path, amended: Path, output: Path) -> None:
     failed_manifest = verify_evidence_package(failed)
     amended_manifest = verify_evidence_package(amended)
-    amended_summary = json.loads((amended / "eval-summary.json").read_text(encoding="utf-8"))
+    amended_summary = EvaluationSummary.model_validate_json(
+        (amended / "eval-summary.json").read_text(encoding="utf-8")
+    )
     failed_manifest_path = failed / "artifact-manifest.json"
     amended_manifest_path = amended / "artifact-manifest.json"
     authority = {
@@ -36,11 +38,11 @@ def main(failed: Path, amended: Path, output: Path) -> None:
                 "manifest_sha256": _sha256(amended_manifest_path),
             },
         ],
-        "amended_summary": amended_summary,
+        "amended_summary": amended_summary.model_dump(mode="json"),
         "further_full_reruns_authorized": False,
     }
-    v0 = amended_summary["task_metrics"]["v0"]
-    v1 = amended_summary["task_metrics"]["v1"]
+    v0 = amended_summary.task_metrics[HarnessVariant.V0]
+    v1 = amended_summary.task_metrics[HarnessVariant.V1]
     report = f"""# MOMO TechScout final evaluation authority
 
 The original run is permanently retained as `FAILED_PRECHECK_AUTHORITY`. It
@@ -50,15 +52,15 @@ duplicated one hard constraint. This was not a model or infrastructure result.
 One transparent amended run was authorized after deleting only that duplicate.
 No model, threshold, expected outcome, runner behavior, or other fixture changed.
 
-- Amended N: `{amended_summary['e2e_case_count']} E2E tasks / {amended_summary['e2e_run_count']} V0+V1 observations, {amended_summary['retrieval_case_count']} retrieval, {amended_summary['fault_case_count']} fault`
-- V0 Task Success / First-pass: `{v0['task_success_count']}/{v0['task_count']} / {v0['first_pass_success_count']}/{v0['task_count']}`
-- V1 Task Success / First-pass: `{v1['task_success_count']}/{v1['task_count']} / {v1['first_pass_success_count']}/{v1['task_count']}`
-- Fault Recovery Success: `{amended_summary['fault_recovery_success_count']}/{amended_summary['fault_recovery_attempt_count']}`
-- Retrieval Recall@5 / version-filter accuracy: `{amended_summary['retrieval_recall_at_5']} / {amended_summary['version_filter_accuracy']}`
-- V0 warm-cache p50/p95 ms: `{v0['latency']['warm_cache']['p50_ms']}/{v0['latency']['warm_cache']['p95_ms']}`
-- V1 warm-cache p50/p95 ms: `{v1['latency']['warm_cache']['p50_ms']}/{v1['latency']['warm_cache']['p95_ms']}`
+- Amended N: `{amended_summary.e2e_case_count} E2E tasks / {amended_summary.e2e_run_count} V0+V1 observations, {amended_summary.retrieval_case_count} retrieval, {amended_summary.fault_case_count} fault`
+- V0 Task Success / First-pass: `{v0.task_success_count}/{v0.task_count} / {v0.first_pass_success_count}/{v0.task_count}`
+- V1 Task Success / First-pass: `{v1.task_success_count}/{v1.task_count} / {v1.first_pass_success_count}/{v1.task_count}`
+- Fault Recovery Success: `{amended_summary.fault_recovery_success_count}/{amended_summary.fault_recovery_attempt_count}`
+- Retrieval Recall@5 / version-filter accuracy: `{amended_summary.retrieval_recall_at_5} / {amended_summary.version_filter_accuracy}`
+- V0 warm-cache p50/p95 ms: `{v0.latency['warm_cache'].p50_ms}/{v0.latency['warm_cache'].p95_ms}`
+- V1 warm-cache p50/p95 ms: `{v1.latency['warm_cache'].p50_ms}/{v1.latency['warm_cache'].p95_ms}`
 - Cold-live latency: `N/A (N=0; live network prohibited)`
-- V0/V1 prompt tokens per successful task: `{v0['prompt_tokens_per_successful_task']}/{v1['prompt_tokens_per_successful_task']}`
+- V0/V1 prompt tokens per successful task: `{v0.prompt_tokens_per_successful_task}/{v1.prompt_tokens_per_successful_task}`
 - Estimated cost per successful task: `N/A`
 
 No further full rerun is authorized.

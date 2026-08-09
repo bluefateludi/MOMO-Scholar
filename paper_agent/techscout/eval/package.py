@@ -84,8 +84,8 @@ def _resume_projection(summary: EvaluationSummary) -> str:
                 f"- {variant.value.upper()} Average recovery stages/retries: `{display(metrics.average_recovery_stages)}/{metrics.average_retries}`",
                 f"- {variant.value.upper()} Prompt/total tokens per successful task: `{display(metrics.prompt_tokens_per_successful_task)}/{display(metrics.total_tokens_per_successful_task)}`",
                 f"- {variant.value.upper()} Estimated cost per successful task: `{display(metrics.estimated_cost_per_successful_task)}`",
-                f"- {variant.value.upper()} Cold-live latency p50/p95 ms: `{metrics.latency['cold_live'].p50_ms}/{metrics.latency['cold_live'].p95_ms}`",
-                f"- {variant.value.upper()} Warm-cache latency p50/p95 ms: `{metrics.latency['warm_cache'].p50_ms}/{metrics.latency['warm_cache'].p95_ms}`",
+                f"- {variant.value.upper()} Cold-live latency p50/p95 ms: `{display(metrics.latency['cold_live'].p50_ms)}/{display(metrics.latency['cold_live'].p95_ms)}`",
+                f"- {variant.value.upper()} Warm-cache latency p50/p95 ms: `{display(metrics.latency['warm_cache'].p50_ms)}/{display(metrics.latency['warm_cache'].p95_ms)}`",
             ]
         )
     lines.extend(
