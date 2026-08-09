@@ -4,7 +4,7 @@ MOMO TechScout is an evidence-grounded research and verification agent for Pytho
 
 The current V1 family is deliberately narrow: local-RAG Python vector stores. Chroma and Qdrant Local have reviewed PoC recipes. pgvector and unknown candidates remain research-only unless a later decision adds a trusted fixture. The PoCs check small compatibility contracts; they do not certify production performance.
 
-**Hero Demo 已验收：** 在 `origin/master@7c6a9ed25b50f790d3a0b39a541e46258da71f5a` 的 Chromium 验收中，连续三次 Fast Demo 均在 120 秒预算内终态化，浏览器 wall-clock 分别为 **45.081 s、15.360 s、12.879 s**。这是冻结 synthetic Fast Demo 的产品验收，不是 Live 模型质量或组件性能基准。
+**Hero Demo 已验收：** 以 `origin/master@b7516a7b478834614f6ce2ccf1ae63a5c73c3140` 为实际运行基线的 Chromium 验收中，连续三次 Fast Demo 均在 120 秒预算内终态化，浏览器 wall-clock 分别为 **45.081 s、15.360 s、12.879 s**；验收记录与稳定性修复随后合入 PR #92（`7c6a9ed25b50f790d3a0b39a541e46258da71f5a`）。这是冻结 synthetic Fast Demo 的产品验收，不是 Live 模型质量或组件性能基准。
 
 > Documentation status: this is the PR #92 authority draft. Final sealing is deferred until #93 is merged and the branch is normally merged with the resulting latest `master`.
 

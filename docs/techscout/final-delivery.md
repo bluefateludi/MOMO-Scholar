@@ -10,7 +10,7 @@ Planning targets, historical MOMO Scholar metrics, synthetic runner outputs, and
 
 Primary authority: [`docs/acceptance/2026-08-09-techscout-browser-acceptance.md`](../acceptance/2026-08-09-techscout-browser-acceptance.md), merged at `7c6a9ed25b50f790d3a0b39a541e46258da71f5a`.
 
-The headed-Chromium run used the React production build served by local FastAPI. Its network boundary was the frozen synthetic Fast Demo: no live provider, paid API, research network, or real-Docker execution was claimed.
+The headed-Chromium run used the React production build served by local FastAPI at the actual run baseline `b7516a7b478834614f6ce2ccf1ae63a5c73c3140`. Its acceptance record and bounded stability fixes were merged by PR #92 at `7c6a9ed25b50f790d3a0b39a541e46258da71f5a`. Its network boundary was the frozen synthetic Fast Demo: no live provider, paid API, research network, or real-Docker execution was claimed.
 
 | Scenario | Browser wall-clock | Terminal/UI result |
 |---|---:|---|
@@ -52,7 +52,9 @@ These values verify loading, execution, aggregation, failure injection, partial-
 
 The synthetic numbers must not appear as resume achievements or README headline product metrics. The authorized latency claim is the headed-browser Fast Demo acceptance above, with its synthetic boundary stated.
 
-## Completed two-axis fact check
+## Pre-#93 Draft two-axis fact check
+
+The checks below describe the current PR #92 authority Draft. They must be rerun against the latest `master` after #93 merges before this record can be called final.
 
 ### Axis A — implementation and standards
 

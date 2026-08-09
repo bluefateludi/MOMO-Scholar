@@ -65,7 +65,7 @@ Raw pages, unrelated candidates, secrets, and arbitrary repository content are n
 2. The sealed local Trace is execution/provenance authority, subject to its allowlisted schema and sanitizer.
 3. SQLite stores queue, discovery, progress, and event projections; it does not rewrite the immutable artifacts.
 4. Synthetic fixtures establish deterministic contract behavior only.
-5. A sealed final evaluation package, after offline verification, is the only authority for final TechScout metrics and resume numbers.
+5. A sealed non-synthetic evaluation package, after offline verification, is the required authority for model/product-effect metrics such as Task Success, Recall, Token, and Cost. Browser acceptance and scoped test/CI records remain separate authorities for engineering-delivery claims.
 
 Optional OTLP export is a secondary observability sink. Export failure must not change local terminal artifacts. Evaluation outputs include resolved configuration, environment, case-level records, summary, resume projection, and a sealed manifest. The available runner diagnostics use synthetic fixtures, so their model/product-effect and resume authority is **N/A**.
 
