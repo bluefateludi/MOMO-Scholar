@@ -18,9 +18,13 @@ class InfrastructureFailure(RuntimeError):
 
 
 class EvaluationExecutor(Protocol):
-    """Execution seam; final-suite methods may be called by four worker threads."""
+    """Execution seam; methods are concurrent and cancel must stop a case promptly."""
 
     version: str
+
+    def cancel(self, case_id: str) -> None:
+        """Cooperatively stop the named case before returning."""
+        ...
 
     def run_e2e(
         self,

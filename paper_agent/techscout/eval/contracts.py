@@ -32,10 +32,33 @@ class HarnessVariant(str, Enum):
 
 
 class ExpectedContract(TechScoutModel):
-    terminal_status: Literal["completed", "completed_with_limitations", "failed"]
-    task_success: bool
-    first_pass_success: bool
+    contract_kind: CaseKind
+    terminal_status: Literal["completed", "completed_with_limitations", "failed"] | None = None
+    task_success: bool | None = None
+    first_pass_success: bool | None = None
     maximum_recovery_attempts: Literal[0, 1] = 0
+    relevant_source_ids: tuple[NonEmptyStr, ...] = ()
+    expected_version_match: bool | None = None
+    injected_failure_code: NonEmptyStr | None = None
+    recovery_succeeded: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_kind_fields(self) -> "ExpectedContract":
+        if self.contract_kind is CaseKind.END_TO_END and None in {
+            self.terminal_status,
+            self.task_success,
+            self.first_pass_success,
+        }:
+            raise ValueError("end-to-end contract requires terminal and success expectations")
+        if self.contract_kind is CaseKind.RETRIEVAL and (
+            not self.relevant_source_ids or self.expected_version_match is None
+        ):
+            raise ValueError("retrieval contract requires relevance and version expectations")
+        if self.contract_kind is CaseKind.FAULT and (
+            self.injected_failure_code is None or self.recovery_succeeded is None
+        ):
+            raise ValueError("fault contract requires failure and recovery expectations")
+        return self
 
 
 class EvaluationCase(TechScoutModel):
@@ -60,6 +83,8 @@ class EvaluationCase(TechScoutModel):
             raise ValueError("fault case requires a deterministic fault plan")
         if self.kind is not CaseKind.FAULT and self.fault_plan is not None:
             raise ValueError("only fault cases accept a fault plan")
+        if self.expected_contract.contract_kind is not self.kind:
+            raise ValueError("expected contract kind must match case kind")
         return self
 
 
@@ -170,6 +195,9 @@ def validate_expected_contract(
     observation: TaskRunObservation,
 ) -> None:
     expected = case.expected_contract
+    assert expected.terminal_status is not None
+    assert expected.task_success is not None
+    assert expected.first_pass_success is not None
     actual = (
         observation.result.terminal_status,
         observation.task_success,
@@ -184,6 +212,27 @@ def validate_expected_contract(
     )
     if actual != declared:
         raise ValueError(f"case {case.case_id} did not satisfy its frozen expected contract")
+
+
+def validate_retrieval_contract(
+    case: EvaluationCase,
+    result: RetrievalExecutionResult,
+) -> None:
+    expected = case.expected_contract
+    if (
+        result.relevant_source_ids != expected.relevant_source_ids
+        or result.expected_version_match != expected.expected_version_match
+    ):
+        raise ValueError(f"case {case.case_id} did not satisfy its retrieval contract")
+
+
+def validate_fault_contract(case: EvaluationCase, result: FaultExecutionResult) -> None:
+    expected = case.expected_contract
+    if (
+        result.injected_failure_code != expected.injected_failure_code
+        or result.recovery_succeeded != expected.recovery_succeeded
+    ):
+        raise ValueError(f"case {case.case_id} did not satisfy its fault contract")
 
 
 class LatencySummary(TechScoutModel):

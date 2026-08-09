@@ -7,6 +7,7 @@
   "cache_mode": "warm_cache",
   "supports_poc": true,
   "expected_contract": {
+    "contract_kind": "end_to_end",
     "terminal_status": "completed",
     "task_success": true,
     "first_pass_success": false,

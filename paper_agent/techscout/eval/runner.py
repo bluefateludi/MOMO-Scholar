@@ -16,6 +16,8 @@ from paper_agent.techscout.eval.contracts import (
     RetrievalExecutionResult,
     TaskRunObservation,
     validate_expected_contract,
+    validate_fault_contract,
+    validate_retrieval_contract,
 )
 from paper_agent.techscout.eval.executor import EvaluationExecutor, InfrastructureFailure
 from paper_agent.techscout.eval.faults import DeterministicFaultInjector
@@ -33,11 +35,12 @@ class EvaluationCaseTimeout(TimeoutError):
 
 
 def _run_bounded_jobs(
-    jobs: list[Callable[[], tuple[str, object]]],
+    jobs: list[tuple[str, Callable[[], tuple[str, object]]]],
     *,
     workers: int,
     timeout_seconds: int,
     output_dir: Path,
+    cancel: Callable[[str], None],
 ) -> tuple[tuple[str, object], ...]:
     pool = ThreadPoolExecutor(max_workers=workers)
     starts: dict[int, float] = {}
@@ -48,8 +51,9 @@ def _run_bounded_jobs(
             starts[index] = time.monotonic()
         return job()
 
-    futures: dict[Future[tuple[str, object]], int] = {
-        pool.submit(invoke, index, job): index for index, job in enumerate(jobs)
+    futures: dict[Future[tuple[str, object]], tuple[int, str]] = {
+        pool.submit(invoke, index, job): (index, case_id)
+        for index, (case_id, job) in enumerate(jobs)
     }
     remaining = set(futures)
     completed: dict[int, tuple[str, object]] = {}
@@ -58,15 +62,19 @@ def _run_bounded_jobs(
             done, _ = wait(remaining, timeout=0.05, return_when=FIRST_COMPLETED)
             for future in done:
                 remaining.remove(future)
-                completed[futures[future]] = future.result()
+                completed[futures[future][0]] = future.result()
             now = time.monotonic()
             overdue = [
-                futures[future]
+                futures[future][0]
                 for future in remaining
-                if futures[future] in starts
-                and now - starts[futures[future]] >= timeout_seconds
+                if futures[future][0] in starts
+                and now - starts[futures[future][0]] >= timeout_seconds
             ]
             if overdue:
+                for future in remaining:
+                    index, case_id = futures[future]
+                    if index in overdue:
+                        cancel(case_id)
                 raise EvaluationCaseTimeout(
                     f"evaluation cases exceeded hard timeout: {sorted(overdue)}"
                 )
@@ -82,7 +90,7 @@ def _run_bounded_jobs(
                 else "runner_failure"
             ),
         )
-        pool.shutdown(wait=False, cancel_futures=True)
+        pool.shutdown(wait=True, cancel_futures=True)
         raise
     pool.shutdown(wait=True)
     return tuple(completed[index] for index in sorted(completed))
@@ -139,7 +147,7 @@ def run_evaluation_suite(
         raise ValueError("executor version does not match frozen suite")
     trace = TechScoutTraceRecorder(output_dir / "traces.jsonl", run_id=suite.suite_id)
     variants = (HarnessVariant.V1,) if suite.profile.value == "smoke" else tuple(HarnessVariant)
-    jobs: list[Callable[[], tuple[str, object]]] = []
+    jobs: list[tuple[str, Callable[[], tuple[str, object]]]] = []
     for case in cases:
         if case.kind is CaseKind.END_TO_END:
             for variant in variants:
@@ -167,18 +175,17 @@ def run_evaluation_suite(
                     )
                     validate_expected_contract(case, observation)
                     return "task", observation
-                jobs.append(run_task)
+                jobs.append((case.case_id, run_task))
         elif case.kind is CaseKind.RETRIEVAL:
-            jobs.append(
-                lambda case=case: (
-                    "retrieval",
-                    executor.run_retrieval(
+            def run_retrieval(case=case):
+                result = executor.run_retrieval(
                         case,
                         timeout_seconds=suite.execution_policy.timeout_seconds,
                         trace=trace,
-                    ),
-                )
-            )
+                    )
+                validate_retrieval_contract(case, result)
+                return "retrieval", result
+            jobs.append((case.case_id, run_retrieval))
         else:
             assert case.fault_plan is not None
             def run_fault(case=case):
@@ -191,14 +198,20 @@ def run_evaluation_suite(
                     )
                 if injector.triggered_count != 1 or result.injected_failure_code != case.fault_plan.failure_code:
                     raise ValueError("fault executor did not trigger the frozen failure plan")
+                validate_fault_contract(case, result)
                 return "fault", result
-            jobs.append(run_fault)
-    observations = _run_bounded_jobs(
-        jobs,
-        workers=suite.execution_policy.workers,
-        timeout_seconds=suite.execution_policy.timeout_seconds,
-        output_dir=output_dir,
-    )
+            jobs.append((case.case_id, run_fault))
+    try:
+        observations = _run_bounded_jobs(
+            jobs,
+            workers=suite.execution_policy.workers,
+            timeout_seconds=suite.execution_policy.timeout_seconds,
+            output_dir=output_dir,
+            cancel=executor.cancel,
+        )
+    except BaseException:
+        trace.seal()
+        raise
     task_runs = tuple(value for kind, value in observations if kind == "task")
     retrieval = tuple(value for kind, value in observations if kind == "retrieval")
     faults = tuple(value for kind, value in observations if kind == "fault")

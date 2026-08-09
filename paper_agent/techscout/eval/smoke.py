@@ -239,6 +239,10 @@ class FrozenSmokeExecutor:
     def __init__(self, checkpoint_root: Path) -> None:
         self._checkpoint_root = checkpoint_root
 
+    def cancel(self, case_id: str) -> None:
+        # Smoke stages are local and bounded; no blocking external operation survives.
+        return None
+
     def run_e2e(
         self,
         case: EvaluationCase,
