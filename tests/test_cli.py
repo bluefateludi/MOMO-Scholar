@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from click import unstyle
 from typer.testing import CliRunner
 
 import paper_agent.cli as cli_module
@@ -72,12 +73,12 @@ def test_unexpected_programming_error_is_not_hidden(monkeypatch):
 def test_cli_rejects_non_positive_limit() -> None:
     result = CliRunner().invoke(app, ["run", "query", "--limit", "0", "--no-pdf"])
     assert result.exit_code != 0
-    assert "--limit" in result.output
+    assert "--limit" in unstyle(result.output)
 
 
 def test_help_explains_default_pdf_and_explicit_abstract_mode() -> None:
     result = CliRunner().invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     assert "PDF" in result.output
-    assert "--no-pdf" in result.output
+    assert "--no-pdf" in unstyle(result.output)
     assert "abstract" in result.output.lower()
