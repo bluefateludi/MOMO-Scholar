@@ -48,6 +48,12 @@ def _task_metrics(runs: Sequence[TaskRunObservation]) -> TaskMetricSummary:
             run.result.tool_call_execution_success_count for run in runs
         ),
         tool_call_count=sum(run.result.tool_call_count for run in runs),
+        average_recovery_stages=(
+            sum(run.result.recovery_stages for run in recovery) / len(recovery)
+            if recovery
+            else None
+        ),
+        average_retries=(sum(run.result.retry_count for run in runs) / len(runs) if runs else 0),
         prompt_tokens_per_successful_task=(
             sum(run.result.prompt_tokens for run in successful) / len(successful)
             if successful
@@ -101,6 +107,11 @@ def summarize(
         ),
         average_fault_recovery_stages=(
             sum(result.recovery_stages for result in fault_results) / len(fault_results)
+            if fault_results
+            else None
+        ),
+        average_fault_retries=(
+            sum(result.retry_count for result in fault_results) / len(fault_results)
             if fault_results
             else None
         ),

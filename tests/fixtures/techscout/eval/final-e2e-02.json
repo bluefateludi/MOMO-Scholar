@@ -1,0 +1,16 @@
+{
+  "schema_version": "techscout-eval-case-v1",
+  "fixture_kind": "synthetic_frozen_evaluation",
+  "case_id": "techscout-final-e2e-02",
+  "kind": "end_to_end",
+  "source_fixture": "tests/fixtures/techscout/final/e2e-02-metadata-filter.json",
+  "cache_mode": "warm_cache",
+  "supports_poc": true,
+  "expected_contract": {
+    "contract_kind": "end_to_end",
+    "terminal_status": "completed",
+    "task_success": true,
+    "first_pass_success": true
+  },
+  "observed_metrics": {}
+}

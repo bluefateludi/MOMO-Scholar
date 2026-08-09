@@ -33,8 +33,11 @@ def load_suite(path: Path) -> tuple[SuiteDefinition, tuple[EvaluationCase, ...]]
         suite.execution_policy.workers != 4
         or suite.execution_policy.timeout_seconds != 120
         or suite.execution_policy.max_infrastructure_reruns != 1
+        or suite.fixture_case_tree_sha256 is None
+        or suite.source_tree_sha256 is None
     ):
         raise ValueError(
-            "final suite requires four workers, 120-second timeout, and one infrastructure rerun"
+            "final suite requires frozen fixture/source hashes, four workers, "
+            "120-second timeout, and one infrastructure rerun"
         )
     return suite, cases

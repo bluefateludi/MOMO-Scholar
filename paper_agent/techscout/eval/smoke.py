@@ -14,7 +14,7 @@ from paper_agent.techscout.eval.contracts import (
     RetrievalExecutionResult,
     TaskExecutionResult,
 )
-from paper_agent.techscout.eval.faults import DeterministicFaultInjector
+from paper_agent.techscout.eval.faults import DeterministicFaultInjector, InjectedFault
 from paper_agent.techscout.harness import (
     SQLiteCheckpointAdapter,
     StageArtifacts,
@@ -39,7 +39,7 @@ from paper_agent.techscout.models import (
     ToolStatus,
     Verdict,
 )
-from paper_agent.techscout.observability import TechScoutTraceRecorder
+from paper_agent.techscout.observability import TechScoutTraceRecorder, TraceEventName
 from paper_agent.techscout.observability.adapters import (
     TracingSkillRouter,
     TracingStageServices,
@@ -71,10 +71,13 @@ class _SmokeStageServices:
         case: EvaluationCase,
         source: dict[str, object],
         trace: TechScoutTraceRecorder,
+        *,
+        load_stage_skill: bool = True,
     ) -> None:
         self._case = case
         self._source = source
         self._trace = trace
+        self._load_stage_skill = load_stage_skill
         self._poc_attempts = 0
 
     def execute(
@@ -94,18 +97,21 @@ class _SmokeStageServices:
                 poc_intent="run the allowlisted fixture smoke when supported",
             )
         elif stage is ResearchStage.RESEARCH_CANDIDATES:
-            selection = TracingSkillRouter(fixed_skill_registry(), self._trace).route(
-                "official-doc-research",
-                stage,
-                selection_id=f"selection:{self._case.case_id}",
-                reason="frozen_official_evidence",
-            )
+            skill_id = "skill:baseline-core"
+            if self._load_stage_skill:
+                selection = TracingSkillRouter(fixed_skill_registry(), self._trace).route(
+                    "official-doc-research",
+                    stage,
+                    selection_id=f"selection:{self._case.case_id}",
+                    reason="frozen_official_evidence",
+                )
+                skill_id = selection.skill_id
             asyncio.run(
                 TracingToolRuntime(_SuccessfulSearchRuntime(), self._trace).invoke(
                     ToolCall(
                         tool_call_id=f"tool-call:{self._case.case_id}",
                         tool_name="web.search",
-                        skill_id=selection.skill_id,
+                        skill_id=skill_id,
                         arguments={
                             "query": "local vector store compatibility",
                             "candidate_id": state.candidate_ids[0],
@@ -121,7 +127,7 @@ class _SmokeStageServices:
             )
         elif stage is ResearchStage.EXECUTE_POC and self._case.supports_poc:
             self._poc_attempts += 1
-            if self._case.case_id.endswith("003") and self._poc_attempts == 1:
+            if self._source.get("scenario") == "bounded_failure_recovery" and self._poc_attempts == 1:
                 failure = Failure(
                     failure_id=f"failure:{self._case.case_id}:dependency",
                     code=FailureCode.DEPENDENCY_CONFLICT,
@@ -135,9 +141,9 @@ class _SmokeStageServices:
             else:
                 updates["poc_result_ids"] = (f"poc-result:{self._case.case_id}",)
         elif stage is ResearchStage.VALIDATE:
-            if self._case.case_id.endswith("003") and state.recovery_count == 0:
+            if self._source.get("scenario") == "bounded_failure_recovery" and state.recovery_count == 0:
                 updates["gate_outcome"] = GateOutcome.RECOVER
-            elif self._case.case_id.endswith("002"):
+            elif self._source.get("scenario") == "no_safe_winner_research_only":
                 updates["gate_outcome"] = GateOutcome.LIMITED
             else:
                 updates["gate_outcome"] = GateOutcome.PASSED
@@ -251,14 +257,20 @@ class FrozenSmokeExecutor:
         timeout_seconds: int,
         trace: TechScoutTraceRecorder,
     ) -> TaskExecutionResult:
-        if variant is not HarnessVariant.V1:
-            raise ValueError("frozen smoke executor supports only V1")
         source = json.loads(Path(case.source_fixture).read_text(encoding="utf-8"))
         if source.get("task_id") != case.case_id or timeout_seconds > 120:
             raise ValueError("smoke fixture identity or timeout is invalid")
         self._checkpoint_root.mkdir(parents=True, exist_ok=True)
         checkpoint_path = self._checkpoint_root / f"{case.case_id}-{variant.value}.sqlite3"
-        services = TracingStageServices(_SmokeStageServices(case, source, trace), trace)
+        services = TracingStageServices(
+            _SmokeStageServices(
+                case,
+                source,
+                trace,
+                load_stage_skill=variant is HarnessVariant.V1,
+            ),
+            trace,
+        )
         with SQLiteCheckpointAdapter(checkpoint_path) as checkpoints:
             result = TechScoutHarness(services, checkpoints, now=lambda: _NOW).run(
                 _initial_state(case, source)
@@ -298,7 +310,14 @@ class FrozenSmokeExecutor:
         )
 
     def run_retrieval(self, case, *, timeout_seconds, trace) -> RetrievalExecutionResult:
-        raise ValueError("frozen smoke executor does not run final retrieval cases")
+        source = json.loads(Path(case.source_fixture).read_text(encoding="utf-8"))
+        record = source["retrieval_observations"][case.case_id]
+        return RetrievalExecutionResult(
+            retrieved_source_ids=tuple(record["retrieved_source_ids"]),
+            relevant_source_ids=tuple(record["relevant_source_ids"]),
+            expected_version_match=record["expected_version_match"],
+            actual_version_match=record["actual_version_match"],
+        )
 
     def run_fault(
         self,
@@ -308,4 +327,35 @@ class FrozenSmokeExecutor:
         timeout_seconds,
         trace,
     ) -> FaultExecutionResult:
-        raise ValueError("frozen smoke executor does not run final fault cases")
+        source = json.loads(Path(case.source_fixture).read_text(encoding="utf-8"))
+        record = source["fault_observations"][case.case_id]
+        try:
+            injector.check(str(record["stage"]))
+        except InjectedFault as error:
+            recovery_succeeded = error.plan.failure_code in {
+                "dependency_conflict",
+                "tool_timeout",
+                "cache_corruption",
+                "checkpoint_interruption",
+                "schema_repairable",
+                "transient_tool_failure",
+            }
+            trace.record(
+                TraceEventName.ERROR_CLASSIFIED,
+                status="error",
+                attributes={
+                    "case_id": case.case_id,
+                    "failure_id": f"failure:{case.case_id}",
+                    "failure_code": error.plan.failure_code,
+                    "failure_stage": str(record["stage"]),
+                    "recoverable": recovery_succeeded,
+                    "attempt": 1,
+                },
+            )
+            return FaultExecutionResult(
+                injected_failure_code=error.plan.failure_code,
+                recovery_succeeded=recovery_succeeded,
+                recovery_stages=1,
+                retry_count=int(recovery_succeeded),
+            )
+        raise ValueError("frozen fault observation did not trigger the declared plan")

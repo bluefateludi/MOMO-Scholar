@@ -105,6 +105,8 @@ class SuiteDefinition(TechScoutModel):
     case_files: tuple[NonEmptyStr, ...]
     executor_version: NonEmptyStr
     execution_policy: ExecutionPolicy
+    fixture_case_tree_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_tree_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def unique_case_files(self) -> "SuiteDefinition":
@@ -117,6 +119,9 @@ class EvaluationEnvironment(TechScoutModel):
     git_dirty: Literal[False]
     models: dict[NonEmptyStr, NonEmptyStr]
     executor_version: NonEmptyStr
+    baseline_git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    execution_git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    network_policy: Literal["offline", "live"] | None = None
 
 
 class TaskExecutionResult(TechScoutModel):
@@ -250,6 +255,8 @@ class TaskMetricSummary(TechScoutModel):
     tool_call_schema_success_count: int = Field(ge=0)
     tool_call_execution_success_count: int = Field(ge=0)
     tool_call_count: int = Field(ge=0)
+    average_recovery_stages: float | None = Field(default=None, ge=0, le=1)
+    average_retries: float = Field(ge=0, le=1)
     prompt_tokens_per_successful_task: float | None = Field(default=None, ge=0)
     total_tokens_per_successful_task: float | None = Field(default=None, ge=0)
     estimated_cost_per_successful_task: float | None = Field(default=None, ge=0)
@@ -268,6 +275,7 @@ class EvaluationSummary(TechScoutModel):
     retrieval_recall_at_5: float | None = Field(default=None, ge=0, le=1)
     version_filter_accuracy: float | None = Field(default=None, ge=0, le=1)
     average_fault_recovery_stages: float | None = Field(default=None, ge=0, le=1)
+    average_fault_retries: float | None = Field(default=None, ge=0, le=1)
     task_metrics: dict[HarnessVariant, TaskMetricSummary]
 
 
