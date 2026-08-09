@@ -273,6 +273,9 @@ def test_executor_exception_always_publishes_failed_terminal_projection(
     artifact_names = {path.name for path in run_dir.iterdir()}
     assert "decision-report.json" not in artifact_names
     assert "decision-report.md" not in artifact_names
+    assert REQUIRED_TERMINAL_ARTIFACTS - {
+        "decision-report.json", "decision-report.md",
+    } <= artifact_names
     trace_lines = [json.loads(line) for line in (run_dir / "traces.jsonl").read_text(encoding="utf-8").splitlines()]
     assert trace_lines[-2]["name"] == "terminal.completed"
     assert trace_lines[-2]["attributes"]["terminal_status"] == "failed"
