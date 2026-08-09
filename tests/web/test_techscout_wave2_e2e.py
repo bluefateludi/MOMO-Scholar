@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from paper_agent.web.app import create_app
+from paper_agent.observability.sealed_jsonl import verify_sealed_jsonl
 from paper_agent.techscout.harness import SQLiteCheckpointAdapter, TechScoutHarness
 from paper_agent.techscout.state import ResearchStage
 from paper_agent.techscout.validation import REQUIRED_TERMINAL_ARTIFACTS
@@ -130,6 +131,7 @@ def test_frozen_wave2_create_poll_trace_and_artifacts(
     trace_names = {item.get("name") for item in sealed_trace}
     assert {"skill.selected", "mcp.tool.started", "state.transitioned", "terminal.completed"} <= trace_names
     assert sealed_trace[-1]["record_type"] == "trace_seal"
+    assert verify_sealed_jsonl(run_dir / "traces.jsonl")["sealed"] is True
     if recovery_attempted:
         poc_history = json.loads((run_dir / "poc-results.json").read_text(encoding="utf-8"))
         assert [item["status"] for item in poc_history] == ["failed", "passed", "passed"]
@@ -220,6 +222,24 @@ def test_unsupported_candidate_remains_research_only_without_borrowed_recipe(
         assert not any(item["tool"] == "sandbox.run_smoke_test" for item in trace)
 
 
+def test_shortlist_tie_break_selects_first_eligible_not_absolute_first(
+    tmp_path: Path,
+) -> None:
+    body, _ = _body("happy-path.json")
+    body["candidates"] = [{"name": "pgvector"}, {"name": "Chroma"}]
+    app = create_app(
+        state_root=tmp_path / "state", output_root=tmp_path / "outputs",
+        demo_root=None, web_dist=tmp_path / "missing-web",
+    )
+    with TestClient(app) as client:
+        created = client.post("/api/v2/runs", json=body)
+        run_id = created.json()["id"]
+        detail = _wait_terminal(client, run_id)
+        assert detail["status"] == "completed"
+        report = client.get(f"/api/v2/runs/{run_id}/report").json()
+        assert report["recommendation"] == "chroma"
+
+
 def test_executor_exception_always_publishes_failed_terminal_projection(
     tmp_path: Path, caplog,
 ) -> None:
@@ -252,8 +272,10 @@ def test_executor_exception_always_publishes_failed_terminal_projection(
     run_dir = tmp_path / "outputs" / "techscout" / run_id
     assert REQUIRED_TERMINAL_ARTIFACTS.issubset({path.name for path in run_dir.iterdir()})
     trace_lines = [json.loads(line) for line in (run_dir / "traces.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert trace_lines[-1]["stage"] == "terminal"
-    assert trace_lines[-1]["status"] == "failed"
+    assert trace_lines[-2]["name"] == "terminal.completed"
+    assert trace_lines[-2]["attributes"]["terminal_status"] == "failed"
+    assert trace_lines[-1]["record_type"] == "trace_seal"
+    assert verify_sealed_jsonl(run_dir / "traces.jsonl")["sealed"] is True
 
 
 def test_demo_mcp_environment_does_not_inherit_parent_credentials(monkeypatch) -> None:

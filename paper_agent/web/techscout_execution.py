@@ -408,7 +408,15 @@ class DeterministicStageServices:
         )
 
     def _validate(self, state: ResearchState) -> StageResult:
-        candidate = state.request.candidates[0]
+        passed_ids = {
+            item.candidate_id
+            for item in self.poc_results
+            if item.status is PocStatus.PASSED
+        }
+        candidate = next(
+            (item for item in state.request.candidates if item.candidate_id in passed_ids),
+            state.request.candidates[0],
+        )
         passed = any(
             item.candidate_id == candidate.candidate_id and item.status is PocStatus.PASSED
             for item in self.poc_results
@@ -713,18 +721,33 @@ class TechScoutRunEngine:
             "poc-results.json": "[]",
             "decision-report.json": "{}",
             "decision-report.md": "# TechScout decision\n\nRun failed safely; no report was published.\n",
-            "traces.jsonl": "",
             "run_manifest.json": failed_manifest.model_dump_json(indent=2),
         }
         for name, content in failed_files.items():
             (run_dir / name).write_text(content, encoding="utf-8")
+        trace_path = run_dir / "traces.jsonl"
+        manifest_path = run_dir / "traces-manifest.json"
+        if trace_path.exists():
+            os.replace(trace_path, run_dir / "traces-aborted.jsonl")
+        if manifest_path.exists():
+            os.replace(manifest_path, run_dir / "traces-aborted-manifest.json")
+        trace = TechScoutTraceRecorder(trace_path, run_id=f"run:{row.id}")
+        trace.record_terminal(
+            terminal_status="failed", gate_outcome="failed", latency_ms=0,
+            prompt_tokens=0, completion_tokens=0, retry_count=0, recovery_count=0,
+            report_sha256=_sha(""), manifest_sha256=_sha(failed_manifest.model_dump_json()),
+            status="error",
+        )
+        trace.seal()
         return bundle, str(path.relative_to(self.output_root))
 
     @staticmethod
     def _scenario(request: TechScoutCreateRunRequest) -> str:
         if request.mode == "verified":
             return "verified_limited"
-        if request.candidates and _recipe_for(request.candidates[0].name) is None:
+        if request.candidates and all(
+            _recipe_for(candidate.name) is None for candidate in request.candidates
+        ):
             return "research_only"
         question = request.question.lower()
         if "recover safely" in question or "dependency conflict" in question:
@@ -915,24 +938,6 @@ class TechScoutRunEngine:
         for name, content in files.items():
             (run_dir / name).write_text(content, encoding="utf-8")
 
-    def publish_trace_artifact(self, run_id: str) -> None:
-        events = []
-        after = 0
-        while True:
-            page, has_more = self.registry.list_events(
-                run_id, after_sequence=after, limit=100,
-            )
-            events.extend(page)
-            if not has_more or not page:
-                break
-            after = page[-1].sequence
-        path = self.output_root / "techscout" / run_id / "traces.jsonl"
-        path.write_text(
-            "\n".join(event.model_dump_json() for event in events) + ("\n" if events else ""),
-            encoding="utf-8",
-        )
-
-
 class TechScoutSingleRunExecutor:
     def __init__(self, registry: RunRegistry, output_root: Path) -> None:
         self.registry = registry
@@ -1006,4 +1011,3 @@ class TechScoutSingleRunExecutor:
                 row.id, "failed", projection_path=projection_path,
                 progress=bundle.detail.progress,
             )
-            self.engine.publish_trace_artifact(row.id)
