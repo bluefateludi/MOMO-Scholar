@@ -1,16 +1,20 @@
 # MOMO TechScout Production Refactor Master Plan
 
-> **Status:** Ready for implementation after plan review  
-> **Date:** 2026-08-09  
-> **Planning baseline:** `origin/master@4b1cdf5d46a4977c1963b765023b489f3104c178`  
-> **Delivery priority:** stable and fast terminal output first; deeper quality second  
+> **Status:** Ready for implementation after plan review
+>
+> **Date:** 2026-08-09
+>
+> **Planning baseline:** `origin/master@4b1cdf5d46a4977c1963b765023b489f3104c178`
+>
+> **Delivery priority:** stable and fast terminal output first; deeper quality second
+>
 > **Important:** every number marked as a target is a planning target, not a resume claim. Resume data must be generated from the sealed final evaluation package.
 
 ## 1. Project Positioning
 
 ### 1.1 One-sentence definition
 
-**MOMO TechScout is an evidence-grounded research and verification Agent for Python AI application developers choosing open-source components.** Given a project environment, hard constraints, and two to four candidate components, it plans the investigation, searches official documentation and GitHub, loads stage-specific Skills, calls tools through MCP, runs allowlisted smoke tests in Docker, validates every important conclusion, and returns a traceable comparison report.
+**MOMO TechScout is an evidence-grounded research and verification Agent for Python AI application developers choosing open-source components.** Given a project environment, hard constraints, and two or three candidate components, it plans the investigation, searches official documentation and GitHub, loads stage-specific Skills, calls tools through MCP, runs allowlisted smoke tests in Docker, validates every important conclusion, and returns a traceable comparison report.
 
 ### 1.2 The real problem
 
@@ -34,7 +38,9 @@ Project requirements and candidates
 The first production version supports:
 
 - public Python AI open-source components;
-- two to four candidates per task;
+- two or three candidates per task;
+- two or three explicitly supported component families, each backed by allowlisted PoC recipes;
+- a research-only result for candidates without a trusted recipe; the system never guesses arbitrary installation commands;
 - official documentation, GitHub repositories, releases, issues, and package metadata;
 - Linux-container verification of installation, import, version, and an allowlisted feature smoke test;
 - `fast` mode as the default and `verified` mode as an optional longer run;
@@ -142,7 +148,7 @@ normalize_request
 
 Default execution limits:
 
-- maximum four candidates;
+- maximum three candidates;
 - maximum two search queries per candidate;
 - maximum five retained sources per candidate;
 - maximum 16 graph steps;
@@ -152,6 +158,8 @@ Default execution limits:
 - deterministic terminalization when the budget is exhausted.
 
 LLMs handle diagnosis, planning, evidence-gap analysis, PoC proposal, and report review. Code handles state transitions, permissions, budgets, command compilation, validation, and terminal status.
+
+LangGraph is only a thin orchestration shell around the stage services, typed state, and conditional routing. Retrieval, MCP tools, Skills, validation, sandboxing, and business rules remain ordinary testable modules outside the graph.
 
 ### 4.2 Runtime Skills
 
@@ -345,7 +353,7 @@ The plan is optimized for four concurrent workers plus one integration owner. Ca
 | 4 | Final evaluation and hardening | Parallel test jobs | 0.5–1 day | Sealed real metrics |
 | 5 | Documentation, demo, release, resume evidence | Three streams | 0.5–1 day | Finished project |
 
-Expected total: **six to eight focused working days** if provider credentials and Docker are available. The first resume-ready vertical slice appears after Wave 2; final metrics do not block implementation or the first project description.
+Expected total: **five to seven focused working days** if provider credentials and Docker are available. The first resume-ready vertical slice appears after Wave 2; final metrics do not block implementation or the first project description.
 
 ### 7.2 Branch ownership
 
@@ -400,12 +408,12 @@ The integration owner alone changes shared dependency files, generated OpenAPI c
 
 - `.github/workflows/ci.yml` with parallel Python, Web, Agent smoke, and later Docker jobs;
 - minimal Ruff correctness rules first (`E9`, `F63`, `F7`, `F82`) so lint does not become a repository-wide formatting project;
-- four frozen vertical fixtures using fakes;
+- three frozen vertical fixtures using fakes;
 - dependency and npm caches plus `concurrency.cancel-in-progress`.
 
 **Acceptance**
 
-- Python tests, Web tests, OpenAPI contract check, Web build, lint, CLI/package smoke, and four Agent smoke cases are visible checks;
+- Python tests, Web tests, OpenAPI contract check, Web build, lint, CLI/package smoke, and three Agent smoke cases are visible checks;
 - CI contains no provider secrets, paid calls, or live Internet dependency;
 - Foundation is reviewed and merged before feature branches begin.
 
@@ -585,7 +593,7 @@ Final evaluation scope:
 - 40 offline retrieval/version-filter cases;
 - eight injected recovery scenarios.
 
-During ordinary development, use only four frozen smoke tasks. The complete set is not a per-PR gate.
+During ordinary development, use only three frozen smoke tasks. The complete set is not a per-PR gate. Expand to 12 tasks only after the vertical slice is stable, and derive the 40 retrieval cases from those tasks' constraint dimensions and pinned official source IDs instead of creating an unrelated annotation project.
 
 ### Task 4.2 — Define objective metrics
 
@@ -603,10 +611,12 @@ Also record:
 - First-pass Success;
 - Recovery Success Rate;
 - Recall@5 and version-filter accuracy;
-- tool selection/schema success;
+- tool-call schema validation and execution success;
 - average recovery stages and retries;
 - p50/p95 latency;
 - tokens and estimated cost per successful task.
+
+Cold-live and warm-cache latency must be reported separately; they must never be combined into one headline latency number.
 
 ### Task 4.3 — Run Baseline and Final exactly once
 
@@ -614,6 +624,8 @@ Use the same model, temperature, task fixtures, search snapshots, concurrency, a
 
 - V0: same core model/tools, but no stage-specific Skill loading or targeted recovery;
 - V1: final TechScout Harness.
+
+MOMO Scholar is not a TechScout baseline. V0 and V1 run the same TechScout tasks, candidates, model, tools, and frozen inputs; only the explicitly named Harness capability may differ.
 
 Execution budget:
 
@@ -649,7 +661,7 @@ Every feature PR runs focused tests. The final release runs:
 2. **Lint** — Ruff correctness rules and TypeScript compiler;
 3. **Test** — full offline pytest and Vitest suites;
 4. **Review** — separate Standards and Spec review of the final diff;
-5. **Validation Gate** — four frozen Agent smokes, sandbox no-network smoke, Trace/artifact verification, desktop/narrow browser smoke;
+5. **Validation Gate** — three frozen Agent smokes, sandbox no-network smoke, Trace/artifact verification, desktop/narrow browser smoke;
 6. **Final Eval** — the bounded one-time 12/40/8 run from Chunk 4.
 
 Live API credentials are never placed in CI. A missing optional live provider blocks only the live final metric, not deterministic engineering verification; no metric is fabricated.
@@ -728,7 +740,7 @@ Immediately defer an idea when it requires any of the following without directly
 - a larger benchmark, repeated judge passes, or repeated tuning for better numbers;
 - cloud deployment before the local Docker demo and README are complete.
 
-When a feature threatens the six-to-eight-day path, preserve its interface only if already required; otherwise record it under future work and continue the critical path.
+When a feature threatens the five-to-seven-day path, preserve its interface only if already required; otherwise record it under future work and continue the critical path.
 
 ## 11. Definition of Done
 
@@ -748,3 +760,46 @@ The project is finished only when all of the following are true:
 - resume bullets contain only automatically projected measured data;
 - all scoped branches are normally pushed and merged, with no unrelated user changes included.
 
+## 12. Tiny Commit Sequence
+
+Every commit below must leave its branch's focused tests green. Shared contracts and dependency files remain integration-owner changes.
+
+1. `docs: record TechScout positioning and V1 support matrix`
+2. `test: define strict TechScout request and report behavior`
+3. `feat: add TechScout domain contracts and typed failures`
+4. `test: add three frozen vertical smoke fixtures`
+5. `ci: add offline Python Web and Agent checks`
+6. `build: add minimal Ruff correctness gate`
+7. `feat: add validated runtime Skill specifications`
+8. `feat: add Skill registry and stage router`
+9. `feat: define typed MCP tool request and result contracts`
+10. `test: add fake Tool Runtime behavior`
+11. `feat: add local stdio MCP Tool Gateway`
+12. `feat: add bounded official search and fetch adapter`
+13. `feat: add read-only GitHub inspection adapter`
+14. `feat: add source snapshot hashing and cache fallback`
+15. `feat: generalize Evidence Packs for candidate sources`
+16. `feat: add stage-scoped context selection`
+17. `feat: add Research State and bounded graph shell`
+18. `feat: add structured planning and report review nodes`
+19. `feat: enforce graph step tool token and deadline budgets`
+20. `feat: persist graph checkpoints in separate SQLite storage`
+21. `feat: define trusted PoC plans and recipe registry`
+22. `build: add pinned Docker sandbox image`
+23. `feat: execute allowlisted PoC recipes with resource limits`
+24. `feat: add deterministic Validation Gate`
+25. `feat: add typed failure classification and one-stage recovery`
+26. `feat: add high-risk approval policy`
+27. `feat: add append-only run events and Trace cursor`
+28. `feat: project TechScout run and report API contracts`
+29. `feat: replace the paper form with TechScout task input`
+30. `feat: render progress Skills tools and recovery state`
+31. `feat: render report candidate PoC and evidence views`
+32. `feat: extend sealed Trace with Agent and MCP events`
+33. `test: add eight deterministic recovery injections`
+34. `feat: add the cached offline TechScout demo`
+35. `eval: add the fixed 12 task and 40 retrieval runners`
+36. `ci: add Docker build and no-network sandbox smoke`
+37. `docs: publish quick start architecture and demo runbook`
+38. `chore: switch user-visible branding and CLI to TechScout`
+39. `eval: seal final measurements and resume evidence`
