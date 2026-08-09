@@ -1,0 +1,1 @@
+{"case_id":"techscout-final-e2e-02","failure_class":"fixture_input_validation","failure_code":"runner_failure","message":"ResearchRequest rejected duplicate hard constraints.","original_trace_preserved":true,"rerun_authorized":false}

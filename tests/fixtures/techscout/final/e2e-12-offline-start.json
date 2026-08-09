@@ -1,0 +1,26 @@
+{
+  "schema_version": "techscout-final-task-v1",
+  "fixture_kind": "frozen_offline_final_input",
+  "task_id": "techscout-final-e2e-12",
+  "scenario": "happy_path",
+  "network_policy": "offline",
+  "request": {
+    "question": "Choose a local vector store satisfying offline local startup.",
+    "project_context": "Python 3.11 single-node local RAG service.",
+    "hard_constraints": [
+      "offline local startup",
+      "metadata equality filtering"
+    ],
+    "candidates": [
+      {
+        "candidate_id": "chroma",
+        "display_name": "Chroma"
+      }
+    ]
+  },
+  "frozen_inputs": {
+    "provenance": "offline synthetic final fixture",
+    "dimension": "offline-start"
+  },
+  "observed_metrics": {}
+}
