@@ -1,8 +1,6 @@
 # Final delivery authority
 
-This record separates browser product acceptance, automated verification, and synthetic evaluation-runner diagnostics. The current code authority is `origin/master@7c6a9ed25b50f790d3a0b39a541e46258da71f5a` (PR #92).
-
-**Draft gate:** do not treat this record as finally sealed until #93 is merged, the branch normally merges the resulting latest `master`, and the focused verification plus both fact-check axes are rerun. No rebase or force update is required.
+This record separates browser product acceptance, automated verification, and synthetic evaluation-runner diagnostics. The final repository authority is `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`, which includes PR #92 browser acceptance and PR #93 final bounded-evaluation audit.
 
 Planning targets, historical MOMO Scholar metrics, synthetic runner outputs, and unit-test observations are not interchangeable with real-model TechScout results.
 
@@ -38,7 +36,13 @@ The browser authority additionally verified parseable/non-empty successful or li
 
 ## Synthetic evaluation-runner diagnostics
 
-The runner's `12/40/8` task/retrieval/fault shape was exercised with frozen synthetic fixtures. It emitted V0/V1 `12/12`, Recall@5 `0.90`, fault recovery `6/8`, `900` tokens, and roughly `235–296 ms` diagnostic latency.
+Primary authorities:
+
+- [`docs/evaluations/2026-08-09-techscout-final-evaluation.md`](../evaluations/2026-08-09-techscout-final-evaluation.md)
+- [sealed final audit summary](../evaluations/artifacts/techscout-final-2026-08-09-FINAL_AUDIT_AUTHORITY/audit-summary.md)
+- [final resume authority](../evaluations/artifacts/techscout-final-2026-08-09-FINAL_AUDIT_AUTHORITY/resume-evidence.md)
+
+The runner's `12/40/8` task/retrieval/fault shape was exercised with frozen synthetic fixtures. It emitted V0/V1 `12/12`, Recall@5 `0.90`, fault recovery `6/8`, `900` tokens, and roughly `235–296 ms` diagnostic latency. The amended package manifest SHA-256 is `662cfcffc81e95763296bf9598ff9bda529ebd1f5c2c6720a39d64c853516641`; the retained failed-precheck manifest SHA-256 is `cca1449dbad6827c89b818be58e76768e2a8106f78e194310977bb51d7939c68`.
 
 These values verify loading, execution, aggregation, failure injection, partial-result handling, and package projection. They do **not** measure a real LLM, live retrieval, Docker-backed product effectiveness, or user outcome.
 
@@ -52,9 +56,16 @@ These values verify loading, execution, aggregation, failure injection, partial-
 
 The synthetic numbers must not appear as resume achievements or README headline product metrics. The authorized latency claim is the headed-browser Fast Demo acceptance above, with its synthetic boundary stated.
 
-## Pre-#93 Draft two-axis fact check
+## Permanent evaluation limitations
 
-The checks below describe the current PR #92 authority Draft. They must be rerun against the latest `master` after #93 merges before this record can be called final.
+1. The original full-run attempt is permanently retained as `FAILED_PRECHECK_AUTHORITY` with zero authoritative observations; a duplicated frozen hard constraint was a fixture-authoring defect, not a model or infrastructure result.
+2. Exactly one amended run followed a data-only deletion of that exact duplicate. No model, threshold, expected outcome, runner behavior, or other fixture changed, and no further complete run is authorized.
+3. Static preflight ran before the amendment, but its attestation was sealed only afterward from captured console output; it was not independently sealed at execution time.
+4. Rankings, fault outcomes, token counts, and E2E services were authored synthetic fixture behavior. Consequently Task Success, First-pass, Recovery, Recall@5, retries, tokens, cold-live/warm-cache latency, and cost are permanently **N/A** for resume/model/product-effect claims.
+
+## Final two-axis fact check
+
+The checks below were rerun after normally merging PR #93 authority `ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab` into the documentation branch.
 
 ### Axis A — implementation and standards
 
@@ -68,6 +79,7 @@ The checks below describe the current PR #92 authority Draft. They must be rerun
 
 - Browser timings and scenario results trace to the tracked acceptance record at PR #92.
 - Full-repository and focused test counts are labeled separately with scope and commit.
+- The original failure, single data-only amendment, late-sealed preflight limitation, no-rerun rule, and synthetic-only Resume N/A audit remain visible.
 - Synthetic `12/40/8` diagnostics are labeled non-publishable for product effect and N/A for resume use.
 - Browser wall-clock is not relabeled as cold-live/warm-cache evaluation latency.
 - MOMO Scholar metrics remain legacy Scholar authority and do not appear as TechScout results.

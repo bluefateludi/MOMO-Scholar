@@ -6,7 +6,7 @@ The current V1 family is deliberately narrow: local-RAG Python vector stores. Ch
 
 **Hero Demo 已验收：** 以 `origin/master@b7516a7b478834614f6ce2ccf1ae63a5c73c3140` 为实际运行基线的 Chromium 验收中，连续三次 Fast Demo 均在 120 秒预算内终态化，浏览器 wall-clock 分别为 **45.081 s、15.360 s、12.879 s**；验收记录与稳定性修复随后合入 PR #92（`7c6a9ed25b50f790d3a0b39a541e46258da71f5a`）。这是冻结 synthetic Fast Demo 的产品验收，不是 Live 模型质量或组件性能基准。
 
-> Documentation status: this is the PR #92 authority draft. Final sealing is deferred until #93 is merged and the branch is normally merged with the resulting latest `master`.
+Final documentation authority includes PR #93 at `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`. Its sealed audit authorizes the synthetic runner only as evaluation-infrastructure acceptance; all real-model/product Task Success, Recall, Recovery-rate, Token, latency, and Cost resume metrics are **N/A**.
 
 ## What works today
 
@@ -16,7 +16,7 @@ The current V1 family is deliberately narrow: local-RAG Python vector stores. Ch
 | Verified request (`mode=verified`) | Explicitly limited | The API accepts the request, but the current Web executor returns `completed_with_limitations` with `live_execution_unavailable`; it is not a successful Live verification run. |
 | Offline fixture | Implemented | Immutable/simulated UI and API fixture for reviewing screens and contracts. It is not research output, a benchmark, or proof of Docker execution. |
 | Live execution | Future integration | Bounded Tavily, HTTPS fetch, read-only GitHub, cache, and Docker sandbox modules exist, but they are not connected to the default Web run path at this authority. |
-| Evaluation | Infrastructure accepted, product-effect claims unavailable | The fixed runner, metrics, partial-result preservation, and sealing were exercised only with synthetic fixtures. Task Success, Recall, token/cost, and recovery diagnostics from that run are not resume or product-effect evidence. |
+| Evaluation | Infrastructure accepted; product-effect metrics N/A | PR #93 sealed the original failed precheck, one data-only amended synthetic run, its authority index, and the final audit. The recorded `12/40/8` values are diagnostics only—not resume or model/product-effect evidence. |
 
 ## Quick start: current Fast Demo
 

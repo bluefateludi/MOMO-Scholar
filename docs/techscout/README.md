@@ -1,8 +1,6 @@
 # MOMO TechScout delivery documentation
 
-This directory is the candidate-facing and interview-facing delivery layer for MOMO TechScout. It records what is reproducible at `origin/master@7c6a9ed25b50f790d3a0b39a541e46258da71f5a` without rewriting historical MOMO Scholar claims.
-
-This documentation is intentionally still a Draft: #93 must merge first, then this branch must normally merge the resulting latest `master` and repeat the two-axis fact check before final sealing.
+This directory is the candidate-facing and interview-facing delivery layer for MOMO TechScout. Its final repository authority is `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`, including PR #92 browser acceptance and PR #93 final synthetic-evaluation audit, without rewriting historical MOMO Scholar claims.
 
 ## Status vocabulary
 
@@ -18,7 +16,7 @@ Every capability is labeled with one of these meanings:
 1. [Architecture and authority](architecture.md) — component boundaries, data flow, and the source of truth.
 2. [Running the product](running.md) — exact Fast, Verified/Live, and Offline semantics.
 3. [Support and safety](support-and-safety.md) — supported candidates, research-only behavior, sandbox limits, approvals, and known limitations.
-4. [Final delivery](final-delivery.md) — browser, test/CI, and synthetic runner authorities plus the pre-#93 Draft fact check.
+4. [Final delivery](final-delivery.md) — browser, test/CI, and sealed synthetic-runner authorities plus the final fact check.
 5. [Interview and resume](interview-and-resume.md) — project narrative and four Chinese STAR drafts using only authorized claims.
 
 ## Current release boundary
