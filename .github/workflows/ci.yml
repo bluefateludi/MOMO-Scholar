@@ -110,6 +110,24 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python for Sandbox contract checks
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal Sandbox test dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check --no-input
+          "pydantic>=2" "pytest>=8" typing-extensions
+
+      - name: Verify compiler and runner boundary contracts
+        run: >-
+          python -m pytest
+          tests/techscout/test_sandbox.py::test_compiler_emits_only_reviewed_explicit_argv
+          tests/techscout/test_sandbox.py::test_docker_argv_applies_resource_mount_and_network_boundaries
+          tests/techscout/test_sandbox.py::test_runner_invokes_subprocess_with_timeout_and_no_shell
+          tests/techscout/test_sandbox.py::test_timeout_force_removes_daemon_owned_container
+
       - name: Build dependency-free sandbox smoke target
         run: >-
           docker build

@@ -19,9 +19,11 @@ Docker gate bounded without downloading the Chroma/Qdrant package matrix:
 docker build --network none --target ci-smoke -t momo-techscout-sandbox:ci docker/sandbox
 ```
 
-The CI probe is run with no network or forwarded secrets, explicit CPU, memory,
-PID, read-only-root, and timeout boundaries. The default Dockerfile target
-remains the complete reviewed recipe image used by the optional local smoke.
+The same bounded job first runs focused compiler/runner contract tests, including
+timeout cleanup, with only their minimal Python test dependencies. It then runs
+the image probe with no network or forwarded secrets and explicit CPU, memory,
+PID, read-only-root, and timeout boundaries. The default Dockerfile target remains
+the complete reviewed recipe image used by the optional local smoke.
 
 `techscout-pypi-egress` is not a built-in Docker bridge. It must be a dedicated
 network whose external gateway/firewall allowlists only `pypi.org` and
