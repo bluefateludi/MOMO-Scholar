@@ -32,7 +32,9 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install project and quality dependencies
-        run: python -m pip install --disable-pip-version-check --no-input -e ".[dev]"
+        run: >-
+          python -m pip install --disable-pip-version-check --no-input
+          --constraint scripts/ci/python-constraints.txt -e ".[dev]"
 
       - name: Ruff correctness checks
         run: python -m ruff check .
@@ -78,7 +80,9 @@ jobs:
 
       - name: Install Python application dependencies
         working-directory: .
-        run: python -m pip install --disable-pip-version-check --no-input .
+        run: >-
+          python -m pip install --disable-pip-version-check --no-input
+          --constraint scripts/ci/python-constraints.txt .
 
       - name: Install locked Web dependencies
         run: npm ci --ignore-scripts
