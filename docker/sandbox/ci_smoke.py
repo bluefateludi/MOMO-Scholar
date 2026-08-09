@@ -46,7 +46,7 @@ def main() -> None:
     if limits["pids"] == "max":
         raise RuntimeError("PID limit is not set")
 
-    probe = Path("/techscout-read-only-probe")
+    probe = Path("/opt/techscout/runtime-write-probe/unexpected-write")
     try:
         probe.write_text("unexpected write", encoding="utf-8")
     except OSError as exc:

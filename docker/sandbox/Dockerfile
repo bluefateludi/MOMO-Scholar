@@ -10,7 +10,9 @@ COPY recipes/ /opt/techscout/recipes/
 COPY ci_smoke.py /opt/techscout/ci_smoke.py
 
 RUN useradd --system --uid 65532 --no-create-home sandbox \
-    && chmod -R a=rX /opt/techscout
+    && chmod -R a=rX /opt/techscout \
+    && mkdir /opt/techscout/runtime-write-probe \
+    && chown 65532:65532 /opt/techscout/runtime-write-probe
 
 USER 65532:65532
 WORKDIR /workspace
