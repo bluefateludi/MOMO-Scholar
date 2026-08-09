@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from paper_agent.evidence.contracts import EvidenceRetrievalService
 from paper_agent.schemas import Chunk
@@ -8,13 +9,14 @@ from paper_agent.techscout.errors import Failure
 from paper_agent.techscout.models import (
     CandidateEvidence,
     JsonObject,
+    PocResult,
     ResearchRequest,
     SkillSpec,
     SourceChunk,
     SourceDocument,
 )
 
-from .models import ContextPacket, ContextStage, SearchRecord, SkillSummary
+from .models import CandidateContextData, ContextPacket, ContextStage, SkillSummary
 
 
 class HybridContextRetriever:
@@ -96,14 +98,11 @@ class ContextEngine:
         stage: ContextStage,
         request: ResearchRequest,
         skills: Sequence[SkillSpec] = (),
-        candidate_id: str | None = None,
-        documents: Sequence[SourceDocument] = (),
-        chunks: Sequence[SourceChunk] = (),
-        evidence: Sequence[CandidateEvidence] = (),
-        search_history: Sequence[SearchRecord] = (),
+        candidate_context: CandidateContextData | None = None,
+        as_of: datetime | None = None,
         candidate_version: str | None = None,
         trusted_recipe_schema: JsonObject | None = None,
-        poc_result: JsonObject | None = None,
+        poc_result: PocResult | None = None,
         gate_rules: Sequence[str] = (),
         prior_failure: Failure | None = None,
         risks: Sequence[str] = (),
@@ -126,21 +125,33 @@ class ContextEngine:
                 risks=(),
                 limitations=(),
             )
-        candidate = self._candidate(request, candidate_id)
+        if candidate_context is None:
+            raise ValueError("stage context requires candidate-partitioned input")
+        if as_of is None or as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise ValueError("stage context requires a timezone-aware as_of cutoff")
+        candidate = self._candidate(request, candidate_context.candidate_id)
+        target_version = (
+            candidate_version or candidate.resolved_version or candidate.requested_version
+        )
         scoped_documents = tuple(
             document
-            for document in documents
-            if document.candidate_id == candidate.candidate_id
+            for document in candidate_context.documents
+            if document.as_of <= as_of
+            and (target_version is None or document.version in {None, target_version})
+        )
+        scoped_source_ids = {document.source_id for document in scoped_documents}
+        scoped_chunks = tuple(
+            chunk
+            for chunk in candidate_context.chunks
+            if chunk.source_id in scoped_source_ids
         )
         scoped_evidence = tuple(
             item
-            for item in evidence
-            if item.candidate_id == candidate.candidate_id
+            for item in candidate_context.evidence
         )[: self._max_evidence]
         scoped_history = tuple(
             record
-            for record in search_history
-            if record.candidate_id == candidate.candidate_id
+            for record in candidate_context.search_history
         )[:8]
 
         selected_chunks: tuple[SourceChunk, ...] = ()
@@ -150,8 +161,8 @@ class ContextEngine:
             selected_chunks = self._retriever.retrieve(
                 candidate_id=candidate.candidate_id,
                 question=query,
-                documents=documents,
-                chunks=chunks,
+                documents=scoped_documents,
+                chunks=scoped_chunks,
                 run_id=f"{request.run_id}:context:{stage.value}",
             )
             selected_source_ids = {chunk.source_id for chunk in selected_chunks}
@@ -209,7 +220,8 @@ class ContextEngine:
                 }
                 else ()
             ),
-            candidate_version=candidate_version or candidate.resolved_version,
+            candidate_version=target_version,
+            as_of=as_of,
             trusted_recipe_schema=(
                 trusted_recipe_schema if stage is ContextStage.POC_PLANNING else None
             ),

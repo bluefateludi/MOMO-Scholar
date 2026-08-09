@@ -133,7 +133,11 @@ def test_https_fetch_rejects_private_urls_and_oversized_content() -> None:
             )
         )
     ) as client:
-        adapter = HttpxFetchAdapter(client=client, max_response_bytes=3)
+        adapter = HttpxFetchAdapter(
+            client=client,
+            url_policy=UrlPolicy(resolver=lambda _: ("8.8.8.8",)),
+            max_response_bytes=3,
+        )
         with pytest.raises(ResponseTooLarge):
             adapter.fetch(
                 FetchInput(
@@ -141,6 +145,39 @@ def test_https_fetch_rejects_private_urls_and_oversized_content() -> None:
                     candidate_id="candidate:test",
                 )
             )
+
+
+def test_https_fetch_pins_the_validated_address_and_preserves_origin() -> None:
+    resolutions = 0
+
+    def resolver(_: str) -> tuple[str, ...]:
+        nonlocal resolutions
+        resolutions += 1
+        return ("8.8.8.8",) if resolutions == 1 else ("10.0.0.8",)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "8.8.8.8"
+        assert request.headers["host"] == "docs.example.com"
+        assert request.extensions["sni_hostname"] == "docs.example.com"
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/plain"},
+            content=b"safe",
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        output = HttpxFetchAdapter(
+            client=client,
+            url_policy=UrlPolicy(resolver=resolver),
+        ).fetch(
+            FetchInput(
+                url="https://docs.example.com/page",
+                candidate_id="candidate:test",
+            )
+        )
+
+    assert resolutions == 1
+    assert output.url == "https://docs.example.com/page"
 
 
 def test_github_adapter_is_read_only_and_bounded() -> None:

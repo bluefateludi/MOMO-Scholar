@@ -2,12 +2,21 @@ from datetime import datetime, timezone
 
 from paper_agent.evidence.hybrid import HybridEvidenceRetriever
 from paper_agent.evidence.retriever import LexicalCandidateSource
-from paper_agent.techscout.context import ContextEngine, ContextStage, HybridContextRetriever
+import pytest
+
+from paper_agent.techscout.context import (
+    CandidateContextData,
+    ContextEngine,
+    ContextStage,
+    HybridContextRetriever,
+)
 from paper_agent.techscout.models import (
     Candidate,
     CandidateEvidence,
     EnvironmentSpec,
     EvidenceKind,
+    PocResult,
+    PocStatus,
     ResearchRequest,
     SourceChunk,
     SourceDocument,
@@ -32,14 +41,21 @@ def _request() -> ResearchRequest:
     )
 
 
-def _source(candidate: str, suffix: str) -> SourceDocument:
+def _source(
+    candidate: str,
+    suffix: str,
+    *,
+    version: str | None = None,
+    as_of: datetime = datetime(2026, 8, 9, tzinfo=timezone.utc),
+) -> SourceDocument:
     return SourceDocument(
         source_id=f"source:{suffix}",
         candidate_id=candidate,
         source_type=SourceType.OFFICIAL_DOCUMENTATION,
         url=f"https://docs.example.com/{suffix}",
         title=f"Docs {suffix}",
-        as_of=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        version=version,
+        as_of=as_of,
         content_sha256="a" * 64,
     )
 
@@ -62,7 +78,6 @@ def test_planning_packet_contains_summaries_but_loads_no_research_data() -> None
         stage=ContextStage.INTAKE_PLANNING,
         request=_request(),
         skills=fixed_skill_registry().all(),
-        documents=(_source("candidate:a", "a"),),
     )
 
     assert len(packet.skill_summaries) == 4
@@ -93,15 +108,24 @@ def test_research_packet_excludes_other_candidates_and_unrelated_full_content() 
         packet_id="context:research:a",
         stage=ContextStage.RESEARCH,
         request=_request(),
-        candidate_id="candidate:a",
-        documents=(source_a, source_b),
-        chunks=(relevant, unrelated),
+        candidate_context=CandidateContextData(
+            candidate_id="candidate:a",
+            documents=(source_a,),
+            chunks=(relevant,),
+        ),
+        as_of=datetime(2026, 8, 9, tzinfo=timezone.utc),
     )
 
     assert packet.candidate_id == "candidate:a"
     assert packet.sources == (source_a,)
     assert packet.chunks == (relevant,)
     assert "UNRELATED_FULL_PAGE" not in packet.model_dump_json()
+    with pytest.raises(ValueError, match="unrelated source"):
+        CandidateContextData(
+            candidate_id="candidate:a",
+            documents=(source_a, source_b),
+            chunks=(relevant, unrelated),
+        )
 
 
 def test_validation_packet_uses_structured_evidence_not_raw_chunks() -> None:
@@ -127,14 +151,80 @@ def test_validation_packet_uses_structured_evidence_not_raw_chunks() -> None:
         packet_id="context:validation:a",
         stage=ContextStage.VALIDATION,
         request=_request(),
-        candidate_id="candidate:a",
-        documents=(source,),
-        chunks=(chunk,),
-        evidence=(evidence,),
-        poc_result={"status": "passed"},
+        candidate_context=CandidateContextData(
+            candidate_id="candidate:a",
+            documents=(source,),
+            chunks=(chunk,),
+            evidence=(evidence,),
+        ),
+        as_of=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        poc_result=PocResult(
+            poc_result_id="poc-result:a",
+            poc_plan_id="poc-plan:a",
+            candidate_id="candidate:a",
+            status=PocStatus.PASSED,
+            exit_code=0,
+            timed_out=False,
+            duration_ms=10,
+        ),
         gate_rules=("cover every hard constraint",),
     )
 
     assert packet.evidence == (evidence,)
     assert packet.chunks == ()
-    assert packet.poc_result == {"status": "passed"}
+    assert packet.poc_result is not None
+    assert packet.poc_result.candidate_id == "candidate:a"
+
+
+def test_context_rejects_cross_candidate_poc_and_filters_version_and_date() -> None:
+    matching = _source("candidate:a", "matching", version="2.0")
+    wrong_version = _source("candidate:a", "old", version="1.0")
+    future = _source(
+        "candidate:a",
+        "future",
+        version="2.0",
+        as_of=datetime(2026, 8, 10, tzinfo=timezone.utc),
+    )
+    context = CandidateContextData(
+        candidate_id="candidate:a",
+        documents=(matching, wrong_version, future),
+        chunks=tuple(
+            SourceChunk(
+                chunk_id=f"chunk:{source.source_id}",
+                source_id=source.source_id,
+                text="metadata filtering persistence",
+                ordinal=0,
+                content_sha256="d" * 64,
+            )
+            for source in (matching, wrong_version, future)
+        ),
+    )
+    packet = _engine().build(
+        packet_id="context:research:filtered",
+        stage=ContextStage.RESEARCH,
+        request=_request(),
+        candidate_context=context,
+        candidate_version="2.0",
+        as_of=datetime(2026, 8, 9, tzinfo=timezone.utc),
+    )
+    assert packet.sources == (matching,)
+    assert packet.candidate_version == "2.0"
+
+    wrong_poc = PocResult(
+        poc_result_id="poc-result:b",
+        poc_plan_id="poc-plan:b",
+        candidate_id="candidate:b",
+        status=PocStatus.PASSED,
+        exit_code=0,
+        timed_out=False,
+        duration_ms=10,
+    )
+    with pytest.raises(ValueError, match="unrelated candidate PoC"):
+        _engine().build(
+            packet_id="context:validation:cross-candidate",
+            stage=ContextStage.VALIDATION,
+            request=_request(),
+            candidate_context=context,
+            as_of=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            poc_result=wrong_poc,
+        )

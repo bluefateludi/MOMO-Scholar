@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import socket
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -30,6 +31,14 @@ from .contracts import (
 
 Clock = Callable[[], datetime]
 AddressResolver = Callable[[str], Iterable[str]]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedUrl:
+    original: str
+    connect_url: str
+    host_header: str
+    sni_hostname: str
 
 
 class AdapterError(RuntimeError):
@@ -92,6 +101,29 @@ class UrlPolicy:
         self._resolver = resolver
 
     def validate(self, value: str) -> str:
+        self._validate_url(value)
+        self._resolve_public_addresses(value)
+        return value
+
+    def resolve(self, value: str) -> ResolvedUrl:
+        """Resolve once and pin the actual request to an approved public address."""
+
+        parsed = self._validate_url(value)
+        addresses = self._resolve_public_addresses(value)
+        if not addresses:
+            raise UnsafeUrl("a resolver is required before fetching a hostname")
+        selected = sorted(addresses)[0]
+        connect_url = str(httpx.URL(value).copy_with(host=selected))
+        hostname = parsed.hostname
+        assert hostname is not None
+        return ResolvedUrl(
+            original=value,
+            connect_url=connect_url,
+            host_header=hostname,
+            sni_hostname=hostname,
+        )
+
+    def _validate_url(self, value: str):
         parsed = urlsplit(value)
         if parsed.scheme != "https" or not parsed.hostname:
             raise UnsafeUrl("only absolute HTTPS URLs are allowed")
@@ -106,13 +138,28 @@ class UrlPolicy:
         ):
             raise UnsafeUrl("URL host is outside the configured allowlist")
         self._validate_address(hostname)
+        if parsed.port not in (None, 443):
+            raise UnsafeUrl("only the standard HTTPS port is allowed")
+        return parsed
+
+    def _resolve_public_addresses(self, value: str) -> tuple[str, ...]:
+        hostname = urlsplit(value).hostname
+        assert hostname is not None
+        try:
+            literal = ipaddress.ip_address(hostname)
+        except ValueError:
+            literal = None
+        if literal is not None:
+            self._validate_address(hostname)
+            return (hostname,)
         if self._resolver is not None:
             addresses = tuple(self._resolver(hostname))
             if not addresses:
                 raise UnsafeUrl("URL host did not resolve")
             for address in addresses:
-                self._validate_address(address)
-        return value
+                self._validate_resolved_address(address)
+            return addresses
+        return ()
 
     @staticmethod
     def _validate_address(value: str) -> None:
@@ -120,6 +167,15 @@ class UrlPolicy:
             address = ipaddress.ip_address(value)
         except ValueError:
             return
+        if not address.is_global:
+            raise UnsafeUrl("non-public network addresses are not allowed")
+
+    @staticmethod
+    def _validate_resolved_address(value: str) -> None:
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError as exc:
+            raise UnsafeUrl("resolver returned a non-IP address") from exc
         if not address.is_global:
             raise UnsafeUrl("non-public network addresses are not allowed")
 
@@ -319,20 +375,25 @@ class HttpxFetchAdapter:
         if timeout_seconds <= 0 or max_response_bytes < 1:
             raise ValueError("timeout and response-size limit must be positive")
         self._client = client
-        self._policy = url_policy or UrlPolicy()
+        self._policy = url_policy or UrlPolicy(resolver=resolve_addresses)
         self._timeout = timeout_seconds
         self._max_bytes = max_response_bytes
         self._clock = clock
 
     def fetch(self, request: FetchInput) -> FetchOutput:
-        url = self._policy.validate(request.url)
+        resolved = self._policy.resolve(request.url)
         response, content = _safe_request(
             self._client,
             "GET",
-            url,
+            resolved.connect_url,
             timeout=self._timeout,
             max_bytes=self._max_bytes,
-            headers={"Accept": "text/html,text/plain,application/json"},
+            headers={
+                "Accept": "text/html,text/plain,application/json",
+                "Connection": "close",
+                "Host": resolved.host_header,
+            },
+            extensions={"sni_hostname": resolved.sni_hostname},
         )
         media_type = response.headers.get("content-type", "text/plain").split(";", 1)[0]
         if media_type not in {"text/html", "text/plain", "application/json"}:
@@ -345,7 +406,7 @@ class HttpxFetchAdapter:
             raise AdapterError("response body is empty")
         digest = hashlib.sha256(content).hexdigest()
         return FetchOutput(
-            url=url,
+            url=resolved.original,
             candidate_id=request.candidate_id,
             media_type=media_type,
             content=text,

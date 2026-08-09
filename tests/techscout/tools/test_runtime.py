@@ -76,6 +76,28 @@ def test_policy_requires_both_skill_and_local_allowlists() -> None:
     assert fake.calls == []
 
 
+def test_policy_discovery_is_scoped_to_current_skill_and_local_policy() -> None:
+    fake = FakeToolRuntime(
+        {
+            "web.search": [_search_output()],
+            "github.inspect_repository": [],
+        }
+    )
+    runtime = PolicyToolRuntime(
+        delegate=fake,
+        skills=fixed_skill_registry(),
+        local_allowlist={"web.search", "github.inspect_repository"},
+    )
+
+    discovered = asyncio.run(
+        runtime.discover_tools("skill:official-doc-research@1")
+    )
+
+    assert discovered == ("web.search",)
+    assert asyncio.run(runtime.discover_tools()) == ()
+    assert asyncio.run(runtime.discover_tools("skill:unknown@1")) == ()
+
+
 def test_fake_fails_closed_on_malformed_output() -> None:
     fake = FakeToolRuntime({"web.search": [{"unexpected": True}]})
 

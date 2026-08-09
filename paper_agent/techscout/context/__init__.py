@@ -1,7 +1,14 @@
 from .engine import ContextEngine, HybridContextRetriever
-from .models import ContextPacket, ContextStage, SearchRecord, SkillSummary
+from .models import (
+    CandidateContextData,
+    ContextPacket,
+    ContextStage,
+    SearchRecord,
+    SkillSummary,
+)
 
 __all__ = [
+    "CandidateContextData",
     "ContextEngine",
     "ContextPacket",
     "ContextStage",

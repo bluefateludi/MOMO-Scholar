@@ -41,8 +41,8 @@ class ToolGatewayHandlers:
 def create_mcp_server(handlers: ToolGatewayHandlers) -> Any:
     """Create the real local stdio gateway using the official MCP SDK v2.
 
-    The import is lazy so the repository's offline unit suite remains runnable until
-    the integration branch adds the declared MCP dependency.
+    The import remains lazy so importing this module has no SDK side effects and an
+    incomplete installation receives a clear boundary error.
     """
 
     try:

@@ -23,7 +23,7 @@ from .contracts import TOOL_INPUT_MODELS, TOOL_OUTPUT_MODELS
 
 
 class ToolRuntime(Protocol):
-    async def discover_tools(self) -> tuple[str, ...]: ...
+    async def discover_tools(self, skill_id: str | None = None) -> tuple[str, ...]: ...
 
     async def invoke(self, call: ToolCall) -> ToolResult: ...
 
@@ -47,7 +47,7 @@ class FakeToolRuntime:
             raise ValueError(f"unknown fake tools: {sorted(unknown)}")
         self.calls: list[ToolCall] = []
 
-    async def discover_tools(self) -> tuple[str, ...]:
+    async def discover_tools(self, skill_id: str | None = None) -> tuple[str, ...]:
         return tuple(sorted(self._scripts))
 
     async def invoke(self, call: ToolCall) -> ToolResult:
@@ -103,9 +103,19 @@ class PolicyToolRuntime:
         if unknown:
             raise ValueError(f"local policy contains unknown tools: {sorted(unknown)}")
 
-    async def discover_tools(self) -> tuple[str, ...]:
+    async def discover_tools(self, skill_id: str | None = None) -> tuple[str, ...]:
+        if skill_id is None:
+            return ()
+        try:
+            skill = self._skills.get(skill_id)
+        except KeyError:
+            return ()
         discovered = await self._delegate.discover_tools()
-        return tuple(name for name in discovered if name in self._local_allowlist)
+        return tuple(
+            name
+            for name in discovered
+            if name in self._local_allowlist and name in skill.allowed_tools
+        )
 
     async def invoke(self, call: ToolCall) -> ToolResult:
         try:
@@ -180,7 +190,7 @@ class StdioMcpRuntime:
         self._client = None
         self._discovered = None
 
-    async def discover_tools(self) -> tuple[str, ...]:
+    async def discover_tools(self, skill_id: str | None = None) -> tuple[str, ...]:
         self._require_client()
         if self._discovered is None:
             response = await asyncio.wait_for(

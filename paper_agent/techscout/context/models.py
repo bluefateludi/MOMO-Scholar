@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 
 from pydantic import Field, model_validator
@@ -12,6 +13,7 @@ from paper_agent.techscout.models import (
     HttpsUrl,
     JsonObject,
     NonEmptyStr,
+    PocResult,
     SourceChunk,
     SourceDocument,
     TechScoutModel,
@@ -39,6 +41,31 @@ class SearchRecord(TechScoutModel):
     source_urls: tuple[HttpsUrl, ...] = Field(max_length=5)
 
 
+class CandidateContextData(TechScoutModel):
+    """Candidate-partitioned context input; cross-candidate load-all is invalid."""
+
+    candidate_id: StableId
+    documents: tuple[SourceDocument, ...] = Field(default=(), max_length=50)
+    chunks: tuple[SourceChunk, ...] = Field(default=(), max_length=200)
+    evidence: tuple[CandidateEvidence, ...] = Field(default=(), max_length=50)
+    search_history: tuple[SearchRecord, ...] = Field(default=(), max_length=20)
+
+    @model_validator(mode="after")
+    def enforce_candidate_partition(self) -> Self:
+        if any(item.candidate_id != self.candidate_id for item in self.documents):
+            raise ValueError("candidate context contains an unrelated source")
+        source_ids = {item.source_id for item in self.documents}
+        if len(source_ids) != len(self.documents):
+            raise ValueError("candidate context contains duplicate source identifiers")
+        if any(item.source_id not in source_ids for item in self.chunks):
+            raise ValueError("candidate context chunk references an unknown source")
+        if any(item.candidate_id != self.candidate_id for item in self.evidence):
+            raise ValueError("candidate context contains unrelated evidence")
+        if any(item.candidate_id != self.candidate_id for item in self.search_history):
+            raise ValueError("candidate context contains unrelated search history")
+        return self
+
+
 class ContextPacket(TechScoutModel):
     """Bounded prompt context; deliberately has no raw-page/repository field."""
 
@@ -54,8 +81,9 @@ class ContextPacket(TechScoutModel):
     chunks: tuple[SourceChunk, ...] = Field(max_length=8)
     evidence: tuple[CandidateEvidence, ...] = Field(max_length=12)
     candidate_version: NonEmptyStr | None = None
+    as_of: datetime | None = None
     trusted_recipe_schema: JsonObject | None = None
-    poc_result: JsonObject | None = None
+    poc_result: PocResult | None = None
     gate_rules: tuple[NonEmptyStr, ...] = Field(max_length=12)
     prior_failure: Failure | None = None
     risks: tuple[NonEmptyStr, ...] = Field(max_length=8)
@@ -77,8 +105,14 @@ class ContextPacket(TechScoutModel):
                 )
             ):
                 raise ValueError("planning context cannot load research or execution data")
+            if self.as_of is not None:
+                raise ValueError("planning context cannot set an as_of cutoff")
         elif self.candidate_id is None:
             raise ValueError("stage context requires one candidate")
+        elif self.as_of is None:
+            raise ValueError("stage context requires an as_of cutoff")
+        elif self.as_of.tzinfo is None or self.as_of.utcoffset() is None:
+            raise ValueError("context as_of must include a timezone")
         if self.stage is not ContextStage.INTAKE_PLANNING and self.skill_summaries:
             raise ValueError("only planning context may contain skill summaries")
         for source in self.sources:
@@ -106,4 +140,6 @@ class ContextPacket(TechScoutModel):
         for record in self.search_history:
             if record.candidate_id != self.candidate_id:
                 raise ValueError("context contains unrelated search history")
+        if self.poc_result is not None and self.poc_result.candidate_id != self.candidate_id:
+            raise ValueError("context contains an unrelated candidate PoC result")
         return self
