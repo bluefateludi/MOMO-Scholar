@@ -50,6 +50,12 @@ from paper_agent.techscout.models import (
     ToolStatus,
     Verdict,
 )
+from paper_agent.techscout.observability.adapters import (
+    TracingSkillRouter,
+    TracingStageServices,
+    TracingToolRuntime,
+)
+from paper_agent.techscout.observability.recorder import TechScoutTraceRecorder
 from paper_agent.techscout.runtime_skills import fixed_skill_registry
 from paper_agent.techscout.sandbox.recipes import RecipeRegistry
 from paper_agent.techscout.state import ResearchStage, ResearchState, RunBudget
@@ -121,9 +127,10 @@ class TechScoutProjectionBundle(StrictModel):
 class _LocalMcpInvoker:
     """Synchronous seam over the official async stdio MCP client."""
 
-    def __init__(self, scenario: str) -> None:
+    def __init__(self, scenario: str, trace: TechScoutTraceRecorder | None = None) -> None:
         self._scenario = scenario
         self._skills = fixed_skill_registry()
+        self._trace = trace
 
     def invoke(self, call: ToolCall):
         async def execute():
@@ -139,7 +146,8 @@ class _LocalMcpInvoker:
                     skills=self._skills,
                     local_allowlist={"web.search", "sandbox.run_smoke_test"},
                 )
-                return await runtime.invoke(call)
+                traced = TracingToolRuntime(runtime, self._trace) if self._trace else runtime
+                return await traced.invoke(call)
 
         return asyncio.run(execute())
 
@@ -161,13 +169,15 @@ class DeterministicStageServices:
         scenario: str,
         progress_sink: Callable[[ResearchStage, str | None, str | None, str], None],
         trace_sink: Callable[[str, str, str, str], None] | None = None,
+        trace: TechScoutTraceRecorder | None = None,
     ) -> None:
         self.run_dir = run_dir
         self.scenario = scenario
         self.progress_sink = progress_sink
         self.trace_sink = trace_sink or (lambda *args: None)
-        self.skills = fixed_skill_registry()
-        self.tools = _LocalMcpInvoker(scenario)
+        skill_registry = fixed_skill_registry()
+        self.skills = TracingSkillRouter(skill_registry, trace) if trace else skill_registry
+        self.tools = _LocalMcpInvoker(scenario, trace)
         self.gate = ValidationGate()
         self.recipe_registry = RecipeRegistry()
         self.sources: list[SourceDocument] = []
@@ -592,6 +602,13 @@ class TechScoutRunEngine:
         core_id = f"run:{row.id}"
         scenario = self._scenario(row.request)
         started = time.monotonic()
+        trace_path = run_dir / "traces.jsonl"
+        trace_manifest = run_dir / "traces-manifest.json"
+        if trace_path.exists():
+            os.replace(trace_path, run_dir / "traces-interrupted.jsonl")
+        if trace_manifest.exists():
+            os.replace(trace_manifest, run_dir / "traces-interrupted-manifest.json")
+        trace = TechScoutTraceRecorder(trace_path, run_id=core_id)
 
         def progress(stage: ResearchStage, skill: str | None, tool: str | None, label: str) -> None:
             api_stage = _STAGE_MAP.get(stage, "verify")
@@ -615,17 +632,31 @@ class TechScoutRunEngine:
             trace_sink=lambda event_type, stage, status, label: self.registry.append_event(
                 row.id, event_type=event_type, stage=stage, status=status, label=label,
             ),
+            trace=trace,
         )
         state = self._initial_state(core_id, row.request)
         checkpoint_path = run_dir / "harness-checkpoints.sqlite3"
         with SQLiteCheckpointAdapter(checkpoint_path) as checkpoints:
-            harness = TechScoutHarness(services, checkpoints)
+            harness = TechScoutHarness(TracingStageServices(services, trace), checkpoints)
             if (run_dir / "stage-workspace.json").is_file():
                 result = harness.run(run_id=core_id)
             else:
                 result = harness.run(state)
         bundle = self._bundle(row, result, services, scenario, started)
         self._publish(run_dir, result, services, bundle)
+        trace.record_terminal(
+            terminal_status=result.state.terminal_status.value if result.state.terminal_status else "failed",
+            gate_outcome=result.state.gate_outcome.value if result.state.gate_outcome else "failed",
+            latency_ms=round((time.monotonic() - started) * 1000),
+            prompt_tokens=result.state.token_count,
+            completion_tokens=0,
+            retry_count=result.state.recovery_count,
+            recovery_count=result.state.recovery_count,
+            report_sha256=_sha(result.report.model_dump_json() if result.report else ""),
+            manifest_sha256=_sha(result.manifest.model_dump_json() if result.manifest else ""),
+            status="ok" if result.state.terminal_status is not TerminalStatus.FAILED else "error",
+        )
+        trace.seal()
         return bundle, str((run_dir / "web-projection.json").relative_to(self.output_root))
 
     def publish_failed_projection(
@@ -878,13 +909,11 @@ class TechScoutRunEngine:
             "poc-results.json": json.dumps([item.model_dump(mode="json") for item in services.poc_history], indent=2),
             "decision-report.json": result.report.model_dump_json(indent=2) if result.report else "{}",
             "decision-report.md": f"# TechScout decision\n\n{result.report.summary if result.report else 'Run failed safely.'}\n",
-            "traces.jsonl": "",
             "run_manifest.json": result.manifest.model_dump_json(indent=2) if result.manifest else "{}",
             "web-projection.json": bundle.model_dump_json(indent=2),
         }
         for name, content in files.items():
             (run_dir / name).write_text(content, encoding="utf-8")
-        self.publish_trace_artifact(request.run_id.split(":", 1)[1])
 
     def publish_trace_artifact(self, run_id: str) -> None:
         events = []
@@ -967,7 +996,6 @@ class TechScoutSingleRunExecutor:
                 projection_path=projection_path,
                 progress=bundle.detail.progress,
             )
-            self.engine.publish_trace_artifact(row.id)
         except Exception:
             self._logger.error(
                 "TechScout execution failed safely",

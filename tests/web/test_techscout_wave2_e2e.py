@@ -126,9 +126,14 @@ def test_frozen_wave2_create_poll_trace_and_artifacts(
     run_dir = tmp_path / "outputs" / "techscout" / run_id
     assert REQUIRED_TERMINAL_ARTIFACTS.issubset({path.name for path in run_dir.iterdir()})
     assert (run_dir / "harness-checkpoints.sqlite3").is_file()
+    sealed_trace = [json.loads(line) for line in (run_dir / "traces.jsonl").read_text(encoding="utf-8").splitlines()]
+    trace_names = {item.get("name") for item in sealed_trace}
+    assert {"skill.selected", "mcp.tool.started", "state.transitioned", "terminal.completed"} <= trace_names
+    assert sealed_trace[-1]["record_type"] == "trace_seal"
     if recovery_attempted:
         poc_history = json.loads((run_dir / "poc-results.json").read_text(encoding="utf-8"))
         assert [item["status"] for item in poc_history] == ["failed", "passed", "passed"]
+        assert {"error.classified", "recovery.started", "recovery.finished"} <= trace_names
     assert fixture["planning_targets"]["fast_terminal_seconds"] == 120
 
 
