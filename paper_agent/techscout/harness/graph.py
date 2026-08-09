@@ -1,13 +1,25 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 from paper_agent.techscout.errors import Failure, FailureCode, FailureStage
 from paper_agent.techscout.harness.checkpoint import SQLiteCheckpointAdapter
-from paper_agent.techscout.harness.stages import StageResult, StageServices
-from paper_agent.techscout.models import GateOutcome, TerminalStatus
+from paper_agent.techscout.harness.stages import (
+    HarnessRunResult,
+    StageArtifacts,
+    StageDeadline,
+    StageDeadlineExceeded,
+    StageResult,
+    StageServices,
+)
+from paper_agent.techscout.models import (
+    DecisionReport,
+    GateOutcome,
+    RunManifest,
+    TerminalStatus,
+)
 from paper_agent.techscout.state import ResearchStage, ResearchState
 
 
@@ -33,20 +45,15 @@ _RECOVERY_STAGES = {
 }
 
 _FAILURE_STAGES = {
-    ResearchStage.NORMALIZE_REQUEST: FailureStage.INTAKE,
-    ResearchStage.PLAN_RESEARCH: FailureStage.PLANNING,
-    ResearchStage.RESEARCH_CANDIDATES: FailureStage.RESEARCH,
-    ResearchStage.SELECT_CONTEXT: FailureStage.CONTEXT,
-    ResearchStage.PLAN_POC: FailureStage.POC_PLANNING,
-    ResearchStage.EXECUTE_POC: FailureStage.POC_EXECUTION,
-    ResearchStage.VALIDATE: FailureStage.VALIDATION,
-    ResearchStage.REVIEW_REPORT: FailureStage.REPORTING,
-    ResearchStage.PUBLISH: FailureStage.PUBLISHING,
+    research_stage: failure_stage
+    for failure_stage, research_stage in _RECOVERY_STAGES.items()
 }
 
 
 class _GraphState(TypedDict):
     research_state_json: str
+    report_json: NotRequired[str | None]
+    manifest_json: NotRequired[str | None]
 
 
 class TechScoutHarness:
@@ -68,7 +75,7 @@ class TechScoutHarness:
         *,
         run_id: str | None = None,
         interrupt_after: ResearchStage | None = None,
-    ) -> ResearchState:
+    ) -> HarnessRunResult:
         if state is None and run_id is None:
             raise ValueError("run_id is required when resuming without input state")
         if state is not None and run_id not in {None, state.run_id}:
@@ -77,7 +84,11 @@ class TechScoutHarness:
         config = {"configurable": {"thread_id": thread_id}}
         interrupts = [interrupt_after.value] if interrupt_after is not None else None
         graph_input = (
-            {"research_state_json": state.model_dump_json()}
+            {
+                "research_state_json": state.model_dump_json(),
+                "report_json": None,
+                "manifest_json": None,
+            }
             if state is not None
             else None
         )
@@ -86,7 +97,12 @@ class TechScoutHarness:
             config=config,
             interrupt_after=interrupts,
         )
-        return ResearchState.model_validate_json(result["research_state_json"])
+        artifacts = self._decode_artifacts(result)
+        return HarnessRunResult(
+            state=ResearchState.model_validate_json(result["research_state_json"]),
+            report=artifacts.report,
+            manifest=artifacts.manifest,
+        )
 
     def _build_graph(self, checkpoints: SQLiteCheckpointAdapter) -> Any:
         builder = StateGraph(_GraphState)
@@ -158,21 +174,31 @@ class TechScoutHarness:
             if budget_code is not None:
                 terminal = self._terminalize_budget(state, budget_code)
                 return {"research_state_json": terminal.model_dump_json()}
+            artifacts = self._decode_artifacts(raw_state)
             stage_state = state.model_copy(update={"stage": stage})
             try:
-                result = self._services.execute(stage, stage_state)
+                result = self._execute_stage(stage, stage_state, artifacts)
+                updated = self._apply_result(state, stage, result)
+            except StageDeadlineExceeded:
+                terminal = self._terminalize_budget(
+                    state,
+                    FailureCode.DEADLINE_EXCEEDED,
+                )
+                return self._encode_graph_state(terminal, artifacts)
             except ValueError:
                 terminal = self._terminalize_malformed_output(state, stage)
                 return {"research_state_json": terminal.model_dump_json()}
-            updated = self._apply_result(state, stage, result)
-            budget_code = self._budget_code(updated)
+            budget_code = self._budget_code(
+                updated,
+                require_next_step=stage is not ResearchStage.PUBLISH,
+            )
             if (
                 updated.stage is not ResearchStage.TERMINAL
-                and stage is not ResearchStage.PUBLISH
                 and budget_code is not None
             ):
                 updated = self._terminalize_budget(updated, budget_code)
-            return {"research_state_json": updated.model_dump_json()}
+            merged_artifacts = self._merge_artifacts(artifacts, result.artifacts)
+            return self._encode_graph_state(updated, merged_artifacts)
 
         return execute
 
@@ -240,21 +266,40 @@ class TechScoutHarness:
 
     def _recovery_node(self, raw_state: _GraphState) -> _GraphState:
         state = ResearchState.model_validate_json(raw_state["research_state_json"])
+        artifacts = self._decode_artifacts(raw_state)
         failed_stage = self._recovery_stage(state)
         if failed_stage is None:
             raise ValueError("recoverable gate requires a typed failed stage")
         retry_state = state.model_copy(update={"stage": failed_stage})
-        result = self._services.execute(failed_stage, retry_state)
-        updated = self._apply_result(state, ResearchStage.RECOVER_ONCE, result)
+        try:
+            result = self._execute_stage(failed_stage, retry_state, artifacts)
+            updated = self._apply_result(
+                state,
+                ResearchStage.RECOVER_ONCE,
+                result,
+            )
+        except StageDeadlineExceeded:
+            terminal = self._terminalize_budget(
+                state,
+                FailureCode.DEADLINE_EXCEEDED,
+            ).model_copy(update={"recovery_count": state.recovery_count + 1})
+            return self._encode_graph_state(terminal, artifacts)
+        except ValueError:
+            terminal = self._terminalize_malformed_output(state, failed_stage)
+            terminal = terminal.model_copy(
+                update={"recovery_count": state.recovery_count + 1}
+            )
+            return self._encode_graph_state(terminal, artifacts)
         if updated.stage is ResearchStage.TERMINAL:
-            return {"research_state_json": updated.model_dump_json()}
+            return self._encode_graph_state(updated, artifacts)
         updated = updated.model_copy(
             update={"recovery_count": state.recovery_count + 1}
         )
         budget_code = self._budget_code(updated)
         if budget_code is not None:
             updated = self._terminalize_budget(updated, budget_code)
-        return {"research_state_json": updated.model_dump_json()}
+        merged_artifacts = self._merge_artifacts(artifacts, result.artifacts)
+        return self._encode_graph_state(updated, merged_artifacts)
 
     @staticmethod
     def _recovery_stage(state: ResearchState) -> ResearchStage | None:
@@ -263,12 +308,32 @@ class TechScoutHarness:
                 return _RECOVERY_STAGES.get(failure.stage)
         return None
 
-    def _budget_code(self, state: ResearchState) -> FailureCode | None:
+    def _budget_code(
+        self,
+        state: ResearchState,
+        *,
+        require_next_step: bool = True,
+    ) -> FailureCode | None:
         if self._now() >= state.budget.deadline_at:
             return FailureCode.DEADLINE_EXCEEDED
-        if state.step_count >= state.budget.max_steps:
+        if require_next_step and state.step_count >= state.budget.max_steps:
             return FailureCode.BUDGET_EXHAUSTED
         return None
+
+    def _execute_stage(
+        self,
+        stage: ResearchStage,
+        state: ResearchState,
+        artifacts: StageArtifacts,
+    ) -> StageResult:
+        remaining_seconds = (state.budget.deadline_at - self._now()).total_seconds()
+        if remaining_seconds <= 0:
+            raise StageDeadlineExceeded
+        deadline = StageDeadline(
+            deadline_at=state.budget.deadline_at,
+            timeout_seconds=remaining_seconds,
+        )
+        return self._services.execute(stage, state, artifacts, deadline)
 
     @staticmethod
     def _terminalize_budget(
@@ -331,10 +396,90 @@ class TechScoutHarness:
             terminal_status = TerminalStatus.COMPLETED_WITH_LIMITATIONS
         else:
             terminal_status = TerminalStatus.FAILED
+        gate_outcome = state.gate_outcome or GateOutcome.FAILED
+        artifacts = TechScoutHarness._decode_artifacts(raw_state)
+        if terminal_status is not TerminalStatus.FAILED and not (
+            artifacts.report is not None
+            and artifacts.manifest is not None
+            and artifacts.report.run_id == state.run_id
+            and artifacts.manifest.run_id == state.run_id
+            and artifacts.manifest.report_id == artifacts.report.report_id
+            and artifacts.manifest.terminal_status is terminal_status
+        ):
+            terminal = TechScoutHarness._terminalize_invalid_artifacts(state)
+            return TechScoutHarness._encode_graph_state(terminal, artifacts)
         terminal = state.model_copy(
             update={
                 "stage": ResearchStage.TERMINAL,
+                "gate_outcome": gate_outcome,
                 "terminal_status": terminal_status,
             }
         )
-        return {"research_state_json": terminal.model_dump_json()}
+        return TechScoutHarness._encode_graph_state(terminal, artifacts)
+
+    @staticmethod
+    def _decode_artifacts(raw_state: _GraphState) -> StageArtifacts:
+        report_json = raw_state.get("report_json")
+        manifest_json = raw_state.get("manifest_json")
+        return StageArtifacts(
+            report=(
+                DecisionReport.model_validate_json(report_json)
+                if report_json is not None
+                else None
+            ),
+            manifest=(
+                RunManifest.model_validate_json(manifest_json)
+                if manifest_json is not None
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _merge_artifacts(
+        previous: StageArtifacts,
+        updated: StageArtifacts,
+    ) -> StageArtifacts:
+        return StageArtifacts(
+            report=updated.report or previous.report,
+            manifest=updated.manifest or previous.manifest,
+        )
+
+    @staticmethod
+    def _encode_graph_state(
+        state: ResearchState,
+        artifacts: StageArtifacts,
+    ) -> _GraphState:
+        return {
+            "research_state_json": state.model_dump_json(),
+            "report_json": (
+                artifacts.report.model_dump_json()
+                if artifacts.report is not None
+                else None
+            ),
+            "manifest_json": (
+                artifacts.manifest.model_dump_json()
+                if artifacts.manifest is not None
+                else None
+            ),
+        }
+
+    @staticmethod
+    def _terminalize_invalid_artifacts(state: ResearchState) -> ResearchState:
+        failure = Failure(
+            failure_id=(
+                f"failure:{state.run_id}:artifacts-{len(state.failures) + 1:04d}"
+            ),
+            code=FailureCode.REPORT_SCHEMA_INVALID,
+            stage=FailureStage.REPORTING,
+            message="Completed run requires a matching report and manifest.",
+            recoverable=False,
+            attempt=1,
+        )
+        return state.model_copy(
+            update={
+                "stage": ResearchStage.TERMINAL,
+                "failures": (*state.failures, failure),
+                "gate_outcome": GateOutcome.FAILED,
+                "terminal_status": TerminalStatus.FAILED,
+            }
+        )

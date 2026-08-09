@@ -6,6 +6,9 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
+_BUSY_TIMEOUT_MS = 5_000
+
+
 class SQLiteCheckpointAdapter:
     """Own the SQLite connection used by LangGraph checkpoint persistence."""
 
@@ -17,6 +20,8 @@ class SQLiteCheckpointAdapter:
     def __enter__(self) -> "SQLiteCheckpointAdapter":
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self._path, check_same_thread=False)
+        self._connection.execute("PRAGMA journal_mode=WAL")
+        self._connection.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         self._saver = SqliteSaver(
             self._connection,
             serde=JsonPlusSerializer(allowed_msgpack_modules=[]),
