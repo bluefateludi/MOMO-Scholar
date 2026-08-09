@@ -719,8 +719,6 @@ class TechScoutRunEngine:
             "evidence.jsonl": "",
             "poc-plan.json": "[]",
             "poc-results.json": "[]",
-            "decision-report.json": "{}",
-            "decision-report.md": "# TechScout decision\n\nRun failed safely; no report was published.\n",
             "run_manifest.json": failed_manifest.model_dump_json(indent=2),
         }
         for name, content in failed_files.items():
