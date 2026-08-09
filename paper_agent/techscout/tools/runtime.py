@@ -141,62 +141,63 @@ class StdioMcpRuntime:
         self._env = dict(env) if env is not None else None
         self._timeout = timeout_seconds
         self._stack: AsyncExitStack | None = None
-        self._session: Any = None
+        self._client: Any = None
         self._discovered: tuple[str, ...] | None = None
 
     async def __aenter__(self) -> "StdioMcpRuntime":
         try:
-            from mcp import ClientSession, StdioServerParameters
+            from mcp import Client, StdioServerParameters
             from mcp.client.stdio import stdio_client
-        except ImportError as exc:  # dependency is deliberately integration-owned
+        except ImportError as exc:
             raise RuntimeError("MCP Python SDK v2 is required") from exc
         stack = AsyncExitStack()
         try:
-            streams = await stack.enter_async_context(
-                stdio_client(
-                    StdioServerParameters(
-                        command=self._command,
-                        args=list(self._args),
-                        env=self._env,
+            params = StdioServerParameters(
+                command=self._command,
+                args=list(self._args),
+                env=self._env,
+            )
+            client = await asyncio.wait_for(
+                stack.enter_async_context(
+                    Client(
+                        stdio_client(params),
+                        read_timeout_seconds=self._timeout,
                     )
-                )
+                ),
+                timeout=self._timeout,
             )
-            session = await stack.enter_async_context(
-                ClientSession(streams[0], streams[1])
-            )
-            await asyncio.wait_for(session.initialize(), timeout=self._timeout)
         except BaseException:
             await stack.aclose()
             raise
         self._stack = stack
-        self._session = session
+        self._client = client
         return self
 
     async def __aexit__(self, *_: object) -> None:
         if self._stack is not None:
             await self._stack.aclose()
         self._stack = None
-        self._session = None
+        self._client = None
         self._discovered = None
 
     async def discover_tools(self) -> tuple[str, ...]:
-        self._require_session()
+        self._require_client()
         if self._discovered is None:
             response = await asyncio.wait_for(
-                self._session.list_tools(), timeout=self._timeout
+                self._client.list_tools(), timeout=self._timeout
             )
             self._discovered = tuple(sorted(tool.name for tool in response.tools))
         return self._discovered
 
     async def invoke(self, call: ToolCall) -> ToolResult:
-        self._require_session()
+        self._require_client()
         started = time.monotonic()
         try:
             request = TOOL_INPUT_MODELS[call.tool_name].model_validate_json(
                 _json_bytes(call.arguments)
             )
             result = await asyncio.wait_for(
-                self._session.call_tool(
+                self._client.call_tool(
                     call.tool_name, arguments=request.model_dump(mode="json")
                 ),
                 timeout=self._timeout,
@@ -220,8 +221,8 @@ class StdioMcpRuntime:
             cache_status=_cache_status(output),
         )
 
-    def _require_session(self) -> None:
-        if self._session is None:
+    def _require_client(self) -> None:
+        if self._client is None:
             raise RuntimeError("StdioMcpRuntime must be used as an async context manager")
 
 
