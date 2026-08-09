@@ -18,7 +18,12 @@ from paper_agent.techscout.models import (
     RunMode,
     TerminalStatus,
 )
-from paper_agent.techscout.state import CheckpointMetadata, ResearchStage, ResearchState
+from paper_agent.techscout.state import (
+    CheckpointMetadata,
+    ResearchStage,
+    ResearchState,
+    RunBudget,
+)
 
 __all__ = [
     "Candidate",
@@ -35,6 +40,7 @@ __all__ = [
     "ResearchRequest",
     "ResearchStage",
     "ResearchState",
+    "RunBudget",
     "RunManifest",
     "RunMode",
     "TerminalStatus",
