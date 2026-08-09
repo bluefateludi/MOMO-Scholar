@@ -16,6 +16,8 @@ dependencies = [
   "mcp>=2,<3",
   "python-dotenv>=1.0",
   "rich>=13",
+  "langgraph>=1,<2",
+  "langgraph-checkpoint-sqlite>=3,<4",
   "pymupdf>=1.24,<2",
   "uvicorn>=0.30,<1",
 ]

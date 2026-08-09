@@ -11,6 +11,23 @@ from paper_agent.techscout.models import TechScoutModel
 from paper_agent.techscout.state import ResearchStage
 
 
+RESEARCH_STAGE_BY_FAILURE_STAGE = {
+    FailureStage.INTAKE: ResearchStage.NORMALIZE_REQUEST,
+    FailureStage.PLANNING: ResearchStage.PLAN_RESEARCH,
+    FailureStage.RESEARCH: ResearchStage.RESEARCH_CANDIDATES,
+    FailureStage.CONTEXT: ResearchStage.SELECT_CONTEXT,
+    FailureStage.POC_PLANNING: ResearchStage.PLAN_POC,
+    FailureStage.POC_EXECUTION: ResearchStage.EXECUTE_POC,
+    FailureStage.VALIDATION: ResearchStage.VALIDATE,
+    FailureStage.REPORTING: ResearchStage.REVIEW_REPORT,
+    FailureStage.PUBLISHING: ResearchStage.PUBLISH,
+}
+FAILURE_STAGE_BY_RESEARCH_STAGE = {
+    research_stage: failure_stage
+    for failure_stage, research_stage in RESEARCH_STAGE_BY_FAILURE_STAGE.items()
+}
+
+
 class RecoveryDecision(TechScoutModel):
     should_recover: bool
     action: RecoveryAction
@@ -22,14 +39,6 @@ class RecoveryDecision(TechScoutModel):
 
 
 class RecoveryPolicy:
-    _STAGES = {
-        "research": ResearchStage.RESEARCH_CANDIDATES,
-        "context": ResearchStage.SELECT_CONTEXT,
-        "poc_planning": ResearchStage.PLAN_POC,
-        "poc_execution": ResearchStage.EXECUTE_POC,
-        "validation": ResearchStage.VALIDATE,
-        "reporting": ResearchStage.REVIEW_REPORT,
-    }
     _ALLOWED: dict[
         tuple[FailureCode, FailureStage],
         frozenset[RecoveryAction],
@@ -67,7 +76,7 @@ class RecoveryPolicy:
         recovery_count: int,
         checkpoint_id: StableId | None,
     ) -> RecoveryDecision:
-        stage = self._STAGES.get(failure.stage.value)
+        stage = RESEARCH_STAGE_BY_FAILURE_STAGE.get(failure.stage)
         allowed_actions = self._ALLOWED.get((failure.code, failure.stage), frozenset())
         permitted = (
             failure.recoverable
@@ -89,7 +98,12 @@ class RecoveryPolicy:
         action = (
             RecoveryAction.PUBLISH_LIMITED_RESULT
             if failure.recovery_action is RecoveryAction.PUBLISH_LIMITED_RESULT
-            or failure.stage.value in {"research", "poc_planning", "poc_execution"}
+            or failure.stage
+            in {
+                FailureStage.RESEARCH,
+                FailureStage.POC_PLANNING,
+                FailureStage.POC_EXECUTION,
+            }
             else RecoveryAction.FAIL_SAFELY
         )
         return RecoveryDecision(
