@@ -1,0 +1,20 @@
+{
+  "schema_version": "techscout-eval-suite-v1",
+  "suite_id": "techscout-smoke-v1",
+  "profile": "smoke",
+  "case_files": [
+    "smoke-happy-path.json",
+    "smoke-no-safe-winner.json",
+    "smoke-bounded-recovery.json"
+  ],
+  "executor_version": "frozen-synthetic-v1",
+  "execution_policy": {
+    "model": "frozen-synthetic-model-v1",
+    "temperature": 0.0,
+    "search_snapshot_id": "snapshot:techscout-smoke-v1",
+    "workers": 1,
+    "timeout_seconds": 10,
+    "max_infrastructure_reruns": 0,
+    "tuning_iterations": 0
+  }
+}

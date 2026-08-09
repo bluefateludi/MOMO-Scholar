@@ -1,0 +1,22 @@
+{
+  "schema_version": "techscout-eval-case-v1",
+  "fixture_kind": "synthetic_frozen_evaluation",
+  "case_id": "techscout-smoke-002",
+  "kind": "end_to_end",
+  "runs": [{
+    "harness_variant": "v1",
+    "cache_mode": "warm_cache",
+    "latency_ms": 1800,
+    "prompt_tokens": 560,
+    "completion_tokens": 230,
+    "task_checks": {
+    "report_schema_valid": true,
+    "hard_constraints_addressed": true,
+    "required_evidence_available": true,
+    "expected_poc_present": true,
+    "validation_gate_passed": true,
+    "artifacts_and_trace_complete": true
+    },
+    "first_pass_success": true
+  }]
+}
