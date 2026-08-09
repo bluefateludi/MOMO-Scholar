@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { httpApi, messageForCode } from "../api/client";
 import { DEMO_ID, EV1, demoRun } from "../api/fixtures";
+import { techScoutHttpApi } from "../api/techscout";
+import { TECHSCOUT_FIXTURE_ID, techScoutRun } from "../api/techscoutFixtures";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -34,5 +36,20 @@ describe("same-origin HTTP client", () => {
       status, headers: { "Content-Type": "application/json" },
     })));
     await expect(httpApi.getRun(DEMO_ID)).rejects.toMatchObject({ status, code, message: messageForCode(code) });
+  });
+});
+
+describe("TechScout v2 HTTP client", () => {
+  it("uses /api/v2 and cursor-encodes the bounded Trace query", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await techScoutHttpApi.getTrace(TECHSCOUT_FIXTURE_ID, "event cursor", 25);
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/v2/runs/${TECHSCOUT_FIXTURE_ID}/trace?limit=25&cursor=event%20cursor`);
+  });
+
+  it("encodes candidate IDs without constructing filesystem paths", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(techScoutRun.candidates[0]), { status: 200, headers: { "Content-Type": "application/json" } })));
+    await techScoutHttpApi.getCandidate(TECHSCOUT_FIXTURE_ID, "candidate/with?#opaque");
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain("candidate%2Fwith%3F%23opaque");
   });
 });

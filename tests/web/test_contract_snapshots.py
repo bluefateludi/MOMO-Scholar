@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from scripts.generate_web_contracts import (
+    FIXTURE_TYPESCRIPT_PATH,
     OPENAPI_PATH,
+    fixture_typescript_text,
     generated_typescript_matches,
     openapi_text,
 )
@@ -23,6 +25,10 @@ def test_typescript_snapshot_check_normalizes_platform_line_endings(tmp_path):
 
     generated.write_text("export interface Run { id: number; }\n", encoding="utf-8")
     assert not generated_typescript_matches(expected, generated)
+
+
+def test_frontend_techscout_fixture_is_generated_from_python_projection():
+    assert FIXTURE_TYPESCRIPT_PATH.read_text(encoding="utf-8") == fixture_typescript_text()
 
 
 def test_bundled_demo_matches_deterministic_generator():

@@ -37,6 +37,15 @@ export type ContentMode = CreateRunRequest["content_mode"];
 export type RetrievalMode = RetrievalSettings["mode"];
 export type ArtifactName = RunDetail["available_artifacts"][number];
 
+export type TechScoutCreateRunRequest = Schemas["TechScoutCreateRunRequest"];
+export type TechScoutRunSummary = RequiredDeep<Schemas["TechScoutRunSummary"]>;
+export type TechScoutRunDetail = RequiredDeep<Schemas["TechScoutRunDetail"]>;
+export type TechScoutRunList = RequiredDeep<Schemas["TechScoutRunList"]>;
+export type TechScoutReport = RequiredDeep<Schemas["TechScoutReportProjection"]>;
+export type TechScoutCandidate = RequiredDeep<Schemas["TechScoutCandidateProjection"]>;
+export type TechScoutEvidence = RequiredDeep<Schemas["TechScoutEvidenceProjection"]>;
+export type TracePage = RequiredDeep<Schemas["TracePage"]>;
+
 export interface ApiResponse<T> {
   data: T;
   retryAfterSeconds?: number;
@@ -53,4 +62,15 @@ export interface RunApi {
   getEvidence(id: string, paperId?: string): Promise<ApiResponse<{ items: EvidenceView[] }>>;
   getEvidenceItem(id: string, evidenceId: string): Promise<ApiResponse<EvidenceView>>;
   artifactUrl(id: string, name: ArtifactName): string;
+}
+
+export interface TechScoutApi {
+  listRuns(): Promise<ApiResponse<TechScoutRunList>>;
+  createRun(request: TechScoutCreateRunRequest): Promise<ApiResponse<TechScoutRunSummary>>;
+  getRun(id: string): Promise<ApiResponse<TechScoutRunDetail>>;
+  getReport(id: string): Promise<ApiResponse<TechScoutReport>>;
+  getCandidate(id: string, candidateId: string): Promise<ApiResponse<TechScoutCandidate>>;
+  getEvidence(id: string): Promise<ApiResponse<{ items: TechScoutEvidence[] }>>;
+  getEvidenceItem(id: string, evidenceId: string): Promise<ApiResponse<TechScoutEvidence>>;
+  getTrace(id: string, cursor?: string, limit?: number): Promise<ApiResponse<TracePage>>;
 }

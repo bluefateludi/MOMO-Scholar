@@ -1458,6 +1458,1014 @@
         "title": "SafeRunSettings",
         "type": "object"
       },
+      "TechScoutApprovalProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "not_required",
+              "pending",
+              "approved",
+              "denied"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "required",
+          "status"
+        ],
+        "title": "TechScoutApprovalProjection",
+        "type": "object"
+      },
+      "TechScoutCandidateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "package_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Name"
+          },
+          "requested_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Version"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TechScoutCandidateInput",
+        "type": "object"
+      },
+      "TechScoutCandidateList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutCandidateProjection"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TechScoutCandidateList",
+        "type": "object"
+      },
+      "TechScoutCandidateProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "compatibility": {
+            "enum": [
+              "compatible",
+              "incompatible",
+              "unknown"
+            ],
+            "title": "Compatibility",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "requested_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Version"
+          },
+          "resolved_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Version"
+          },
+          "support_level": {
+            "enum": [
+              "v1_supported",
+              "research_only"
+            ],
+            "title": "Support Level",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "recommended",
+              "not_recommended",
+              "insufficient_evidence"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "name",
+          "support_level",
+          "compatibility",
+          "verdict",
+          "evidence_ids"
+        ],
+        "title": "TechScoutCandidateProjection",
+        "type": "object"
+      },
+      "TechScoutConstraintProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "constraint": {
+            "title": "Constraint",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "satisfied",
+              "not_satisfied",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "constraint",
+          "candidate_id",
+          "status",
+          "evidence_ids"
+        ],
+        "title": "TechScoutConstraintProjection",
+        "type": "object"
+      },
+      "TechScoutCreateRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutCandidateInput"
+            },
+            "maxItems": 3,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/TechScoutEnvironmentRequest"
+          },
+          "hard_constraints": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Hard Constraints",
+            "type": "array"
+          },
+          "mode": {
+            "default": "fast",
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "project_context": {
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Project Context",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "project_context",
+          "environment",
+          "hard_constraints"
+        ],
+        "title": "TechScoutCreateRunRequest",
+        "type": "object"
+      },
+      "TechScoutEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Deployment",
+            "type": "string"
+          },
+          "operating_system": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Operating System",
+            "type": "string"
+          },
+          "python_version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Python Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "python_version",
+          "operating_system",
+          "deployment"
+        ],
+        "title": "TechScoutEnvironmentRequest",
+        "type": "object"
+      },
+      "TechScoutEvidenceList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutEvidenceProjection"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TechScoutEvidenceList",
+        "type": "object"
+      },
+      "TechScoutEvidenceProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "retrieved_fact",
+              "local_measurement",
+              "model_inference"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "source_title": {
+            "title": "Source Title",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "official_documentation",
+              "github_repository",
+              "package_metadata",
+              "poc"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "candidate_id",
+          "kind",
+          "claim",
+          "source_title",
+          "source_type",
+          "as_of"
+        ],
+        "title": "TechScoutEvidenceProjection",
+        "type": "object"
+      },
+      "TechScoutIssueProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Code",
+            "type": "string"
+          },
+          "retryable_by_new_run": {
+            "default": false,
+            "title": "Retryable By New Run",
+            "type": "boolean"
+          },
+          "stage": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "code"
+        ],
+        "title": "TechScoutIssueProjection",
+        "type": "object"
+      },
+      "TechScoutPocProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "duration_ms": {
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "timed_out",
+              "research_only"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "status",
+          "checks",
+          "duration_ms",
+          "synthetic"
+        ],
+        "title": "TechScoutPocProjection",
+        "type": "object"
+      },
+      "TechScoutProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_stages": {
+            "items": {
+              "enum": [
+                "plan",
+                "research",
+                "verify",
+                "decide"
+              ],
+              "type": "string"
+            },
+            "title": "Completed Stages",
+            "type": "array"
+          },
+          "current_skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Skill"
+          },
+          "current_tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Tool"
+          },
+          "elapsed_seconds": {
+            "minimum": 0.0,
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "stage": {
+            "enum": [
+              "plan",
+              "research",
+              "verify",
+              "decide",
+              "terminal"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "completed_stages",
+          "elapsed_seconds"
+        ],
+        "title": "TechScoutProgress",
+        "type": "object"
+      },
+      "TechScoutRecoveryProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "attempted": {
+            "title": "Attempted",
+            "type": "boolean"
+          },
+          "attempts_used": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Attempts Used",
+            "type": "integer"
+          },
+          "failed_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Stage"
+          },
+          "outcome": {
+            "enum": [
+              "not_needed",
+              "recovered",
+              "exhausted"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempted",
+          "outcome",
+          "attempts_used"
+        ],
+        "title": "TechScoutRecoveryProjection",
+        "type": "object"
+      },
+      "TechScoutReportProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutConstraintProjection"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "poc_results": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutPocProjection"
+            },
+            "title": "Poc Results",
+            "type": "array"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "run_id": {
+            "format": "uuid4",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          },
+          "verdict": {
+            "enum": [
+              "recommended",
+              "no_safe_winner"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "verdict",
+          "summary",
+          "constraints",
+          "poc_results",
+          "limitations",
+          "evidence_ids",
+          "synthetic"
+        ],
+        "title": "TechScoutReportProjection",
+        "type": "object"
+      },
+      "TechScoutRunDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/TechScoutApprovalProjection"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutCandidateProjection"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/TechScoutEnvironmentRequest"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "fixture_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixture Name"
+          },
+          "hard_constraints": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hard Constraints",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutIssueProjection"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/TechScoutProgress"
+          },
+          "project_context": {
+            "title": "Project Context",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "recovery": {
+            "$ref": "#/components/schemas/TechScoutRecoveryProjection"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "completed_with_limitations",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "synthetic",
+          "question",
+          "mode",
+          "progress",
+          "created_at",
+          "project_context",
+          "environment",
+          "hard_constraints",
+          "candidates",
+          "recovery",
+          "approval",
+          "issues"
+        ],
+        "title": "TechScoutRunDetail",
+        "type": "object"
+      },
+      "TechScoutRunList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutRunSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TechScoutRunList",
+        "type": "object"
+      },
+      "TechScoutRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "fixture_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixture Name"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/TechScoutProgress"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "completed_with_limitations",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "synthetic",
+          "question",
+          "mode",
+          "progress",
+          "created_at"
+        ],
+        "title": "TechScoutRunSummary",
+        "type": "object"
+      },
+      "TraceEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "event_type": {
+            "enum": [
+              "run",
+              "stage",
+              "skill",
+              "tool",
+              "recovery",
+              "approval"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "cursor",
+          "event_type",
+          "status",
+          "label",
+          "created_at"
+        ],
+        "title": "TraceEvent",
+        "type": "object"
+      },
+      "TracePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TracePage",
+        "type": "object"
+      },
       "UsageTotals": {
         "additionalProperties": false,
         "properties": {
@@ -1518,8 +2526,8 @@
     }
   },
   "info": {
-    "title": "MOMO Scholar Web API",
-    "version": "1.0.0"
+    "title": "MOMO TechScout Web API",
+    "version": "2.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2382,6 +3390,604 @@
         "summary": "Get Report",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/v2/runs": {
+      "get": {
+        "operationId": "list_runs_api_v2_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutRunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "techscout-runs"
+        ]
+      },
+      "post": {
+        "operationId": "create_run_api_v2_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TechScoutCreateRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Create Run",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v2_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutRunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}/candidates": {
+      "get": {
+        "operationId": "get_candidates_api_v2_runs__run_id__candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Candidates",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}/candidates/{candidate_id}": {
+      "get": {
+        "operationId": "get_candidate_api_v2_runs__run_id__candidates__candidate_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutCandidateProjection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Candidate",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}/evidence": {
+      "get": {
+        "operationId": "get_evidence_api_v2_runs__run_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutEvidenceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Evidence",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}/evidence/{evidence_id}": {
+      "get": {
+        "operationId": "get_evidence_item_api_v2_runs__run_id__evidence__evidence_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutEvidenceProjection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Evidence Item",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}/report": {
+      "get": {
+        "operationId": "get_report_api_v2_runs__run_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechScoutReportProjection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Report",
+        "tags": [
+          "techscout-runs"
+        ]
+      }
+    },
+    "/api/v2/runs/{run_id}/trace": {
+      "get": {
+        "operationId": "get_trace_api_v2_runs__run_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Trace",
+        "tags": [
+          "techscout-runs"
         ]
       }
     }

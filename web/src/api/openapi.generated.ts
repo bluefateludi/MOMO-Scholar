@@ -141,6 +141,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Runs */
+        get: operations["list_runs_api_v2_runs_get"];
+        put?: never;
+        /** Create Run */
+        post: operations["create_run_api_v2_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_v2_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidates */
+        get: operations["get_candidates_api_v2_runs__run_id__candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}/candidates/{candidate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidate */
+        get: operations["get_candidate_api_v2_runs__run_id__candidates__candidate_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Evidence */
+        get: operations["get_evidence_api_v2_runs__run_id__evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}/evidence/{evidence_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Evidence Item */
+        get: operations["get_evidence_item_api_v2_runs__run_id__evidence__evidence_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Report */
+        get: operations["get_report_api_v2_runs__run_id__report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/runs/{run_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Trace */
+        get: operations["get_trace_api_v2_runs__run_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -625,6 +762,341 @@ export interface components {
              * @enum {string}
              */
             retrieval_mode: "auto" | "lexical" | "hybrid";
+        };
+        /** TechScoutApprovalProjection */
+        TechScoutApprovalProjection: {
+            /** Reason */
+            reason?: string | null;
+            /** Required */
+            required: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_required" | "pending" | "approved" | "denied";
+        };
+        /** TechScoutCandidateInput */
+        TechScoutCandidateInput: {
+            /** Name */
+            name: string;
+            /** Package Name */
+            package_name?: string | null;
+            /** Requested Version */
+            requested_version?: string | null;
+        };
+        /** TechScoutCandidateList */
+        TechScoutCandidateList: {
+            /** Items */
+            items: components["schemas"]["TechScoutCandidateProjection"][];
+        };
+        /** TechScoutCandidateProjection */
+        TechScoutCandidateProjection: {
+            /** Candidate Id */
+            candidate_id: string;
+            /**
+             * Compatibility
+             * @enum {string}
+             */
+            compatibility: "compatible" | "incompatible" | "unknown";
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Name */
+            name: string;
+            /** Requested Version */
+            requested_version?: string | null;
+            /** Resolved Version */
+            resolved_version?: string | null;
+            /**
+             * Support Level
+             * @enum {string}
+             */
+            support_level: "v1_supported" | "research_only";
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "recommended" | "not_recommended" | "insufficient_evidence";
+        };
+        /** TechScoutConstraintProjection */
+        TechScoutConstraintProjection: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Constraint */
+            constraint: string;
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "satisfied" | "not_satisfied" | "unknown";
+        };
+        /** TechScoutCreateRunRequest */
+        TechScoutCreateRunRequest: {
+            /** Candidates */
+            candidates?: components["schemas"]["TechScoutCandidateInput"][];
+            environment: components["schemas"]["TechScoutEnvironmentRequest"];
+            /** Hard Constraints */
+            hard_constraints: string[];
+            /**
+             * Mode
+             * @default fast
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            /** Project Context */
+            project_context: string;
+            /** Question */
+            question: string;
+        };
+        /** TechScoutEnvironmentRequest */
+        TechScoutEnvironmentRequest: {
+            /** Deployment */
+            deployment: string;
+            /** Operating System */
+            operating_system: string;
+            /** Python Version */
+            python_version: string;
+        };
+        /** TechScoutEvidenceList */
+        TechScoutEvidenceList: {
+            /** Items */
+            items: components["schemas"]["TechScoutEvidenceProjection"][];
+        };
+        /** TechScoutEvidenceProjection */
+        TechScoutEvidenceProjection: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Candidate Id */
+            candidate_id: string;
+            /** Claim */
+            claim: string;
+            /** Evidence Id */
+            evidence_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "retrieved_fact" | "local_measurement" | "model_inference";
+            /** Source Title */
+            source_title: string;
+            /**
+             * Source Type
+             * @enum {string}
+             */
+            source_type: "official_documentation" | "github_repository" | "package_metadata" | "poc";
+            /** Source Url */
+            source_url?: string | null;
+        };
+        /** TechScoutIssueProjection */
+        TechScoutIssueProjection: {
+            /** Code */
+            code: string;
+            /**
+             * Retryable By New Run
+             * @default false
+             */
+            retryable_by_new_run: boolean;
+            /** Stage */
+            stage: string;
+        };
+        /** TechScoutPocProjection */
+        TechScoutPocProjection: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Checks */
+            checks: string[];
+            /** Duration Ms */
+            duration_ms: number;
+            /** Recipe Id */
+            recipe_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "timed_out" | "research_only";
+            /** Synthetic */
+            synthetic: boolean;
+        };
+        /** TechScoutProgress */
+        TechScoutProgress: {
+            /** Completed Stages */
+            completed_stages: ("plan" | "research" | "verify" | "decide")[];
+            /** Current Skill */
+            current_skill?: string | null;
+            /** Current Tool */
+            current_tool?: string | null;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "plan" | "research" | "verify" | "decide" | "terminal";
+        };
+        /** TechScoutRecoveryProjection */
+        TechScoutRecoveryProjection: {
+            /** Action */
+            action?: string | null;
+            /** Attempted */
+            attempted: boolean;
+            /** Attempts Used */
+            attempts_used: number;
+            /** Failed Stage */
+            failed_stage?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "not_needed" | "recovered" | "exhausted";
+        };
+        /** TechScoutReportProjection */
+        TechScoutReportProjection: {
+            /** Constraints */
+            constraints: components["schemas"]["TechScoutConstraintProjection"][];
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Limitations */
+            limitations: string[];
+            /** Poc Results */
+            poc_results: components["schemas"]["TechScoutPocProjection"][];
+            /** Recommendation */
+            recommendation?: string | null;
+            /**
+             * Run Id
+             * Format: uuid4
+             */
+            run_id: string;
+            /** Summary */
+            summary: string;
+            /** Synthetic */
+            synthetic: boolean;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "recommended" | "no_safe_winner";
+        };
+        /** TechScoutRunDetail */
+        TechScoutRunDetail: {
+            approval: components["schemas"]["TechScoutApprovalProjection"];
+            /** Candidates */
+            candidates: components["schemas"]["TechScoutCandidateProjection"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            environment: components["schemas"]["TechScoutEnvironmentRequest"];
+            /** Finished At */
+            finished_at?: string | null;
+            /** Fixture Name */
+            fixture_name?: string | null;
+            /** Hard Constraints */
+            hard_constraints: string[];
+            /**
+             * Id
+             * Format: uuid4
+             */
+            id: string;
+            /** Issues */
+            issues: components["schemas"]["TechScoutIssueProjection"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            progress: components["schemas"]["TechScoutProgress"];
+            /** Project Context */
+            project_context: string;
+            /** Question */
+            question: string;
+            recovery: components["schemas"]["TechScoutRecoveryProjection"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "completed_with_limitations" | "failed";
+            /** Synthetic */
+            synthetic: boolean;
+        };
+        /** TechScoutRunList */
+        TechScoutRunList: {
+            /** Items */
+            items: components["schemas"]["TechScoutRunSummary"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** TechScoutRunSummary */
+        TechScoutRunSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Fixture Name */
+            fixture_name?: string | null;
+            /**
+             * Id
+             * Format: uuid4
+             */
+            id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            progress: components["schemas"]["TechScoutProgress"];
+            /** Question */
+            question: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "completed_with_limitations" | "failed";
+            /** Synthetic */
+            synthetic: boolean;
+        };
+        /** TraceEvent */
+        TraceEvent: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Cursor */
+            cursor: string;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "run" | "stage" | "skill" | "tool" | "recovery" | "approval";
+            /** Label */
+            label: string;
+            /** Skill */
+            skill?: string | null;
+            /** Stage */
+            stage?: string | null;
+            /** Status */
+            status: string;
+            /** Tool */
+            tool?: string | null;
+        };
+        /** TracePage */
+        TracePage: {
+            /** Items */
+            items: components["schemas"]["TraceEvent"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
         };
         /** UsageTotals */
         UsageTotals: {
@@ -1295,6 +1767,452 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_runs_api_v2_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutRunList"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_run_api_v2_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TechScoutCreateRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutRunSummary"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_run_api_v2_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutRunDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_candidates_api_v2_runs__run_id__candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutCandidateList"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_candidate_api_v2_runs__run_id__candidates__candidate_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutCandidateProjection"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_evidence_api_v2_runs__run_id__evidence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutEvidenceList"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_evidence_item_api_v2_runs__run_id__evidence__evidence_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutEvidenceProjection"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_report_api_v2_runs__run_id__report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TechScoutReportProjection"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_trace_api_v2_runs__run_id__trace_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TracePage"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
