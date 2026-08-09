@@ -119,6 +119,9 @@ def test_docker_argv_applies_resource_mount_and_network_boundaries(tmp_path: Pat
     assert argv[argv.index("--pids-limit") + 1] == "32"
     assert argv[argv.index("--storage-opt") + 1] == "size=128m"
     assert argv[argv.index("--network") + 1] == "none"
+    assert "--read-only" in argv
+    assert argv[argv.index("--security-opt") + 1] == "no-new-privileges"
+    assert argv[argv.index("--cap-drop") + 1] == "ALL"
     assert argv[argv.index("--workdir") + 1] == "/workspace"
     mount = argv[argv.index("--mount") + 1]
     assert str(run_workspace.resolve()) in mount
@@ -127,6 +130,11 @@ def test_docker_argv_applies_resource_mount_and_network_boundaries(tmp_path: Pat
     assert [argv[index + 1] for index, value in enumerate(argv) if value == "--env"] == [
         "HOME=/tmp"
     ]
+    assert not any(
+        fragment in value.upper()
+        for value in argv
+        for fragment in ("API_KEY", "PASSWORD", "SECRET", "TOKEN")
+    )
 
     install = PocCompiler().compile(_plan(), _candidate(), PocStage.INSTALL)
     with pytest.raises(PermissionError, match="destination-allowlisted"):
