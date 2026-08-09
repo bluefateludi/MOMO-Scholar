@@ -39,12 +39,12 @@ The first production version supports:
 
 - public Python AI open-source components;
 - two or three candidates per task;
-- two or three explicitly supported component families, each backed by allowlisted PoC recipes;
+- one fully supported component family in V1: Python vector stores for local RAG, backed by allowlisted PoC recipes;
 - a research-only result for candidates without a trusted recipe; the system never guesses arbitrary installation commands;
 - official documentation, GitHub repositories, releases, issues, and package metadata;
 - Linux-container verification of installation, import, version, and an allowlisted feature smoke test;
 - `fast` mode as the default and `verified` mode as an optional longer run;
-- a research-only result when no trusted PoC recipe exists, clearly labeled as not locally verified.
+- Chroma and Qdrant Local smoke-test recipes; pgvector and unsupported candidates remain research-only unless a trusted PostgreSQL fixture is available.
 
 The first version is **not**:
 
@@ -64,6 +64,31 @@ The default path must always reach an honest terminal artifact within a bounded 
 - `failed`: no safe, schema-valid report could be produced.
 
 The `fast` mode planning target is a terminal artifact within 120 seconds for prewarmed benchmark cases. A timeout returns a partial, explicitly limited report instead of keeping the user in an unbounded Agent loop.
+
+### 1.5 Finished product experience
+
+The finished V1 is a small local Web product, not a terminal-only framework demo.
+
+1. The user runs `docker compose up` and opens one page. The default form asks for Python/OS/deployment environment, three to five hard constraints, and two or three candidates. Advanced Agent budgets stay collapsed.
+2. The default showcase task compares Chroma, Qdrant Local, and pgvector for a Python 3.11 local RAG service that needs persistence and metadata filtering without maintaining an external database.
+3. The run page shows four understandable stages: understand constraints, collect evidence, run verification, and generate the report. Skill, MCP tool, token, latency, error, checkpoint, and recovery details remain available in a collapsed Trace.
+4. The report first shows `recommended`, `not recommended`, or `insufficient evidence`; then a hard-constraint matrix, applicable versions and environment, official/GitHub evidence, local PoC results, rejected-candidate reasons, risks, and limitations. Retrieved facts, local measurements, and model inferences are visually separated.
+5. Every important row links to a source snapshot or PoC artifact. Markdown, JSON, PoC logs, manifest, and sealed Trace are downloadable.
+6. Refreshing the page restores the run and recent history from SQLite. V1 deliberately has no login, multi-user workspace, or project-management dashboard.
+
+The Fast Demo is not a static report replay. It uses real LLM planning and Skill routing, frozen evidence retrieval, the real local MCP boundary, real allowlisted Docker PoC execution, and deterministic Validation. A model timeout may fall back to a structured minimum report, and that fallback must be visible in the Trace.
+
+Speed and failure behavior are part of the product:
+
+- a prewarmed Fast Demo must reach a terminal state within 120 seconds in three consecutive acceptance runs;
+- Live mode refreshes only missing or stale evidence and has a 300-second whole-run deadline;
+- search timeout or rate limiting uses timestamped cache when valid, otherwise marks the evidence unavailable;
+- installation or test failure retries only the failed stage once, then returns `verification_failed` rather than inventing incompatibility;
+- unavailable Docker or an unsupported recipe returns a bounded research-only result;
+- insufficient evidence may produce `no safe winner`; the system never fabricates a recommendation;
+- every run terminates as `completed`, `completed_with_limitations`, or `failed` instead of spinning indefinitely.
+
+The tiny PoC verifies contract behavior—installation/import, resolved version, create/upsert/query/filter/persistence where supported—not production throughput. It is not advertised as a full performance benchmark.
 
 ## 2. Why Refactor MOMO Scholar Instead of Starting Over
 
@@ -86,12 +111,35 @@ Therefore the fastest credible path is:
 3. replace paper-specific domain contracts and the fixed pipeline with the TechScout domain and bounded Agent Harness;
 4. postpone mechanical package renaming until it can no longer endanger the vertical slice.
 
+### 2.1 Repository and requirements decision
+
+**Do not create a new repository. Create new TechScout requirements and domain contracts inside the current repository.** The current Scholar requirements remain historical authority; they must not be renamed into TechScout requirements.
+
+| Concern | Decision |
+|---|---|
+| Git repository and history | Reuse the current repository so the refactor story and existing engineering work remain visible |
+| Scholar product | Freeze `origin/master@4b1cdf5` as the Scholar V1 baseline/tag before changing the default product |
+| TechScout requirements | Add a new authoritative product specification, support matrix, domain contracts, and acceptance fixtures |
+| Generic infrastructure | Reuse and generalize retrieval, evidence, provider, Trace, Eval, FastAPI, SQLite, React/Vite, and tests |
+| Paper-specific behavior | Keep it attributable through Git history/tag; retire it from the default UI/CLI only after the TechScout vertical slice passes |
+| Python package name | Keep compatibility imports during the critical path; an atomic internal rename is optional after release gates |
+| Public repository name | Rename the existing repository to `MOMO-TechScout` only after the final product gates; do not start a second empty-history repository |
+
+Migration order:
+
+1. tag and document the Scholar baseline;
+2. add TechScout requirements, contracts, fixtures, and routes without deleting Scholar;
+3. complete the Fast Demo vertical slice;
+4. switch the default Web UI, CLI, API title, and README only after that slice passes;
+5. finish gates and then rename the public repository if desired;
+6. update Git remotes and resume/demo links after the repository rename.
+
 ## 3. Project Principles and Their Proof
 
 | Required principle | TechScout implementation | Evidence required before release |
 |---|---|---|
 | Real problem | Python AI component research plus reproducible verification | At least one end-to-end real selection scenario and a usable Web demo |
-| Complete engineering loop | Input → Plan → Skill → MCP Tool → Execute → Validate → Report | Four offline vertical cases pass in CI |
+| Complete engineering loop | Input → Plan → Skill → MCP Tool → Execute → Validate → Report | Three offline vertical cases pass in CI |
 | Real Agent decisions | LLM produces investigation plan, identifies evidence gaps, proposes bounded PoC, and reviews the report | Trace contains planning and review decisions; deterministic policy still controls safety |
 | Context engineering | Stage-specific Skill loading, source filtering, per-candidate context packets, version/date filtering, token/tool budgets | Context-selection tests and retrieval evaluation |
 | Quality gates | Build, lint, tests, review, report/evidence/PoC validation | All release gates pass |
@@ -375,14 +423,15 @@ The integration owner alone changes shared dependency files, generated OpenAPI c
 **Deliverables**
 
 - preserve `4b1cdf5` as the Scholar closeout baseline/tag before domain replacement;
-- add an architecture decision documenting the TechScout positioning, scope, non-goals, and migration strategy;
+- add new authoritative TechScout requirements, support matrix, domain contracts, acceptance fixtures, and an architecture decision;
 - expose the product name `MOMO TechScout` in new documentation without yet renaming every Python import.
 
 **Acceptance**
 
 - the previous Scholar artifacts and documented metrics remain attributable to Scholar only;
 - no old metric is relabeled as a TechScout result;
-- no paper feature is deleted before the TechScout vertical slice exists.
+- no paper feature is deleted before the TechScout vertical slice exists;
+- the migration stays in the current repository; a second product repository is not created.
 
 ### Task 0.2 — Add strict TechScout domain and state contracts
 
@@ -684,6 +733,7 @@ Deliver:
 - rename user-visible product, CLI command, README, API title, and Web metadata to MOMO TechScout;
 - keep internal `paper_agent` imports during the critical path if renaming would risk delivery;
 - decide on a single atomic internal package rename only after every release gate passes;
+- after final product gates, optionally rename this same public repository to `MOMO-TechScout` and update Git remotes and resume links;
 - never retain both paper and TechScout product stories in the final README as if they were one benchmark.
 
 Internal package renaming is not a release blocker. A coherent working product is more valuable than a large mechanical diff.
@@ -749,13 +799,16 @@ The project is finished only when all of the following are true:
 - a user can create a real component-selection task from the Web UI;
 - the Harness visibly plans, selects a Skill, calls MCP tools, and manages typed state;
 - official/GitHub evidence is dynamically retrieved, filtered, cited, and cached;
-- at least one supported scenario executes a Docker PoC through an allowlisted plan;
+- the Chroma/Qdrant Local showcase executes allowlisted Docker PoCs, while pgvector and unsupported candidates downgrade honestly to research-only;
 - deterministic gates decide report publication;
-- one injected failure recovers from a checkpoint without replaying the full run;
+- injected search timeout and PoC failure demonstrate cache/partial degradation and one checkpoint recovery without replaying the full run;
 - unsafe operations are denied or require approval;
 - terminal artifacts, tokens, latency, errors, retries, and recovery are visible in a sealed Trace;
+- the Fast Demo reaches a terminal state within 120 seconds in three consecutive prewarmed acceptance runs;
+- Live mode reaches a terminal or limited result within its 300-second deadline;
 - Build, Lint, Test, Review, and Validation gates pass;
-- the bounded 12/40/8 evaluation has one sealed result, even if targets are missed;
+- implementation and release never wait for a target percentage: three deterministic vertical smokes are the release gate; the bounded 12/40/8 suite runs once afterward to produce honest resume metrics, preserving partial results if infrastructure fails;
+- a reviewer can launch the demo, understand the recommendation or no-safe-winner result, open its evidence/PoC, and inspect one recovery without reading the code;
 - README, offline demo, Docker quick start, architecture, limitations, and demo runbook are complete;
 - resume bullets contain only automatically projected measured data;
 - all scoped branches are normally pushed and merged, with no unrelated user changes included.
