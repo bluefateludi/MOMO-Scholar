@@ -23,6 +23,7 @@ from paper_agent.techscout.models import (
     TerminalStatus,
     Verdict,
 )
+from paper_agent.techscout.recovery import RecoveryPolicy
 from paper_agent.techscout.errors import (
     Failure,
     FailureCode,
@@ -283,11 +284,11 @@ class RecoveringStageServices(DeterministicStageServices):
             if self.calls.count(stage) == 1:
                 failure = Failure(
                     failure_id="failure:harness-poc:0001",
-                    code=FailureCode.POC_NONZERO_EXIT,
+                    code=FailureCode.DEPENDENCY_CONFLICT,
                     stage=FailureStage.POC_EXECUTION,
                     message="The deterministic PoC failed.",
                     recoverable=True,
-                    recovery_action=RecoveryAction.DIAGNOSE_AND_RERUN_POC,
+                    recovery_action=RecoveryAction.PIN_VERSION_AND_RERUN_POC,
                     attempt=1,
                 )
                 return StageResult(
@@ -322,11 +323,68 @@ def test_recovery_repeats_only_the_failed_stage_once(tmp_path) -> None:
 
     assert result.state.terminal_status is TerminalStatus.COMPLETED
     assert result.state.recovery_count == 1
+    assert result.recovery is not None
+    assert result.recovery.original_failure_id == "failure:harness-poc:0001"
+    assert result.recovery.checkpoint_id is not None
     assert services.calls.count(ResearchStage.EXECUTE_POC) == 2
     assert services.calls.count(ResearchStage.VALIDATE) == 2
     assert services.calls.count(ResearchStage.NORMALIZE_REQUEST) == 1
     assert services.calls.count(ResearchStage.PLAN_RESEARCH) == 1
     assert services.calls.count(ResearchStage.RESEARCH_CANDIDATES) == 1
+
+
+def test_recovery_policy_refuses_retry_without_a_checkpoint() -> None:
+    failure = Failure(
+        failure_id="failure:harness-poc:no-checkpoint",
+        code=FailureCode.DEPENDENCY_CONFLICT,
+        stage=FailureStage.POC_EXECUTION,
+        message="Dependency conflict.",
+        recoverable=True,
+        recovery_action=RecoveryAction.PIN_VERSION_AND_RERUN_POC,
+        attempt=1,
+    )
+
+    decision = RecoveryPolicy().decide(
+        failure,
+        recovery_count=0,
+        checkpoint_id=None,
+    )
+
+    assert decision.should_recover is False
+    assert decision.checkpoint_id is None
+
+
+class FailureErasingRecoveryServices(RecoveringStageServices):
+    def execute(
+        self,
+        stage: ResearchStage,
+        state: ResearchState,
+        artifacts: StageArtifacts,
+        deadline: StageDeadline,
+    ) -> StageResult:
+        if (
+            stage is ResearchStage.EXECUTE_POC
+            and self.calls.count(stage) == 1
+        ):
+            self.calls.append(stage)
+            return StageResult(state=state.model_copy(update={"failures": ()}))
+        return super().execute(stage, state, artifacts, deadline)
+
+
+def test_recovery_cannot_erase_the_original_failure(tmp_path) -> None:
+    services = FailureErasingRecoveryServices()
+
+    with SQLiteCheckpointAdapter(
+        tmp_path / "immutable-failure.sqlite3"
+    ) as checkpoints:
+        result = _harness(services, checkpoints).run(_initial_state())
+
+    assert result.state.terminal_status is TerminalStatus.FAILED
+    assert result.state.recovery_count == 1
+    assert result.recovery is not None
+    assert result.recovery.original_failure_id == "failure:harness-poc:0001"
+    assert result.state.failures[0].failure_id == result.recovery.original_failure_id
+    assert result.state.failures[-1].code is FailureCode.REPORT_SCHEMA_INVALID
 
 
 class MalformedRecoveryServices(RecoveringStageServices):
@@ -373,11 +431,11 @@ class ExhaustedRecoveryServices(DeterministicStageServices):
             attempt = self.calls.count(stage)
             failure = Failure(
                 failure_id=f"failure:harness-poc:{attempt:04d}",
-                code=FailureCode.POC_NONZERO_EXIT,
+                code=FailureCode.DEPENDENCY_CONFLICT,
                 stage=FailureStage.POC_EXECUTION,
                 message="The deterministic PoC failed.",
                 recoverable=True,
-                recovery_action=RecoveryAction.DIAGNOSE_AND_RERUN_POC,
+                recovery_action=RecoveryAction.PIN_VERSION_AND_RERUN_POC,
                 attempt=attempt,
             )
             return StageResult(

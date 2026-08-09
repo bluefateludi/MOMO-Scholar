@@ -8,6 +8,7 @@ from paper_agent.techscout.models import (
     RunManifest,
     TechScoutModel,
 )
+from paper_agent.techscout.recovery import RecoveryDecision
 from paper_agent.techscout.state import ResearchStage, ResearchState
 
 
@@ -16,6 +17,7 @@ class StageArtifacts(TechScoutModel):
 
     report: DecisionReport | None = None
     manifest: RunManifest | None = None
+    recovery: RecoveryDecision | None = None
 
 
 class StageDeadline(TechScoutModel):
@@ -51,6 +53,7 @@ class HarnessRunResult(TechScoutModel):
     state: ResearchState
     report: DecisionReport | None = None
     manifest: RunManifest | None = None
+    recovery: RecoveryDecision | None = None
 
 
 class StageServices(Protocol):

@@ -20,7 +20,16 @@ from paper_agent.techscout.models import (
     RunManifest,
     TerminalStatus,
 )
-from paper_agent.techscout.state import ResearchStage, ResearchState
+from paper_agent.techscout.recovery import (
+    FAILURE_STAGE_BY_RESEARCH_STAGE,
+    RecoveryDecision,
+    RecoveryPolicy,
+)
+from paper_agent.techscout.state import (
+    CheckpointMetadata,
+    ResearchStage,
+    ResearchState,
+)
 
 
 _LINEAR_STAGES = (
@@ -32,28 +41,11 @@ _LINEAR_STAGES = (
     ResearchStage.EXECUTE_POC,
 )
 
-_RECOVERY_STAGES = {
-    FailureStage.INTAKE: ResearchStage.NORMALIZE_REQUEST,
-    FailureStage.PLANNING: ResearchStage.PLAN_RESEARCH,
-    FailureStage.RESEARCH: ResearchStage.RESEARCH_CANDIDATES,
-    FailureStage.CONTEXT: ResearchStage.SELECT_CONTEXT,
-    FailureStage.POC_PLANNING: ResearchStage.PLAN_POC,
-    FailureStage.POC_EXECUTION: ResearchStage.EXECUTE_POC,
-    FailureStage.VALIDATION: ResearchStage.VALIDATE,
-    FailureStage.REPORTING: ResearchStage.REVIEW_REPORT,
-    FailureStage.PUBLISHING: ResearchStage.PUBLISH,
-}
-
-_FAILURE_STAGES = {
-    research_stage: failure_stage
-    for failure_stage, research_stage in _RECOVERY_STAGES.items()
-}
-
-
 class _GraphState(TypedDict):
     research_state_json: str
     report_json: NotRequired[str | None]
     manifest_json: NotRequired[str | None]
+    recovery_json: NotRequired[str | None]
 
 
 class TechScoutHarness:
@@ -64,9 +56,11 @@ class TechScoutHarness:
         services: StageServices,
         checkpoints: SQLiteCheckpointAdapter,
         now: Callable[[], datetime] | None = None,
+        recovery_policy: RecoveryPolicy | None = None,
     ) -> None:
         self._services = services
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._recovery_policy = recovery_policy or RecoveryPolicy()
         self._graph = self._build_graph(checkpoints)
 
     def run(
@@ -88,6 +82,7 @@ class TechScoutHarness:
                 "research_state_json": state.model_dump_json(),
                 "report_json": None,
                 "manifest_json": None,
+                "recovery_json": None,
             }
             if state is not None
             else None
@@ -102,6 +97,7 @@ class TechScoutHarness:
             state=ResearchState.model_validate_json(result["research_state_json"]),
             report=artifacts.report,
             manifest=artifacts.manifest,
+            recovery=artifacts.recovery,
         )
 
     def _build_graph(self, checkpoints: SQLiteCheckpointAdapter) -> Any:
@@ -210,6 +206,8 @@ class TechScoutHarness:
     ) -> ResearchState:
         if result.state.run_id != previous.run_id:
             raise ValueError("stage service cannot change the run identifier")
+        if result.state.failures[: len(previous.failures)] != previous.failures:
+            raise ValueError("stage service cannot replace existing failures")
         step_count = previous.step_count + 1
         tool_call_count = previous.tool_call_count + result.tool_calls
         token_count = previous.token_count + result.tokens
@@ -225,6 +223,24 @@ class TechScoutHarness:
                 attempted,
                 FailureCode.BUDGET_EXHAUSTED,
             )
+        previous_checkpoint = previous.checkpoint
+        completed_stages = (
+            previous_checkpoint.completed_stages
+            if previous_checkpoint is not None
+            else ()
+        )
+        checkpoint = CheckpointMetadata(
+            checkpoint_id=f"checkpoint:{previous.run_id}:{step_count:04d}",
+            run_id=previous.run_id,
+            stage=stage,
+            sequence=step_count,
+            parent_checkpoint_id=(
+                previous_checkpoint.checkpoint_id
+                if previous_checkpoint is not None
+                else None
+            ),
+            completed_stages=(*completed_stages, stage),
+        )
         return result.state.model_copy(
             update={
                 "run_id": previous.run_id,
@@ -235,21 +251,20 @@ class TechScoutHarness:
                 "tool_call_count": tool_call_count,
                 "token_count": token_count,
                 "recovery_count": previous.recovery_count,
+                "checkpoint": checkpoint,
                 "terminal_status": None,
             }
         )
 
-    @staticmethod
-    def _route_after_validation(raw_state: _GraphState) -> str:
+    def _route_after_validation(self, raw_state: _GraphState) -> str:
         state = ResearchState.model_validate_json(raw_state["research_state_json"])
         if state.stage is ResearchStage.TERMINAL:
             return "end"
         if state.gate_outcome is GateOutcome.FAILED:
             return "terminal"
-        if (
-            state.gate_outcome is GateOutcome.RECOVER
-            and state.recovery_count < state.budget.recovery_limit
-            and TechScoutHarness._recovery_stage(state) is not None
+        decision = self._recovery_decision(state)
+        if state.gate_outcome is GateOutcome.RECOVER and (
+            decision is not None and decision.should_recover
         ):
             return "recover"
         return "review"
@@ -267,9 +282,18 @@ class TechScoutHarness:
     def _recovery_node(self, raw_state: _GraphState) -> _GraphState:
         state = ResearchState.model_validate_json(raw_state["research_state_json"])
         artifacts = self._decode_artifacts(raw_state)
-        failed_stage = self._recovery_stage(state)
-        if failed_stage is None:
-            raise ValueError("recoverable gate requires a typed failed stage")
+        decision = self._recovery_decision(state)
+        if (
+            decision is None
+            or not decision.should_recover
+            or decision.repeated_stage is None
+        ):
+            raise ValueError("recoverable gate requires a checkpoint-linked decision")
+        failed_stage = decision.repeated_stage
+        linked_artifacts = self._merge_artifacts(
+            artifacts,
+            StageArtifacts(recovery=decision),
+        )
         retry_state = state.model_copy(update={"stage": failed_stage})
         try:
             result = self._execute_stage(failed_stage, retry_state, artifacts)
@@ -283,30 +307,38 @@ class TechScoutHarness:
                 state,
                 FailureCode.DEADLINE_EXCEEDED,
             ).model_copy(update={"recovery_count": state.recovery_count + 1})
-            return self._encode_graph_state(terminal, artifacts)
+            return self._encode_graph_state(terminal, linked_artifacts)
         except ValueError:
             terminal = self._terminalize_malformed_output(state, failed_stage)
             terminal = terminal.model_copy(
                 update={"recovery_count": state.recovery_count + 1}
             )
-            return self._encode_graph_state(terminal, artifacts)
+            return self._encode_graph_state(terminal, linked_artifacts)
         if updated.stage is ResearchStage.TERMINAL:
-            return self._encode_graph_state(updated, artifacts)
+            return self._encode_graph_state(updated, linked_artifacts)
         updated = updated.model_copy(
             update={"recovery_count": state.recovery_count + 1}
         )
         budget_code = self._budget_code(updated)
         if budget_code is not None:
             updated = self._terminalize_budget(updated, budget_code)
-        merged_artifacts = self._merge_artifacts(artifacts, result.artifacts)
+        merged_artifacts = self._merge_artifacts(linked_artifacts, result.artifacts)
         return self._encode_graph_state(updated, merged_artifacts)
 
-    @staticmethod
-    def _recovery_stage(state: ResearchState) -> ResearchStage | None:
-        for failure in reversed(state.failures):
-            if failure.recoverable:
-                return _RECOVERY_STAGES.get(failure.stage)
-        return None
+    def _recovery_decision(
+        self,
+        state: ResearchState,
+    ) -> RecoveryDecision | None:
+        if not state.failures:
+            return None
+        checkpoint_id = (
+            state.checkpoint.checkpoint_id if state.checkpoint is not None else None
+        )
+        return self._recovery_policy.decide(
+            state.failures[-1],
+            recovery_count=state.recovery_count,
+            checkpoint_id=checkpoint_id,
+        )
 
     def _budget_code(
         self,
@@ -372,7 +404,7 @@ class TechScoutHarness:
                 f"failure:{state.run_id}:malformed-{len(state.failures) + 1:04d}"
             ),
             code=FailureCode.REPORT_SCHEMA_INVALID,
-            stage=_FAILURE_STAGES[stage],
+            stage=FAILURE_STAGE_BY_RESEARCH_STAGE[stage],
             message="Stage returned malformed structured output.",
             recoverable=False,
             attempt=1,
@@ -432,6 +464,11 @@ class TechScoutHarness:
                 if manifest_json is not None
                 else None
             ),
+            recovery=(
+                RecoveryDecision.model_validate_json(raw_state["recovery_json"])
+                if raw_state.get("recovery_json") is not None
+                else None
+            ),
         )
 
     @staticmethod
@@ -442,6 +479,7 @@ class TechScoutHarness:
         return StageArtifacts(
             report=updated.report or previous.report,
             manifest=updated.manifest or previous.manifest,
+            recovery=updated.recovery or previous.recovery,
         )
 
     @staticmethod
@@ -459,6 +497,11 @@ class TechScoutHarness:
             "manifest_json": (
                 artifacts.manifest.model_dump_json()
                 if artifacts.manifest is not None
+                else None
+            ),
+            "recovery_json": (
+                artifacts.recovery.model_dump_json()
+                if artifacts.recovery is not None
                 else None
             ),
         }
