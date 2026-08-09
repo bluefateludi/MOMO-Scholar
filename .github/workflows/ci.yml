@@ -100,7 +100,63 @@ jobs:
       - name: Type-check and build Web application
         run: npm run build
 
+  sandbox-build:
+    name: Sandbox build and no-network smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python for Sandbox contract checks
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal Sandbox test dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check --no-input
+          --timeout 30 --retries 2
+          "pydantic>=2" "pytest>=8" typing-extensions
+
+      - name: Verify compiler and runner boundary contracts
+        run: >-
+          python -m pytest
+          tests/techscout/test_sandbox.py::test_compiler_emits_only_reviewed_explicit_argv
+          tests/techscout/test_sandbox.py::test_docker_argv_applies_resource_mount_and_network_boundaries
+          tests/techscout/test_sandbox.py::test_runner_invokes_subprocess_with_timeout_and_no_shell
+          tests/techscout/test_sandbox.py::test_timeout_force_removes_daemon_owned_container
+
+      - name: Build dependency-free sandbox smoke target
+        run: >-
+          docker build
+          --network none
+          --target ci-smoke
+          --tag momo-techscout-sandbox:ci
+          docker/sandbox
+
+      - name: Run bounded no-network sandbox smoke
+        shell: bash
+        run: |
+          timeout --signal=KILL 30s docker run --rm --init \
+            --name techscout-ci-smoke \
+            --cpus 0.5 \
+            --memory 128m \
+            --pids-limit 32 \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --env HOME=/tmp \
+            momo-techscout-sandbox:ci
+
+      - name: Remove smoke container after interruption
+        if: always()
+        run: docker rm --force techscout-ci-smoke 2>/dev/null || true
+
   # Deferred until the corresponding implementation slices exist:
   # - three deterministic Agent vertical smokes backed only by frozen fakes
-  # - Docker sandbox build and explicit no-network smoke
   # Empty placeholder jobs would make these future gates appear to pass.

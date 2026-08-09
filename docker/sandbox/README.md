@@ -12,6 +12,19 @@ Python runner also applies CPU, memory, PID, disk, timeout, read-only-root,
 capability, work-directory, and mount restrictions. `pgvector` intentionally has
 no recipe in Wave 1 and remains research-only.
 
+CI builds only the common runtime and its dependency-free probe. This keeps the
+Docker gate bounded without downloading the Chroma/Qdrant package matrix:
+
+```text
+docker build --network none --target ci-smoke -t momo-techscout-sandbox:ci docker/sandbox
+```
+
+The same bounded job first runs focused compiler/runner contract tests, including
+timeout cleanup, with only their minimal Python test dependencies. It then runs
+the image probe with no network or forwarded secrets and explicit CPU, memory,
+PID, read-only-root, and timeout boundaries. The default Dockerfile target remains
+the complete reviewed recipe image used by the optional local smoke.
+
 `techscout-pypi-egress` is not a built-in Docker bridge. It must be a dedicated
 network whose external gateway/firewall allowlists only `pypi.org` and
 `files.pythonhosted.org`. Runtime installation is denied unless callers provide
