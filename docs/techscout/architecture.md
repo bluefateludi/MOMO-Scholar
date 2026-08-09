@@ -67,7 +67,7 @@ Raw pages, unrelated candidates, secrets, and arbitrary repository content are n
 4. Synthetic fixtures establish deterministic contract behavior only.
 5. A sealed final evaluation package, after offline verification, is the only authority for final TechScout metrics and resume numbers.
 
-Optional OTLP export is a secondary observability sink. Export failure must not change local terminal artifacts. Final evaluation outputs are designed to include resolved configuration, environment, case-level records, summary, resume projection, and a sealed manifest; the final package itself is currently `PENDING_FINAL_AUTHORITY`.
+Optional OTLP export is a secondary observability sink. Export failure must not change local terminal artifacts. Evaluation outputs include resolved configuration, environment, case-level records, summary, resume projection, and a sealed manifest. The available runner diagnostics use synthetic fixtures, so their model/product-effect and resume authority is **N/A**.
 
 ## Failure semantics
 

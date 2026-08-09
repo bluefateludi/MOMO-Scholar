@@ -50,4 +50,4 @@ The Web server is intended for a single local user. It enforces same-origin requ
 - The `verified` mode is deliberately limited rather than falsely green.
 - pgvector has no trusted PostgreSQL fixture.
 - No general arbitrary-component installer, remote MCP marketplace, cloud deployment, login, multi-user authorization, or production-scale benchmark exists.
-- Final quality, latency, recovery, retrieval, token, cost, and browser measurements are `PENDING_FINAL_AUTHORITY`.
+- Browser product acceptance is recorded, but no real-model Task Success, retrieval, recovery-rate, token, or cost result is authorized. Synthetic runner diagnostics remain infrastructure evidence only.

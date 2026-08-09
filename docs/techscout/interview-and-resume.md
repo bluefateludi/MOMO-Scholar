@@ -1,66 +1,63 @@
-# Interview story and STAR resume drafts
+# 面试故事与四条中文 STAR 简历稿
 
-These drafts separate engineering facts from measured outcomes. Replace only the `PENDING_FINAL_AUTHORITY` fields after the sealed final Eval and Browser authorities pass the checks in [final-delivery.md](final-delivery.md). Until then, use the qualitative version in conversation and do not invent percentages, latencies, costs, pass counts, or user-study impact.
+本页只使用 [最终交付 authority](final-delivery.md) 中可核验的产品验收、测试和 CI 事实。Synthetic runner 的 Task Success、Recall、fault、token 与毫秒级诊断值不进入简历成果。
 
-## Ninety-second project story
+## 九十秒项目故事
 
-MOMO Scholar had reusable retrieval, Evidence, trace, evaluation, API, and Web infrastructure, but its fixed paper-survey workflow did not demonstrate a general bounded agent making tool and recovery decisions. I reframed the product around a concrete developer problem: choosing open-source Python AI components under environment and compatibility constraints.
+MOMO Scholar 已有检索、Evidence、Trace、评测、API 和 Web 基础设施，但主流程仍是固定的论文流水线。我把它重构为面向 Python AI 开发者的开源组件调研与验证 Agent：输入环境、硬约束和候选组件后，系统通过有界 LangGraph Harness 规划研究，按阶段选择 Skill，经本地 MCP 边界调用工具，并由确定性 Gate 决定能否发布推荐。
 
-I kept the proven infrastructure and introduced strict TechScout domain/state contracts, a bounded LangGraph Harness, stage-specific runtime Skills, a real local MCP client/server boundary, a closed Docker recipe registry, deterministic publication gates, checkpoint-linked failed-stage recovery, and sanitized sealed traces. The key design choice was to separate model judgment from safety and authority: models can plan and review, but code controls tool permissions, command compilation, budgets, terminalization, and whether a recommendation is publishable.
+核心取舍是把“模型判断”和“系统权限”分开。模型或确定性 stage service 可以规划、诊断和审阅；代码负责状态转换、预算、工具权限、受信 PoC recipe、Docker argv 编译、终态和发布门。Chroma 与 Qdrant Local 拥有受审 recipe，pgvector 和未知候选在缺少可信 fixture 时只能 research-only。失败恢复只重跑失败 stage，并保留 checkpoint 与原始 Trace。
 
-I also made incomplete integration visible. The current Fast Demo exercises real orchestration seams over frozen synthetic inputs; the Verified/Live request is explicitly limited until provider and Docker modules are connected end to end. Unsupported candidates such as pgvector remain research-only. The final result is evaluated against a fixed V0/V1 TechScout comparison, with resume claims projected only from a verified sealed package. Final measured outcome: `PENDING_FINAL_AUTHORITY`.
+交付时我没有把 synthetic 结果包装成真实效果：Fast Demo 使用真实 Harness、Skill、stdio MCP、checkpoint、Gate、artifact 和 sealed Trace，但 evidence/PoC 是冻结 synthetic 数据；Verified/Live 未接通时明确返回 limited。最终 Chromium 验收中，连续三次 Hero Fast Demo 都在预算内终态化，并覆盖 cache 降级、单次恢复、未知候选、刷新恢复、失败安全和窄屏路径。
 
-## Deep-dive prompts
+## 高频追问
 
-- **Why not a free-form ReAct agent?** Bounded state transitions, strict schemas, checkpoint recovery, and deterministic gates make failure behavior inspectable and prevent an LLM from expanding its own authority.
-- **Why MCP if the server is local?** It proves a real typed client/server tool boundary and keeps Skill selection separate from local permission policy; the intersection must allow a call.
-- **Why research-only instead of “failed”?** Missing a trusted recipe is missing verification authority, not evidence that the component is incompatible.
-- **Why two SQLite databases?** Product queue/events and LangGraph checkpoint tables have different ownership and lifecycle; separation prevents orchestration internals from becoming product authority.
-- **What is the hardest honesty constraint?** A successful synthetic Fast terminal state is acceptance evidence for the vertical slice, not a live component recommendation or final evaluation result.
+- **为什么不用自由 ReAct 循环？** 有界状态机、严格 schema、预算和确定性终态能把失败行为变成可测试契约，避免模型自行扩大权限。
+- **为什么本地也使用 MCP？** 它验证了真实的 typed client/server 工具边界；Skill allowlist 与本地 policy 必须同时允许，MCP 元数据本身不承担授权。
+- **为什么 research-only 不是“不兼容”？** 缺少可信 recipe 说明验证 authority 不足，不等于组件已被证明失败。
+- **为什么拆分两个 SQLite？** 产品队列/事件与 LangGraph checkpoint 的所有权和生命周期不同，拆分后编排内部表不会变成产品事实来源。
+- **如何证明没有夸大效果？** 浏览器验收、测试/CI 和 synthetic runner 诊断分别记录；后者的 Resume authority 明确为 N/A。
 
-## Four STAR resume drafts
+## STAR 1 — Agent 产品化与可解释交付
 
-### STAR 1 — Product and agent architecture
+- **S（情境）：** 原项目拥有完整 RAG 与证据基础设施，但固定论文流水线不足以展示 Agent 的规划、工具选择和终态控制。
+- **T（任务）：** 在保留可追溯资产的同时，交付一个面向 Python AI 组件选型的有界 Agent 产品。
+- **A（行动）：** 设计严格请求/状态/报告契约，以 LangGraph 组织阶段化 Harness，引入 runtime Skills、本地 stdio MCP、独立 checkpoint、确定性 Validation Gate、不可变 artifact 与 sealed Trace。
+- **R（结果）：** Chromium 中连续三次 Hero Fast Demo 均在 120 秒预算内终态化，wall-clock 分别为 45.081 s、15.360 s、12.879 s，且全程明确标注冻结 synthetic 边界。
 
-- **Situation:** A citation-grounded Scholar pipeline had strong infrastructure but a fixed workflow and a weaker component-selection product story.
-- **Task:** Reframe it into an auditable agent for Python AI dependency decisions without discarding provenance or creating an unbounded autonomous shell.
-- **Action:** Designed strict request/state/report contracts and a bounded LangGraph Harness with stage Skills, local MCP tool routing, separate SQLite checkpoints, deterministic terminal gates, and immutable artifacts.
-- **Result:** Delivered an end-to-end local vertical slice with measured V1 Task Success `PENDING_FINAL_AUTHORITY` versus V0 `PENDING_FINAL_AUTHORITY`; authority: `PENDING_FINAL_AUTHORITY`.
+简历一句话：**将固定 RAG 论文流水线重构为有界 LangGraph/MCP 组件调研 Agent，以 typed state、stage Skill、checkpoint 和确定性发布门形成可审计闭环；连续三次 Hero 浏览器验收均在 120 秒内终态化（45.081 s / 15.360 s / 12.879 s）。**
 
-Resume-line draft: “Refactored a fixed RAG literature pipeline into a bounded LangGraph/MCP component-research agent, combining typed state, stage Skills, checkpointing, deterministic publication gates, and sealed artifacts; improved TechScout Task Success from `PENDING_FINAL_AUTHORITY` to `PENDING_FINAL_AUTHORITY` on a fixed sealed evaluation.”
+## STAR 2 — 安全 PoC 与诚实降级
 
-### STAR 2 — Safety and reproducible verification
+- **S（情境）：** 让模型生成安装命令并直接操作宿主机会带来不可复现的供应链、网络、挂载和 secret 风险。
+- **T（任务）：** 在允许局部组件验证的同时，阻止任意 shell 和未经审查的候选跨越执行边界。
+- **A（行动）：** 建立 Chroma/Qdrant Local 闭集 recipe、结构化 PoC compiler、显式 Docker argv、资源/网络/输出限制和 fail-closed policy；pgvector 与未知候选自动降级为 research-only。
+- **R（结果）：** PR #92 的 Python、Web、sandbox build/no-network smoke 三项 CI 均通过；未知候选浏览器路径未产生对应 `sandbox.run_smoke_test` 事件，并返回 `no safe winner`。
 
-- **Situation:** Model-generated install commands and host execution would make open-source component comparisons unsafe and irreproducible.
-- **Task:** Allow useful local verification while preventing arbitrary shell, network, mount, and secret access.
-- **Action:** Built a closed Chroma/Qdrant Local recipe registry, structured PoC compiler, explicit Docker argv runner, resource/no-network controls, output bounds, and research-only downgrade for pgvector/unknown recipes.
-- **Result:** Achieved tool schema/execution success `PENDING_FINAL_AUTHORITY` and supported-PoC acceptance `PENDING_FINAL_AUTHORITY`; authority: `PENDING_FINAL_AUTHORITY`.
+简历一句话：**构建 fail-closed Docker PoC 边界，以受审 recipe、显式 argv、资源/egress 限制和 research-only 降级阻止任意命令执行；PR #92 的 Python、Web、sandbox 三项 CI 全绿。**
 
-Resume-line draft: “Implemented a fail-closed Docker PoC boundary with reviewed vector-store recipes, explicit argv compilation, resource/egress limits, and research-only downgrade for unknown candidates, reaching `PENDING_FINAL_AUTHORITY` verified tool execution on the sealed suite.”
+## STAR 3 — 定向恢复与可观测性
 
-### STAR 3 — Reliability, recovery, and observability
+- **S（情境）：** 搜索、依赖、PoC 或报告失败若重启整条 Agent 链路，会重复工作并掩盖失败根因。
+- **T（任务）：** 让恢复有界、只重跑失败阶段，同时保留原始失败与恢复证据。
+- **A（行动）：** 增加 typed failure classifier、checkpoint-linked recovery、预算终态化、append-only events 与 sanitized sealed Trace；恢复策略只允许映射到受控动作。
+- **R（结果）：** 浏览器验收完成一次依赖冲突恢复：保留 checkpoint，执行 `pin_version_and_rerun_poc`，仅重复 `execute_poc`，终态显示 recovered，刷新后状态仍可恢复；不将该单路径验收包装为 Recovery Success 百分比。
 
-- **Situation:** Search, tool, dependency, PoC, and report failures could otherwise restart whole runs, duplicate work, or hide why a result degraded.
-- **Task:** Make failures bounded, locally recoverable, and reviewable without corrupting the original execution record.
-- **Action:** Added typed failure classification, checkpoint-linked failed-stage recovery, budget/deadline terminalization, append-only event projections, sanitized sealed Trace events, and partial-result preservation.
-- **Result:** Measured Recovery Success `PENDING_FINAL_AUTHORITY`, First-pass Success `PENDING_FINAL_AUTHORITY`, and recovery-stage overhead `PENDING_FINAL_AUTHORITY`; authority: `PENDING_FINAL_AUTHORITY`.
+简历一句话：**实现 checkpoint-linked 定向恢复与 sealed Trace，在依赖冲突验收中仅重跑失败的 `execute_poc` 阶段并持久化 recovered 状态，避免整链重启和不可审计重试。**
 
-Resume-line draft: “Added typed, checkpoint-linked recovery that reruns only the failed agent stage and preserves the original sealed Trace, producing `PENDING_FINAL_AUTHORITY` recovery success with `PENDING_FINAL_AUTHORITY` average recovery-stage overhead.”
+## STAR 4 — 质量门与证据分层
 
-### STAR 4 — Evaluation, latency, and delivery evidence
+- **S（情境）：** 全仓测试、focused 回归、浏览器验收和 synthetic 评测诊断容易被混成一个“效果数字”。
+- **T（任务）：** 建立可追溯的交付证据层级，让每个数字都带范围、commit 和适用边界。
+- **A（行动）：** 分离 full-integration、PR focused、三项 CI、浏览器 acceptance 与 synthetic runner authority；在文档中把 synthetic Task Success、Recall、token/cost 和 recovery-rate 的 Resume authority 标为 N/A。
+- **R（结果）：** 产品全量集成在 `b7516a7` authority 达到 1462 passed、3 skipped；最终 PR #92 在 `7c6a9ed` 完成 focused Python 118 passed、2 skipped与 Web 22 passed，并保持 Python、Web、sandbox 三项 CI 全绿。
 
-- **Situation:** Planning targets, synthetic demos, and historical Scholar metrics could be mistaken for TechScout product results.
-- **Task:** Build a claim pipeline that separates smoke acceptance, live behavior, and final resume evidence.
-- **Action:** Defined fixed V0/V1 contracts, cold-live versus warm-cache metrics, offline retrieval/fault evaluation, sealed package generation, automatically projected resume evidence, and browser acceptance tied to an exact build.
-- **Result:** Recorded Retrieval Recall@5 `PENDING_FINAL_AUTHORITY`, cold-live p50/p95 `PENDING_FINAL_AUTHORITY`, warm-cache p50/p95 `PENDING_FINAL_AUTHORITY`, tokens/cost per successful task `PENDING_FINAL_AUTHORITY`, and Browser acceptance `PENDING_FINAL_AUTHORITY`; authority: `PENDING_FINAL_AUTHORITY`.
+简历一句话：**建立按 scope/commit 分层的质量门与交付证据：全量集成 1462 passed、3 skipped，PR #92 focused Python 118 passed、2 skipped及 Web 22 passed，Python/Web/sandbox 三项 CI 全绿，同时禁止 synthetic 诊断冒充产品效果。**
 
-Resume-line draft: “Built a sealed evaluation and delivery-evidence pipeline separating synthetic acceptance from live results, measuring Recall@5 `PENDING_FINAL_AUTHORITY`, cold/warm latency `PENDING_FINAL_AUTHORITY`, and per-success token/cost `PENDING_FINAL_AUTHORITY` without relabeling historical metrics.”
+## 禁止表述
 
-## Claims to avoid
-
-- Do not say Fast is live, provider-backed, or Docker-backed at the current baseline.
-- Do not say existing live/Docker modules are end-to-end product integration.
-- Do not call research-only a failed compatibility benchmark.
-- Do not quote roadmap targets as achievements.
-- Do not reuse MOMO Scholar retrieval/citation/browser results as TechScout outcomes.
-- Do not replace a pending value with an estimate or an unsealed local observation.
+- 不把 Fast Demo 描述为 Live、真实 provider 或真实 Docker 执行。
+- 不把已经实现但尚未 Web-wired 的 adapter/runner 描述为端到端能力。
+- 不把 research-only 描述为兼容性失败。
+- 不把 synthetic runner 的 `12/40/8`、Task Success、Recall、fault、token 或延迟写进简历成果。
+- 不复用 MOMO Scholar 的检索、Citation 或旧 Browser 数字作为 TechScout 效果。

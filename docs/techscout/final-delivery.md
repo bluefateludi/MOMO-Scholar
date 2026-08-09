@@ -1,69 +1,72 @@
-# Final evaluation and browser acceptance skeleton
+# Final delivery authority
 
-This file is the single fill-in site for MOMO TechScout final measurements. At baseline `b7516a7b478834614f6ce2ccf1ae63a5c73c3140`, the evaluation runner and package contracts exist, but no supplied final Eval or Browser authority has been verified in this worktree.
+This record separates browser product acceptance, automated verification, and synthetic evaluation-runner diagnostics. The current code authority is `origin/master@7c6a9ed25b50f790d3a0b39a541e46258da71f5a` (PR #92).
 
-Planning targets, synthetic fixtures, unit-test counts, historical Scholar results, and manual impressions are not substitutes for final authority.
+**Draft gate:** do not treat this record as finally sealed until #93 is merged, the branch normally merges the resulting latest `master`, and the focused verification plus both fact-check axes are rerun. No rebase or force update is required.
 
-## Evaluation authority
+Planning targets, historical MOMO Scholar metrics, synthetic runner outputs, and unit-test observations are not interchangeable with real-model TechScout results.
 
-| Claim | Final value | Required evidence |
-|---|---|---|
-| Suite identity, profile, resolved configuration, environment, and case-set fingerprint | `PENDING_FINAL_AUTHORITY` | Verified sealed manifest and referenced artifacts |
-| V0/V1 Task Success | `PENDING_FINAL_AUTHORITY` | Case-level records plus generated summary; same TechScout tasks/tools/model/frozen inputs |
-| V0/V1 First-pass Success | `PENDING_FINAL_AUTHORITY` | Case-level recovery flags and summary |
-| Retrieval Recall@5 and version-filter accuracy | `PENDING_FINAL_AUTHORITY` | Offline retrieval records and summary |
-| Fault Recovery Success and average recovery stages | `PENDING_FINAL_AUTHORITY` | Injected-fault records with checkpoint-linked outcomes |
-| Cold-live latency p50/p95 | `PENDING_FINAL_AUTHORITY` | Cold-live observations only |
-| Warm-cache latency p50/p95 | `PENDING_FINAL_AUTHORITY` | Warm-cache observations only; never pooled with cold-live |
-| Tool schema/execution success | `PENDING_FINAL_AUTHORITY` | Case-level tool observations |
-| Tokens and estimated cost per successful task | `PENDING_FINAL_AUTHORITY` | Provider usage records and pricing/method authority |
-| Final package path, manifest SHA-256, and verification result | `PENDING_FINAL_AUTHORITY` | Offline package verification output |
+## Browser product acceptance
 
-V0 must be the TechScout baseline with the same core model/tools and frozen inputs but without the explicitly named V1 Harness capabilities. MOMO Scholar is not V0. If infrastructure partially fails, preserve the original failure and partial records; do not tune or rerun merely to improve headline values.
+Primary authority: [`docs/acceptance/2026-08-09-techscout-browser-acceptance.md`](../acceptance/2026-08-09-techscout-browser-acceptance.md), merged at `7c6a9ed25b50f790d3a0b39a541e46258da71f5a`.
 
-## Browser and product acceptance authority
+The headed-Chromium run used the React production build served by local FastAPI. Its network boundary was the frozen synthetic Fast Demo: no live provider, paid API, research network, or real-Docker execution was claimed.
 
-| Claim | Final value | Required evidence |
-|---|---|---|
-| Browser authority baseline commit/build | `PENDING_FINAL_AUTHORITY` | Exact commit and production build artifact |
-| Fast Demo terminal acceptance | `PENDING_FINAL_AUTHORITY` | Timestamped run records and terminal artifacts with synthetic/live boundary stated |
-| Verified/Live terminal or limited behavior | `PENDING_FINAL_AUTHORITY` | Authorized run records; missing credentials must remain a limitation |
-| Desktop browser smoke | `PENDING_FINAL_AUTHORITY` | Browser authority, viewport, console/network observations, and screenshots if supplied |
-| Narrow browser smoke | `PENDING_FINAL_AUTHORITY` | Browser authority, viewport, overflow/accessibility observations, and screenshots if supplied |
-| Report/candidate/evidence/recovery/Trace navigation | `PENDING_FINAL_AUTHORITY` | Browser flow record tied to the same build |
-| Artifact downloads and content types | `PENDING_FINAL_AUTHORITY` | API/browser observations and allowlisted artifact inventory |
-| Final browser authority path/hash | `PENDING_FINAL_AUTHORITY` | Immutable record plus verifier/checksum |
+| Scenario | Browser wall-clock | Terminal/UI result |
+|---|---:|---|
+| Hero Fast Demo, consecutive run 1 | 45.081 s | `completed` |
+| Hero Fast Demo, consecutive run 2 | 15.360 s | `completed` |
+| Hero Fast Demo, consecutive run 3 | 12.879 s | `completed` |
+| Cached evidence fallback | 16.139 s | `completed_with_limitations`; visible cache degradation and `no safe winner` |
+| Injected executor exception | 2.725 s injection + 0.377 s UI load | durable `failed`; no report substitute or secret leakage |
 
-## Required two-axis fact check before filling
+All three consecutive Hero runs terminalized within the 120-second acceptance budget. Normal, cached/limited, single-recovery, unknown-candidate, reload, injected-failure, and 390 px viewport flows passed. The browser session recorded **zero console errors and zero console warnings**.
+
+The single-recovery scenario preserved the dependency conflict and checkpoint, applied `pin_version_and_rerun_poc`, repeated only `execute_poc`, reached `recovered`, and restored that state after reload. This is one path acceptance, not a Recovery Success percentage.
+
+## Test and CI authority
+
+| Scope | Commit / authority | Result | Interpretation |
+|---|---|---|---|
+| Product full-integration run | pre-PR #92 product baseline `b7516a7b478834614f6ce2ccf1ae63a5c73c3140`, integration-owner authority | 1462 passed, 3 skipped | Historical full-repository integration result; not the PR #92 focused count |
+| PR #92 focused Python | `7c6a9ed25b50f790d3a0b39a541e46258da71f5a`; `tests/web tests/techscout` | 118 passed, 2 skipped | Focused TechScout/Web regression scope, not the whole repository |
+| PR #92 Web | `7c6a9ed25b50f790d3a0b39a541e46258da71f5a`; `npm test` | 22 passed | Frontend test scope |
+| PR #92 build/contracts/lint | same commit | OpenAPI contract check, production build, and Ruff passed | Build and static verification |
+| PR #92 CI | same commit | Python quality/package smoke, Web quality, and sandbox build/no-network smoke green | Three distinct CI jobs; no live provider secret or paid call |
+
+The browser authority additionally verified parseable/non-empty successful or limited reports, report-free failed execution, sealed traces, desktop/narrow rendering, expected API statuses, and absence of raw exception/secret-canary data from rendered and persisted projections.
+
+## Synthetic evaluation-runner diagnostics
+
+The runner's `12/40/8` task/retrieval/fault shape was exercised with frozen synthetic fixtures. It emitted V0/V1 `12/12`, Recall@5 `0.90`, fault recovery `6/8`, `900` tokens, and roughly `235–296 ms` diagnostic latency.
+
+These values verify loading, execution, aggregation, failure injection, partial-result handling, and package projection. They do **not** measure a real LLM, live retrieval, Docker-backed product effectiveness, or user outcome.
+
+| Resume/product claim | Authority |
+|---|---|
+| V0/V1 Task Success | N/A — synthetic fixture diagnostic only |
+| Recall@5 / version-filter product quality | N/A — synthetic fixture diagnostic only |
+| Recovery Success rate | N/A — synthetic fixture diagnostic only |
+| Tokens or cost per successful real task | N/A — synthetic fixture diagnostic only |
+| Cold-live or warm-cache product latency | N/A — synthetic fixture diagnostic only |
+
+The synthetic numbers must not appear as resume achievements or README headline product metrics. The authorized latency claim is the headed-browser Fast Demo acceptance above, with its synthetic boundary stated.
+
+## Completed two-axis fact check
 
 ### Axis A — implementation and standards
 
-- Confirm every README command exists and runs from a clean checkout.
-- Confirm Fast, Verified/Live, and Offline labels match the actual executor and UI.
-- Confirm Chroma/Qdrant are the only reviewed V1 recipes and pgvector remains research-only.
-- Confirm the deterministic gate, terminal statuses, recovery bound, security controls, and artifact/Trace authority match code.
-- Confirm no secret, absolute host path, raw provider body, unbounded output, or ignored local evaluation content entered tracked docs.
+- README commands map to the current install/build/server entry points; no nonexistent Compose or TechScout CLI command is advertised.
+- Fast, Verified/Live, and Offline wording matches the Web executor and UI.
+- Chroma and Qdrant Local are the only reviewed V1 recipes; pgvector and unknown candidates remain research-only.
+- Terminal statuses, deterministic gate, failed-stage-only recovery, sandbox/network constraints, and artifact/Trace authority match current contracts.
+- Documentation changes contain no secret, raw provider body, absolute authority path, unbounded output, or ignored evaluation artifact.
 
 ### Axis B — specification and claim provenance
 
-- Verify the final package seal and every referenced hash before copying a number.
-- Trace every headline value back to generated summary and case-level records.
-- Keep cold-live and warm-cache latency separate.
-- Keep synthetic fixture acceptance separate from live evaluation.
-- Keep Scholar metrics separate from TechScout metrics.
-- Publish missed targets and limitations unchanged; do not estimate or backfill missing denominators.
-- Update the four resume drafts only with values projected from the same verified final authority.
-
-## Fill procedure
-
-1. Receive the exact Eval and Browser authority paths/hashes from the integration owner.
-2. Verify them offline and record the verification commands/results.
-3. Replace each applicable `PENDING_FINAL_AUTHORITY` with an exact value, denominator, method label, authority path, and hash. Leave unavailable claims pending or explicitly unavailable.
-4. Perform both fact-check axes against the final diff.
-5. Confirm no accidental placeholders remain outside deliberately unavailable claims:
-
-```powershell
-rg -n "PENDING_FINAL_AUTHORITY" README.md docs/techscout
-```
-
-6. Only then prepare the scoped documentation commit and Draft PR requested by the integration owner.
+- Browser timings and scenario results trace to the tracked acceptance record at PR #92.
+- Full-repository and focused test counts are labeled separately with scope and commit.
+- Synthetic `12/40/8` diagnostics are labeled non-publishable for product effect and N/A for resume use.
+- Browser wall-clock is not relabeled as cold-live/warm-cache evaluation latency.
+- MOMO Scholar metrics remain legacy Scholar authority and do not appear as TechScout results.
+- The four resume drafts use only browser acceptance, the single recovery-path observation, test scope, and CI evidence authorized here.

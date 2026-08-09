@@ -4,7 +4,9 @@ MOMO TechScout is an evidence-grounded research and verification agent for Pytho
 
 The current V1 family is deliberately narrow: local-RAG Python vector stores. Chroma and Qdrant Local have reviewed PoC recipes. pgvector and unknown candidates remain research-only unless a later decision adds a trusted fixture. The PoCs check small compatibility contracts; they do not certify production performance.
 
-> Current authority: `origin/master@b7516a7b478834614f6ce2ccf1ae63a5c73c3140`. Final evaluation and browser-acceptance numbers are not yet authoritative. Every final metric below remains `PENDING_FINAL_AUTHORITY` until a sealed package is supplied and verified.
+**Hero Demo 已验收：** 在 `origin/master@7c6a9ed25b50f790d3a0b39a541e46258da71f5a` 的 Chromium 验收中，连续三次 Fast Demo 均在 120 秒预算内终态化，浏览器 wall-clock 分别为 **45.081 s、15.360 s、12.879 s**。这是冻结 synthetic Fast Demo 的产品验收，不是 Live 模型质量或组件性能基准。
+
+> Documentation status: this is the PR #92 authority draft. Final sealing is deferred until #93 is merged and the branch is normally merged with the resulting latest `master`.
 
 ## What works today
 
@@ -14,7 +16,7 @@ The current V1 family is deliberately narrow: local-RAG Python vector stores. Ch
 | Verified request (`mode=verified`) | Explicitly limited | The API accepts the request, but the current Web executor returns `completed_with_limitations` with `live_execution_unavailable`; it is not a successful Live verification run. |
 | Offline fixture | Implemented | Immutable/simulated UI and API fixture for reviewing screens and contracts. It is not research output, a benchmark, or proof of Docker execution. |
 | Live execution | Future integration | Bounded Tavily, HTTPS fetch, read-only GitHub, cache, and Docker sandbox modules exist, but they are not connected to the default Web run path at this authority. |
-| Final evaluation | Pending authority | Runner, metric contracts, partial-result preservation, and package sealing exist; final measured results are `PENDING_FINAL_AUTHORITY`. |
+| Evaluation | Infrastructure accepted, product-effect claims unavailable | The fixed runner, metrics, partial-result preservation, and sealing were exercised only with synthetic fixtures. Task Success, Recall, token/cost, and recovery diagnostics from that run are not resume or product-effect evidence. |
 
 ## Quick start: current Fast Demo
 
@@ -66,7 +68,7 @@ The deterministic gate—not model prose—controls publishability. Unknown reci
 - [Architecture and artifact authority](docs/techscout/architecture.md)
 - [Run modes and operator guide](docs/techscout/running.md)
 - [V1 support matrix and security boundary](docs/techscout/support-and-safety.md)
-- [Final evaluation and browser acceptance skeleton](docs/techscout/final-delivery.md)
+- [Final evaluation and browser acceptance authority](docs/techscout/final-delivery.md)
 - [Interview story and four STAR resume drafts](docs/techscout/interview-and-resume.md)
 - [Product-scope ADR](docs/decisions/0001-techscout-product-scope-and-support.md)
 
