@@ -1,0 +1,81 @@
+{
+  "schema_version": "techscout-smoke-task-v1",
+  "fixture_kind": "synthetic_frozen_acceptance",
+  "task_id": "techscout-smoke-003",
+  "scenario": "bounded_failure_recovery",
+  "network_policy": "offline",
+  "request": {
+    "question": "Choose a local vector store and recover safely from one typed PoC dependency conflict.",
+    "project_context": "A Python 3.11 local RAG service with an allowlisted verification environment.",
+    "environment": {
+      "python": "3.11",
+      "os": "linux-container",
+      "deployment": "single-node-local"
+    },
+    "hard_constraints": [
+      "local persistence",
+      "metadata equality filtering",
+      "bounded verification recovery"
+    ],
+    "mode": "fast",
+    "candidates": [
+      {
+        "candidate_id": "qdrant-local",
+        "display_name": "Qdrant Local",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "v1_supported",
+        "poc_policy": "allowlisted_recipe"
+      },
+      {
+        "candidate_id": "chroma",
+        "display_name": "Chroma",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "v1_supported",
+        "poc_policy": "allowlisted_recipe"
+      }
+    ]
+  },
+  "frozen_inputs": {
+    "provenance": "synthetic test data; not live product evidence",
+    "source_snapshot_ids": [
+      "fixture:qdrant:official-local-mode",
+      "fixture:chroma:official-local-persistence"
+    ],
+    "failure_injection": {
+      "stage": "poc",
+      "candidate_id": "qdrant-local",
+      "failure_type": "dependency_version_conflict",
+      "synthetic_exit_code": 1,
+      "allowed_fix": "pin_fixture_compatible_version"
+    },
+    "recovery_result": {
+      "stage": "poc",
+      "candidate_id": "qdrant-local",
+      "recipe_id": "fixture:qdrant-local-contract-v1",
+      "synthetic_exit_code": 0,
+      "checks": ["import", "persistence", "upsert", "query", "filter"]
+    }
+  },
+  "expected": {
+    "terminal_status": "completed",
+    "decision": "recommended",
+    "recommended_candidate_id": "qdrant-local",
+    "recovery": {
+      "failure_type": "dependency_version_conflict",
+      "maximum_attempts": 1,
+      "attempts_used": 1,
+      "replayed_stages": ["poc"],
+      "preserve_first_failure": true,
+      "checkpoint_link_required": true,
+      "full_run_restart_forbidden": true
+    }
+  },
+  "planning_targets": {
+    "classification": "planning_target",
+    "fast_terminal_seconds": 120,
+    "live_terminal_seconds": 300,
+    "measured_result": null,
+    "resume_claim": false
+  },
+  "observed_metrics": {}
+}
