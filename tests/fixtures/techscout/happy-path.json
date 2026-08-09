@@ -1,0 +1,99 @@
+{
+  "schema_version": "techscout-smoke-task-v1",
+  "fixture_kind": "synthetic_frozen_acceptance",
+  "task_id": "techscout-smoke-001",
+  "scenario": "happy_path",
+  "network_policy": "offline",
+  "request": {
+    "question": "Choose a local vector store for a Python 3.11 RAG service.",
+    "project_context": "A single-node local service with no separately managed database.",
+    "environment": {
+      "python": "3.11",
+      "os": "linux-container",
+      "deployment": "single-node-local"
+    },
+    "hard_constraints": [
+      "local persistence",
+      "metadata equality filtering",
+      "no separately managed database"
+    ],
+    "mode": "fast",
+    "candidates": [
+      {
+        "candidate_id": "chroma",
+        "display_name": "Chroma",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "v1_supported",
+        "poc_policy": "allowlisted_recipe"
+      },
+      {
+        "candidate_id": "qdrant-local",
+        "display_name": "Qdrant Local",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "v1_supported",
+        "poc_policy": "allowlisted_recipe"
+      },
+      {
+        "candidate_id": "pgvector",
+        "display_name": "pgvector",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "research_only",
+        "poc_policy": "requires_postgresql_fixture",
+        "postgresql_fixture_available": false
+      }
+    ]
+  },
+  "frozen_inputs": {
+    "provenance": "synthetic test data; not live product evidence",
+    "source_snapshot_ids": [
+      "fixture:chroma:official-local-persistence",
+      "fixture:qdrant:official-local-mode",
+      "fixture:pgvector:official-postgresql-extension"
+    ],
+    "poc_results": [
+      {
+        "candidate_id": "chroma",
+        "recipe_id": "fixture:chroma-local-contract-v1",
+        "synthetic_exit_code": 0,
+        "checks": ["import", "persistence", "upsert", "query", "filter"]
+      },
+      {
+        "candidate_id": "qdrant-local",
+        "recipe_id": "fixture:qdrant-local-contract-v1",
+        "synthetic_exit_code": 0,
+        "checks": ["import", "persistence", "upsert", "query", "filter"]
+      }
+    ]
+  },
+  "expected": {
+    "terminal_status": "completed",
+    "decision": "recommended",
+    "recommended_candidate_id": "chroma",
+    "research_only_candidate_ids": ["pgvector"],
+    "hard_constraints_addressed": [
+      "local persistence",
+      "metadata equality filtering",
+      "no separately managed database"
+    ],
+    "required_terminal_artifacts": [
+      "request.json",
+      "research-plan.json",
+      "source-snapshots.jsonl",
+      "evidence.jsonl",
+      "poc-plan.json",
+      "poc-results.json",
+      "decision-report.json",
+      "decision-report.md",
+      "traces.jsonl",
+      "run_manifest.json"
+    ]
+  },
+  "planning_targets": {
+    "classification": "planning_target",
+    "fast_terminal_seconds": 120,
+    "live_terminal_seconds": 300,
+    "measured_result": null,
+    "resume_claim": false
+  },
+  "observed_metrics": {}
+}

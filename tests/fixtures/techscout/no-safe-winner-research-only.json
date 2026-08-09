@@ -1,0 +1,72 @@
+{
+  "schema_version": "techscout-smoke-task-v1",
+  "fixture_kind": "synthetic_frozen_acceptance",
+  "task_id": "techscout-smoke-002",
+  "scenario": "no_safe_winner_research_only",
+  "network_policy": "offline",
+  "request": {
+    "question": "Choose a locally verifiable vector store when every candidate lacks a trusted recipe.",
+    "project_context": "A Python 3.11 local RAG service whose hard constraints require local verification.",
+    "environment": {
+      "python": "3.11",
+      "os": "linux-container",
+      "deployment": "single-node-local"
+    },
+    "hard_constraints": [
+      "locally verified persistence",
+      "metadata equality filtering",
+      "no unreviewed installation commands"
+    ],
+    "mode": "fast",
+    "candidates": [
+      {
+        "candidate_id": "pgvector",
+        "display_name": "pgvector",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "research_only",
+        "poc_policy": "requires_postgresql_fixture",
+        "postgresql_fixture_available": false
+      },
+      {
+        "candidate_id": "milvus-lite-unreviewed",
+        "display_name": "Milvus Lite (unreviewed recipe)",
+        "component_family": "python_vector_store_for_local_rag",
+        "support_level": "research_only",
+        "poc_policy": "no_trusted_recipe"
+      }
+    ]
+  },
+  "frozen_inputs": {
+    "provenance": "synthetic test data; not live product evidence",
+    "source_snapshot_ids": [
+      "fixture:pgvector:official-postgresql-extension",
+      "fixture:milvus-lite:official-overview"
+    ],
+    "poc_results": []
+  },
+  "expected": {
+    "terminal_status": "completed_with_limitations",
+    "decision": "no_safe_winner",
+    "recommended_candidate_id": null,
+    "research_only_candidate_ids": ["pgvector", "milvus-lite-unreviewed"],
+    "poc_executions": [],
+    "limitations": [
+      "pgvector has no trusted PostgreSQL fixture",
+      "Milvus Lite has no reviewed allowlisted recipe in this fixture set",
+      "local verification required by the request is unavailable"
+    ],
+    "must_not": [
+      "guess installation commands",
+      "claim incompatibility from missing verification",
+      "fabricate a recommendation"
+    ]
+  },
+  "planning_targets": {
+    "classification": "planning_target",
+    "fast_terminal_seconds": 120,
+    "live_terminal_seconds": 300,
+    "measured_result": null,
+    "resume_claim": false
+  },
+  "observed_metrics": {}
+}
