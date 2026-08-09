@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import sqlite3
 
 import pytest
 
@@ -51,3 +52,42 @@ def test_artifact_id_rejects_paths(tmp_path):
     registry.admit("00000000-0000-4000-8000-000000000001", REQUEST, 4)
     with pytest.raises(ValueError):
         registry.set_artifact_id("00000000-0000-4000-8000-000000000001", "../secret")
+
+
+def test_run_events_migrate_and_page_with_opaque_cursor(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    registry = RunRegistry(path)
+    run_id = "00000000-0000-4000-8000-000000000001"
+    registry.admit(run_id, REQUEST, 4)
+    registry.append_event(
+        run_id, event_type="tool", stage="research", status="completed",
+        label="Fetched\nallowlisted metadata", skill="official-docs", tool="github.read",
+        duration_ms=12,
+    )
+
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 2
+
+    first = registry.trace(run_id, limit=1)
+    assert len(first.items) == 1
+    assert first.next_cursor is not None
+    second = registry.trace(run_id, limit=1, cursor=first.next_cursor)
+    assert second.items[0].label == "Fetched allowlisted metadata"
+    assert second.items[0].tool == "github.read"
+    assert second.next_cursor is None
+
+
+def test_trace_rejects_invalid_cursor_and_unbounded_text(tmp_path):
+    registry = RunRegistry(tmp_path / "registry.sqlite3")
+    run_id = "00000000-0000-4000-8000-000000000001"
+    registry.admit(run_id, REQUEST, 4)
+    with pytest.raises(WebError) as error:
+        registry.trace(run_id, limit=10, cursor="not-a-cursor")
+    assert error.value.code == "validation_error"
+
+    registry.append_event(
+        run_id, event_type="stage", stage="research", status="running",
+        label="x" * 500,
+    )
+    assert len(registry.trace(run_id, 10).items[-1].label) == 240

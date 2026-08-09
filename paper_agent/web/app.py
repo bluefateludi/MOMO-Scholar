@@ -21,6 +21,8 @@ from paper_agent.web.execution import PipelineRunner, SingleRunExecutor
 from paper_agent.web.registry import RunRegistry
 from paper_agent.web.routes.runs import router
 from paper_agent.web.service import RunService
+from paper_agent.web.routes.techscout import router as techscout_router
+from paper_agent.web.techscout_service import TechScoutProjectionService
 
 
 def _error(code: str, message: str, details: dict[str, object] | None = None, status: int = 500) -> JSONResponse:
@@ -61,9 +63,11 @@ def create_app(
         finally:
             executor.close()
 
-    app = FastAPI(title="MOMO Scholar Web API", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="MOMO TechScout Web API", version="2.0.0", lifespan=lifespan)
     app.state.run_service = RunService(registry, artifacts, executor, queue_capacity)
+    app.state.techscout_service = TechScoutProjectionService(registry)
     app.include_router(router)
+    app.include_router(techscout_router)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -73,7 +77,7 @@ def create_app(
             return _error(
                 "origin_not_allowed", "The request origin is not allowed.", status=403,
             )
-        if request.method == "POST" and request.url.path == "/api/v1/runs":
+        if request.method == "POST" and request.url.path in {"/api/v1/runs", "/api/v2/runs"}:
             content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             if content_type != "application/json" or len(await request.body()) > 16 * 1024:
                 return _error("validation_error", "The request did not satisfy the API contract.", status=422)

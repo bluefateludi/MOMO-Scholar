@@ -1,70 +1,64 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { describe, expect, it } from "vitest";
-import { demoRun, DEMO_ID, EV1 } from "../api/fixtures";
-import { DemoBanner, ErrorPanel, RunBanner } from "../components/Feedback";
-import { SafeMarkdown } from "../components/SafeMarkdown";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { techScoutApi } from "../api";
+import { TECHSCOUT_FIXTURE_ID, fixtureTrace, syntheticNotice, techScoutEvidence, techScoutReport, techScoutRun } from "../api/techscoutFixtures";
+import { CandidatePage } from "../routes/CandidatePage";
+import { EvidencePage } from "../routes/EvidencePage";
 import { HomePage } from "../routes/HomePage";
 import { ReportPage } from "../routes/ReportPage";
+import { RunPage } from "../routes/RunPage";
 
-describe("create-run form", () => {
-  it("shows frozen defaults and advanced retrieval settings", async () => {
+beforeEach(() => {
+  vi.spyOn(techScoutApi, "listRuns").mockResolvedValue({ data: { items: [techScoutRun], next_cursor: null } });
+  vi.spyOn(techScoutApi, "getRun").mockResolvedValue({ data: techScoutRun });
+  vi.spyOn(techScoutApi, "getReport").mockResolvedValue({ data: techScoutReport });
+  vi.spyOn(techScoutApi, "getEvidence").mockResolvedValue({ data: { items: techScoutEvidence } });
+  vi.spyOn(techScoutApi, "getEvidenceItem").mockResolvedValue({ data: techScoutEvidence[0] });
+  vi.spyOn(techScoutApi, "getCandidate").mockResolvedValue({ data: techScoutRun.candidates[0] });
+  vi.spyOn(techScoutApi, "getTrace").mockResolvedValue({ data: fixtureTrace });
+});
+
+describe("TechScout task input", () => {
+  it("captures environment, hard constraints, candidates, and mode", async () => {
     render(<MemoryRouter><HomePage/></MemoryRouter>);
-    expect(screen.getByRole("spinbutton", { name: /paper count/i })).toHaveValue(3);
-    expect(screen.getByRole("radio", { name: /pdf preferred/i })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "auto" })).toBeChecked();
-    await userEvent.click(screen.getByText(/retrieval settings/i));
-    expect(screen.getByRole("spinbutton", { name: /candidate k/i })).toHaveValue(30);
-    expect(screen.getByRole("spinbutton", { name: /^top k/i })).toHaveValue(8);
-    expect(screen.getByRole("spinbutton", { name: /evidence \/ paper/i })).toHaveValue(6);
+    expect(screen.getByRole("textbox", { name: /python version/i })).toHaveValue("3.11");
+    expect(screen.getByRole("textbox", { name: /hard constraints/i })).toHaveValue("local persistence\nmetadata equality filtering");
+    expect(screen.getByRole("textbox", { name: /candidate shortlist/i })).toHaveValue("Chroma, Qdrant Local, pgvector");
+    expect(screen.getByRole("radio", { name: "Fast" })).toBeChecked();
+    expect(await screen.findByText(/Synthetic offline fixture/i)).toBeInTheDocument();
   });
 
-  it("blocks invalid cross-field settings before POST", async () => {
-    render(<MemoryRouter><HomePage/></MemoryRouter>); const user = userEvent.setup();
-    await user.type(screen.getByRole("textbox", { name: /research question/i }), "A valid research question");
-    await user.click(screen.getByText(/retrieval settings/i));
-    const candidate = screen.getByRole("spinbutton", { name: /candidate k/i }); await user.clear(candidate); await user.type(candidate, "2");
-    await user.click(screen.getByRole("button", { name: /create research run/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Top K cannot exceed candidate K");
-  });
-
-  it("navigates immediately after the accepted mock POST", async () => {
-    const user = userEvent.setup();
+  it("navigates after the synthetic mock accepts a task", async () => {
+    vi.spyOn(techScoutApi, "createRun").mockResolvedValue({ data: techScoutRun });
     render(<MemoryRouter><Routes><Route path="/" element={<HomePage/>}/><Route path="/runs/:id" element={<LocationProbe/>}/></Routes></MemoryRouter>);
-    await user.type(screen.getByRole("textbox", { name: /research question/i }), "A traceable review question");
-    await user.click(screen.getByRole("button", { name: /create research run/i }));
-    expect(await screen.findByText(/\/runs\//)).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("textbox", { name: /decision question/i }), "Choose a safe local vector store");
+    await userEvent.click(screen.getByRole("button", { name: /start techscout task/i }));
+    expect(await screen.findByText(`/runs/${TECHSCOUT_FIXTURE_ID}`)).toBeInTheDocument();
   });
 });
 
-describe("safe research reading", () => {
-  it("removes raw HTML and resolves exact Evidence markers", () => {
-    render(<MemoryRouter><SafeMarkdown markdown={`Text [${EV1}] [missing:ev_999] <script>alert('x')</script> [bad](javascript:alert(1)) [remote](//evil.example/x)`} runId={DEMO_ID} evidenceIds={[EV1]}/></MemoryRouter>);
-    expect(document.querySelector("script")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Evidence" })).toHaveAttribute("href", `/runs/${DEMO_ID}/evidence/${encodeURIComponent(EV1)}`);
-    expect(screen.getByText("bad").closest("a")).toHaveAttribute("href", "");
-    expect(screen.getByText("remote").closest("a")).toHaveAttribute("href", "");
-    expect(screen.getByText(/Unresolved Evidence/)).toBeInTheDocument();
+describe("fixture-backed Wave 1 views", () => {
+  it("renders the four-stage progress, candidate, recovery, approval, and collapsed Trace", async () => {
+    render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}`]}><Routes><Route path="/runs/:id" element={<RunPage/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByText(techScoutRun.question)).toBeInTheDocument();
+    for (const stage of ["Plan", "Research", "Verify", "Decide"]) expect(screen.getByText(stage)).toBeInTheDocument();
+    expect(screen.getByText(/not needed · 0\/1/i)).toBeInTheDocument();
+    expect(screen.getByText(/not required/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Investigation plan frozen/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /trace feed/i }));
+    expect(await screen.findByText(/Investigation plan frozen/i)).toBeInTheDocument();
   });
 
-  it("keeps the synthetic-demo warning visible on the report", async () => {
-    render(<MemoryRouter initialEntries={[`/runs/${DEMO_ID}/report`]}><Routes><Route path="/runs/:id/report" element={<ReportPage/>}/></Routes></MemoryRouter>);
-    await waitFor(() => expect(screen.getByText("Synthetic offline demo")).toBeInTheDocument());
-    expect(screen.getByText(/Not research output or evaluation evidence/i)).toBeInTheDocument();
-    expect(screen.getByText("Rejected critical claims")).toBeInTheDocument();
-  });
-
-  it("announces the demo disclaimer as a note", () => {
-    render(<DemoBanner/>); expect(screen.getByRole("note")).toHaveTextContent("No provider or network call");
-  });
-
-  it("presents terminal failures and corrupt artifacts without raw exceptions", () => {
-    const failed = { ...demoRun, demo: false, origin: "live" as const, status: "failed" as const, has_report: false, manifest: { ...demoRun.manifest!, degradations: [], errors: [{ stage: "initializing", code: "provider_configuration_missing", paper_id: null, message: null }] } };
-    const { rerender } = render(<MemoryRouter><RunBanner run={failed}/></MemoryRouter>);
-    expect(screen.getByRole("alert")).toHaveTextContent("generation provider is not configured");
-    rerender(<MemoryRouter><ErrorPanel code="artifact_corrupt" message="A saved artifact could not be safely read."/></MemoryRouter>);
-    expect(screen.getByRole("alert")).toHaveTextContent("artifact_corrupt");
+  it("keeps the synthetic warning on report, candidate, and evidence views", async () => {
+    const routes = <Routes><Route path="/runs/:id/report" element={<ReportPage/>}/><Route path="/runs/:id/candidates/:candidateId" element={<CandidatePage/>}/><Route path="/runs/:id/evidence/:evidenceId" element={<EvidencePage/>}/></Routes>;
+    const { unmount } = render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/report`]}>{routes}</MemoryRouter>);
+    expect(await screen.findByRole("note")).toHaveTextContent(syntheticNotice); expect(screen.getByText(/Allowlisted checks/i)).toBeInTheDocument(); unmount();
+    const candidate = render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/candidates/chroma`]}>{routes}</MemoryRouter>);
+    expect(await screen.findByRole("note")).toHaveTextContent(syntheticNotice); candidate.unmount();
+    render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/evidence/ev-chroma-persistence`]}>{routes}</MemoryRouter>);
+    expect(await screen.findByRole("note")).toHaveTextContent(syntheticNotice); expect(screen.getByText(/no external URL/i)).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from contextlib import contextmanager
@@ -12,6 +13,7 @@ from pydantic import TypeAdapter
 from paper_agent.modeling import StrictModel
 from paper_agent.web.api_models import ApiStatus, CreateRunRequest, Phase, RunProgress
 from paper_agent.web.errors import WebError
+from paper_agent.web.techscout_api_models import TraceEvent, TracePage
 
 
 def utc_now() -> datetime:
@@ -60,7 +62,7 @@ class RunRegistry:
         with self._connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise RuntimeError("run registry schema is newer than this server")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
@@ -74,7 +76,22 @@ class RunRegistry:
                   finished_at TEXT, updated_at TEXT NOT NULL
                 )
             """)
-            db.execute("PRAGMA user_version=1")
+            if version < 2:
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS run_events (
+                      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                      run_id TEXT NOT NULL,
+                      event_type TEXT NOT NULL CHECK (event_type IN ('run','stage','skill','tool','recovery','approval')),
+                      stage TEXT, status TEXT NOT NULL, label TEXT NOT NULL,
+                      skill TEXT, tool TEXT, duration_ms INTEGER,
+                      created_at TEXT NOT NULL,
+                      FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+                    )
+                """)
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_run_events_run_sequence ON run_events(run_id,sequence)"
+                )
+            db.execute("PRAGMA user_version=2")
 
     def admit(self, run_id: str, request: CreateRunRequest, capacity: int) -> RegistryRun:
         now = utc_now().isoformat()
@@ -88,6 +105,10 @@ class RunRegistry:
                 "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (run_id, None, "live", "queued", "queued", request.model_dump_json(),
                  RunProgress().model_dump_json(), None, now, None, None, now),
+            )
+            self._append_event_in_transaction(
+                db, run_id, event_type="run", stage="queued", status="queued",
+                label="Run accepted by the local queue.",
             )
             db.commit()
         return self.get(run_id)
@@ -114,6 +135,11 @@ class RunRegistry:
                 "UPDATE runs SET status='running',phase='initializing',started_at=?,updated_at=? WHERE id=? AND status='queued'",
                 (now, now, row["id"]),
             ).rowcount
+            if changed:
+                self._append_event_in_transaction(
+                    db, row["id"], event_type="stage", stage="initializing",
+                    status="running", label="Execution started.",
+                )
             db.commit()
         return self.get(row["id"]) if changed else None
 
@@ -128,6 +154,11 @@ class RunRegistry:
         if phases.index(phase) < phases.index(current.phase):
             return
         self._update(run_id, phase=phase, progress_json=progress.model_dump_json())
+        if phase != current.phase:
+            self.append_event(
+                run_id, event_type="stage", stage=phase, status="running",
+                label=f"Entered {phase.replace('_', ' ')} stage.",
+            )
 
     def terminal(self, run_id: str, status: ApiStatus, *, finished_at: datetime | None = None, error: RegistryError | dict[str, object] | None = None) -> None:
         if status not in ("completed", "completed_with_degradation", "failed", "interrupted"):
@@ -136,6 +167,111 @@ class RunRegistry:
             run_id, status=status, phase="terminal",
             finished_at=(finished_at or utc_now()).isoformat(),
             error_json=(RegistryError.model_validate(error).model_dump_json() if error else None),
+        )
+        self.append_event(
+            run_id, event_type="run", stage="terminal", status=status,
+            label="Run reached a terminal state.",
+        )
+
+    def append_event(
+        self,
+        run_id: str,
+        *,
+        event_type: str,
+        stage: str | None,
+        status: str,
+        label: str,
+        skill: str | None = None,
+        tool: str | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
+                db.rollback()
+                raise WebError(404, "run_not_found")
+            self._append_event_in_transaction(
+                db, run_id, event_type=event_type, stage=stage, status=status,
+                label=label, skill=skill, tool=tool, duration_ms=duration_ms,
+            )
+            db.commit()
+
+    def trace(self, run_id: str, limit: int, cursor: str | None = None) -> TracePage:
+        self.get(run_id)
+        after = self._decode_event_cursor(cursor) if cursor else 0
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM run_events WHERE run_id=? AND sequence>? ORDER BY sequence LIMIT ?",
+                (run_id, after, limit + 1),
+            ).fetchall()
+        page = rows[:limit]
+        items = [self._trace_event(row) for row in page]
+        next_cursor = None
+        if len(rows) > limit and page:
+            next_cursor = self._encode_event_cursor(page[-1]["sequence"])
+        return TracePage(items=items, next_cursor=next_cursor)
+
+    @staticmethod
+    def _append_event_in_transaction(
+        db: sqlite3.Connection,
+        run_id: str,
+        *,
+        event_type: str,
+        stage: str | None,
+        status: str,
+        label: str,
+        skill: str | None = None,
+        tool: str | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        if event_type not in {"run", "stage", "skill", "tool", "recovery", "approval"}:
+            raise ValueError("unsupported event type")
+        if duration_ms is not None and duration_ms < 0:
+            raise ValueError("duration_ms must be non-negative")
+
+        def clean(value: str | None, maximum: int) -> str | None:
+            if value is None:
+                return None
+            normalized = re.sub(r"[\x00-\x1f\x7f]", " ", value).strip()
+            if not normalized:
+                raise ValueError("trace text must not be empty")
+            return normalized[:maximum]
+
+        db.execute(
+            """INSERT INTO run_events
+               (run_id,event_type,stage,status,label,skill,tool,duration_ms,created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                run_id, event_type, clean(stage, 80), clean(status, 80),
+                clean(label, 240), clean(skill, 120), clean(tool, 120),
+                duration_ms, utc_now().isoformat(),
+            ),
+        )
+
+    @staticmethod
+    def _encode_event_cursor(sequence: int) -> str:
+        return urlsafe_b64encode(f"event:{sequence}".encode("ascii")).decode("ascii")
+
+    @staticmethod
+    def _decode_event_cursor(cursor: str) -> int:
+        try:
+            decoded = urlsafe_b64decode(cursor.encode("ascii")).decode("ascii")
+            prefix, value = decoded.split(":", 1)
+            sequence = int(value)
+            if prefix != "event" or sequence < 0:
+                raise ValueError
+            return sequence
+        except (ValueError, UnicodeError) as exc:
+            raise WebError(422, "validation_error") from exc
+
+    @classmethod
+    def _trace_event(cls, row: sqlite3.Row) -> TraceEvent:
+        return TraceEvent(
+            cursor=cls._encode_event_cursor(row["sequence"]),
+            event_type=row["event_type"], stage=row["stage"], status=row["status"],
+            label=row["label"], skill=row["skill"], tool=row["tool"],
+            duration_ms=row["duration_ms"],
+            created_at=TypeAdapter(datetime).validate_python(row["created_at"]),
         )
 
     def active(self) -> list[RegistryRun]:

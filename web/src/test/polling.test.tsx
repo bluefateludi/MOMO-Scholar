@@ -4,6 +4,9 @@ import type { RunApi, RunDetail } from "../api/contracts";
 import { ApiError } from "../api/client";
 import { demoRun } from "../api/fixtures";
 import { useRunPolling } from "../polling/useRunPolling";
+import type { TechScoutApi, TechScoutRunDetail } from "../api/contracts";
+import { techScoutRun } from "../api/techscoutFixtures";
+import { useTechScoutRunPolling } from "../polling/useTechScoutRunPolling";
 
 afterEach(() => vi.useRealTimers());
 describe("run polling", () => {
@@ -59,5 +62,19 @@ describe("run polling", () => {
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await Promise.resolve(); });
     expect(getRun).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TechScout polling", () => {
+  it("keeps two-second polling semantics and stops at a terminal projection", async () => {
+    vi.useFakeTimers();
+    const running: TechScoutRunDetail = { ...techScoutRun, synthetic: false, status: "running", progress: { ...techScoutRun.progress, stage: "research", completed_stages: ["plan"] } };
+    const getRun = vi.fn().mockResolvedValueOnce({ data: running, retryAfterSeconds: 2 }).mockResolvedValueOnce({ data: techScoutRun });
+    const api = { getRun } as unknown as TechScoutApi;
+    const { result } = renderHook(() => useTechScoutRunPolling(running.id, api));
+    await act(async () => { await Promise.resolve(); }); expect(getRun).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(1999); await Promise.resolve(); }); expect(getRun).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve(); }); expect(result.current.run?.status).toBe("completed");
+    await act(async () => { vi.advanceTimersByTime(30_000); await Promise.resolve(); }); expect(getRun).toHaveBeenCalledTimes(2);
   });
 });

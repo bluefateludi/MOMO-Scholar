@@ -1,15 +1,10 @@
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api";
-import { ErrorPanel, Loading, RunBanner } from "../components/Feedback";
+import { techScoutApi } from "../api";
+import { syntheticNotice } from "../api/techscoutFixtures";
 import { useResource } from "./useResource";
 
 export function EvidencePage() {
-  const { id = "", evidenceId = "" } = useParams(); const { data, error } = useResource(async () => { const [run, evidence] = await Promise.all([api.getRun(id), api.getEvidenceItem(id, evidenceId)]); return { run: run.data, evidence: evidence.data }; }, [id, evidenceId]);
-  if (error) return <ErrorPanel code={error.code} message={error.message}/>; if (!data) return <Loading/>; const item = data.evidence;
-  return <div className="content-page evidence-page page-enter"><RunBanner run={data.run}/><Link className="back-link" to={`/runs/${encodeURIComponent(id)}/papers/${encodeURIComponent(item.paper_id)}`}>← Paper analysis</Link>
-    <header className="evidence-header"><div><p className="eyebrow">Persisted Evidence</p><h1>One claim.<br/><em>Exact provenance.</em></h1></div><span className="score"><strong>{item.relevance_score.toFixed(2)}</strong><small>retrieval score</small></span></header>
-    <figure className="evidence-quote"><span aria-hidden="true">“</span><blockquote>{item.quote}</blockquote><figcaption>This quote is persisted research data. It is never fetched from the source URL at view time.</figcaption></figure>
-    <dl className="provenance"><div><dt>Paper</dt><dd><Link to={`/runs/${encodeURIComponent(id)}/papers/${encodeURIComponent(item.paper_id)}`}>{item.source.title ?? "Unknown paper"}</Link><code>{item.paper_id}</code></dd></div><div><dt>Location</dt><dd>{item.section ?? "Unknown section"}<span>{item.page === null ? "Unknown page" : `Page ${item.page}`}</span></dd></div><div><dt>Chunk</dt><dd><code>{item.chunk_id}</code></dd></div><div><dt>Claim type</dt><dd>{item.claim_type}</dd></div><div><dt>Evidence ID</dt><dd><code>{item.evidence_id}</code></dd></div><div><dt>Content source</dt><dd>{item.source.content_source?.toUpperCase() ?? "Unknown"}{item.source.fallback_code && <span>Fallback: {item.source.fallback_code}</span>}</dd></div></dl>
-    {item.source.url && <a className="source-button" href={item.source.url} target="_blank" rel="noopener noreferrer">Open paper source ↗</a>}
-  </div>;
+  const { id = "", evidenceId = "" } = useParams(); const evidence = useResource(() => techScoutApi.getEvidenceItem(id, evidenceId).then((response) => response.data), [id, evidenceId]);
+  if (evidence.error) return <div className="page-state" role="alert">{evidence.error.message}</div>; if (!evidence.data) return <div className="page-state">Loading evidence…</div>; const item = evidence.data;
+  return <article className="tech-evidence"><div className="synthetic-ribbon" role="note">{syntheticNotice}</div><header><div><p className="eyebrow">{item.kind.replaceAll("_", " ")} · {item.candidate_id}</p><h1>Evidence<br/><em>record</em></h1></div><Link to={`/runs/${id}/report`}>← Decision report</Link></header><blockquote>{item.claim}</blockquote><dl><div><dt>Evidence ID</dt><dd>{item.evidence_id}</dd></div><div><dt>Source type</dt><dd>{item.source_type.replaceAll("_", " ")}</dd></div><div><dt>Source title</dt><dd>{item.source_title}</dd></div><div><dt>Snapshot time</dt><dd>{new Date(item.as_of).toLocaleString()}</dd></div></dl>{item.source_url ? <a className="primary-action inline" href={item.source_url} target="_blank" rel="noopener noreferrer">Open source</a> : <p className="offline-source">Frozen synthetic source: no external URL is exposed.</p>}</article>;
 }

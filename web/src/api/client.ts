@@ -10,6 +10,7 @@ const errorMessages: Record<string, string> = {
   evidence_not_found: "This Evidence item could not be found.", artifact_not_found: "This artifact is not available.", artifact_not_ready: "The requested content is still being prepared.",
   report_unavailable: "This run did not publish a report.", artifact_corrupt: "A saved artifact could not be safely read.", internal_error: "The local service hit an unexpected error.",
   run_busy: "The local research runner is busy. Try again shortly.", origin_not_allowed: "This browser origin is not allowed to use the local API.",
+  techscout_execution_unavailable: "The Wave 1 shell is ready, but the TechScout Harness is not connected yet.", candidate_not_found: "This candidate is not part of the run.",
 };
 export const messageForCode = (code: string) => errorMessages[code] ?? "The request could not be completed safely.";
 

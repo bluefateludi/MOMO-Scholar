@@ -1,21 +1,20 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api";
-import { Artifacts } from "../components/Artifacts";
-import { ConnectionBanner, ErrorPanel, Loading, RunBanner, StatusBadge } from "../components/Feedback";
-import { useRunPolling } from "../polling/useRunPolling";
+import { techScoutApi } from "../api";
+import { syntheticNotice } from "../api/techscoutFixtures";
+import { useTechScoutRunPolling } from "../polling/useTechScoutRunPolling";
+import { useResource } from "./useResource";
 
-const phases = ["queued", "initializing", "search", "acquisition", "chunking", "retrieval", "analysis", "synthesis", "citation_check", "publishing", "terminal"];
+const stages = [{ id: "plan", label: "Plan", note: "freeze the question" }, { id: "research", label: "Research", note: "collect official evidence" }, { id: "verify", label: "Verify", note: "run trusted recipes" }, { id: "decide", label: "Decide", note: "apply deterministic gates" }] as const;
 export function RunPage() {
-  const { id = "" } = useParams(); const { run, error, connectionLost, loading } = useRunPolling(id, api);
-  if (loading && !run) return <Loading/>;
-  if (!run) return <ErrorPanel code={error?.code} message={error?.message ?? "The run could not be loaded."}/>;
-  const phaseIndex = phases.indexOf(run.phase); const active = run.status === "queued" || run.status === "running";
-  return <div className="content-page page-enter">{connectionLost && <ConnectionBanner/>}<RunBanner run={run}/>
-    <header className="run-header"><div><p className="eyebrow">Research file <span>{run.id.slice(0, 8)}</span></p><h1>{run.question}</h1></div><StatusBadge status={run.status}/></header>
-    <section className="progress-panel" aria-live="polite"><div className="progress-lead"><span>{active ? "Pipeline in progress" : "Pipeline record"}</span><strong>{run.phase.replaceAll("_", " ")}</strong>{run.progress.total_units !== null && <p>{run.progress.completed_units ?? 0} of {run.progress.total_units} papers in this phase</p>}{run.progress.paper_id && <code>{run.progress.paper_id}</code>}</div><ol>{phases.map((phase, index) => <li key={phase} className={index < phaseIndex ? "done" : index === phaseIndex ? "current" : ""}><span>{String(index + 1).padStart(2, "0")}</span>{phase.replaceAll("_", " ")}</li>)}</ol></section>
-    {(run.status === "failed" || run.status === "interrupted") && <div className="retry-note"><h2>No report was published.</h2><p>The pipeline does not invent a substitute report after a terminal failure. Review the safe issue code above, then create a new run.</p><Link className="text-link" to="/">Start a new run →</Link></div>}
-    {run.has_report && <nav className="run-actions" aria-label="Run content"><Link to={`/runs/${encodeURIComponent(run.id)}/report`}><span>01</span><strong>Read checked report</strong><small>Claims, support and Evidence</small></Link><Link to={`/runs/${encodeURIComponent(run.id)}/report#papers`}><span>02</span><strong>Browse paper analysis</strong><small>Choose a source from the report</small></Link></nav>}
-    <dl className="run-meta"><div><dt>API run ID</dt><dd>{run.id}</dd></div><div><dt>Artifact run ID</dt><dd>{run.artifact_run_id ?? "Not created yet"}</dd></div><div><dt>Source mode</dt><dd>{run.content_mode.replaceAll("_", " ")}</dd></div><div><dt>Retrieval</dt><dd>{run.retrieval.mode} · top {run.retrieval.top_k}</dd></div></dl>
-    <Artifacts run={run}/>
-  </div>;
+  const { id = "" } = useParams(); const { run, error, connectionLost, loading } = useTechScoutRunPolling(id, techScoutApi); const [traceOpen, setTraceOpen] = useState(false); const trace = useResource(() => techScoutApi.getTrace(id, undefined, 50).then((response) => response.data), [id, traceOpen]);
+  if (loading) return <div className="page-state">Loading run projection…</div>; if (error || !run) return <div className="page-state" role="alert">{error?.message ?? "Run not found."}</div>;
+  return <article className="tech-run">{run.synthetic && <div className="synthetic-ribbon" role="note">{syntheticNotice}</div>}{connectionLost && <div className="connection-banner" role="alert">Connection lost — retaining the last known state and retrying with backoff.</div>}
+    <header className="run-title"><div><p className="eyebrow">{run.mode} mode · {run.status.replaceAll("_", " ")}</p><h1>{run.question}</h1></div><div className="elapsed"><strong>{run.progress.elapsed_seconds.toFixed(1)}s</strong><span>fixture elapsed</span></div></header>
+    <ol className="stage-track">{stages.map((stage, index) => { const complete = run.progress.completed_stages.includes(stage.id); const current = run.progress.stage === stage.id; return <li key={stage.id} className={complete ? "complete" : current ? "current" : ""}><span>{String(index + 1).padStart(2, "0")}</span><strong>{stage.label}</strong><small>{stage.note}</small></li>; })}</ol>
+    <section className="now-panel"><div><span>Current skill</span><strong>{run.progress.current_skill ?? "—"}</strong></div><div><span>Current tool</span><strong>{run.progress.current_tool ?? "—"}</strong></div><div><span>Approval</span><strong>{run.approval.status.replaceAll("_", " ")}</strong></div><div><span>Recovery</span><strong>{run.recovery.outcome.replaceAll("_", " ")} · {run.recovery.attempts_used}/1</strong></div></section>
+    <section className="candidate-board"><header><p className="eyebrow">Candidate matrix</p><h2>{run.candidates.length ? `${run.candidates.length} components` : "Awaiting candidate projection"}</h2></header><div>{run.candidates.map((candidate) => <Link key={candidate.candidate_id} to={`/runs/${id}/candidates/${encodeURIComponent(candidate.candidate_id)}`}><span className="candidate-index">{candidate.candidate_id}</span><strong>{candidate.name}</strong><small>{candidate.support_level.replaceAll("_", " ")}</small><b>{candidate.verdict.replaceAll("_", " ")}</b></Link>)}</div></section>
+    <div className="run-links"><Link to={`/runs/${id}/report`}>Open decision report →</Link></div>
+    <section className="trace-drawer"><button aria-expanded={traceOpen} onClick={() => setTraceOpen(!traceOpen)}>Trace feed <span>{traceOpen ? "Collapse" : "Expand"}</span></button>{traceOpen && <ol>{trace.data?.items.map((event) => <li key={event.cursor}><time>{event.stage ?? event.event_type}</time><div><strong>{event.label}</strong><small>{[event.skill, event.tool, event.duration_ms == null ? null : `${event.duration_ms} ms`].filter(Boolean).join(" · ")}</small></div></li>)}</ol>}</section>
+  </article>;
 }

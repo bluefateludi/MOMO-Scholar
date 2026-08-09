@@ -14,6 +14,8 @@ _MESSAGES = {
     "validation_error": "The request did not satisfy the API contract.",
     "queue_full": "The run queue is full.",
     "execution_unavailable": "Run execution is unavailable.",
+    "techscout_execution_unavailable": "TechScout execution is not connected in the Wave 1 API shell.",
+    "candidate_not_found": "The requested candidate was not found.",
     "run_busy": "The requested run is busy.",
     "origin_not_allowed": "The request origin is not allowed.",
     "internal_error": "The request could not be completed.",
