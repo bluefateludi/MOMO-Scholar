@@ -9,7 +9,7 @@ from paper_agent.techscout.eval.faults import (
 
 def test_fault_injector_triggers_once_at_exact_stage_call():
     injector = DeterministicFaultInjector(
-        (FaultPlan(stage="poc", failure_code="dependency_conflict", trigger_on_call=2),)
+        FaultPlan(stage="poc", failure_code="dependency_conflict", trigger_on_call=2)
     )
     injector.check("poc")
 

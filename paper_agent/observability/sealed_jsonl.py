@@ -45,13 +45,16 @@ class SealedJsonlWriter:
         if path.exists() or self.manifest_path.exists():
             raise SealedJsonlError("sealed JSONL output already exists")
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._records: list[bytes] = []
+        self._record_count = 0
+        self._handle = path.open("x+b")
         self._sealed = False
 
     def append(self, record: Mapping[str, Any]) -> None:
         if self._sealed:
             raise SealedJsonlError("sealed JSONL output is immutable")
-        self._records.append(_canonical_line(record))
+        self._handle.write(_canonical_line(record))
+        self._handle.flush()
+        self._record_count += 1
 
     def seal(
         self,
@@ -61,24 +64,29 @@ class SealedJsonlWriter:
     ) -> dict[str, Any]:
         if self._sealed:
             raise SealedJsonlError("sealed JSONL output is immutable")
-        pre_seal = b"".join(self._records)
+        self._handle.flush()
+        self._handle.seek(0)
+        pre_seal = self._handle.read()
         seal = {
             "schema_version": "1.0",
             "record_type": "trace_seal",
             "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
             "artifact_kind": self.artifact_kind,
             "owner_id": self.owner_id,
-            "record_count": len(self._records),
+            "record_count": self._record_count,
             "pre_seal_sha256": _sha256(pre_seal),
         }
         content = pre_seal + _canonical_line(seal)
-        self.path.write_bytes(content)
+        self._handle.seek(0, 2)
+        self._handle.write(_canonical_line(seal))
+        self._handle.flush()
+        self._handle.close()
         manifest: dict[str, Any] = {
             "schema_version": "1.0",
             "sealed": True,
             "artifact_kind": self.artifact_kind,
             "owner_id": self.owner_id,
-            "record_count": len(self._records),
+            "record_count": self._record_count,
             "path": self.path.name,
             "byte_length": len(content),
             "sha256": _sha256(content),

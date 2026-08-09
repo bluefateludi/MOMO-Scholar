@@ -20,19 +20,18 @@ class InjectedFault(RuntimeError):
 class DeterministicFaultInjector:
     """Inject one typed failure at an exact stage/call without time or randomness."""
 
-    def __init__(self, plans: tuple[FaultPlan, ...]) -> None:
-        self._plans = plans
+    def __init__(self, plan: FaultPlan) -> None:
+        self._plan = plan
         self._calls: dict[str, int] = {}
-        self._triggered: set[int] = set()
+        self._triggered = False
 
     def check(self, stage: str) -> None:
         call = self._calls.get(stage, 0) + 1
         self._calls[stage] = call
-        for index, plan in enumerate(self._plans):
-            if index not in self._triggered and plan.stage == stage and plan.trigger_on_call == call:
-                self._triggered.add(index)
-                raise InjectedFault(plan)
+        if not self._triggered and self._plan.stage == stage and self._plan.trigger_on_call == call:
+            self._triggered = True
+            raise InjectedFault(self._plan)
 
     @property
     def triggered_count(self) -> int:
-        return len(self._triggered)
+        return int(self._triggered)

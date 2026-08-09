@@ -68,3 +68,22 @@ def test_tampering_breaks_sealed_jsonl_verification(tmp_path):
 
     with pytest.raises(SealedJsonlError, match="integrity"):
         verify_sealed_jsonl(path)
+
+
+def test_each_event_is_flushed_before_sealing(tmp_path):
+    path = tmp_path / "traces.jsonl"
+    recorder = TechScoutTraceRecorder(path, run_id="run:partial", now=lambda: FROZEN_NOW)
+    recorder.record(
+        TraceEventName.ERROR_CLASSIFIED,
+        status="error",
+        attributes={
+            "failure_id": "failure:partial:001",
+            "failure_code": "tool_timeout",
+            "failure_stage": "research",
+            "recoverable": True,
+            "attempt": 1,
+        },
+    )
+
+    assert "failure:partial:001" in path.read_text(encoding="utf-8")
+    assert not path.with_name("traces-manifest.json").exists()

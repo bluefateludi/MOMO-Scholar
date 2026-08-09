@@ -26,12 +26,16 @@ class TraceEventName(str, Enum):
     TERMINAL_COMPLETED = "terminal.completed"
 
 
+_COMMON_ATTRIBUTES = {"case_id", "harness_variant"}
 _ALLOWED_ATTRIBUTES = {
-    TraceEventName.PLAN_CREATED: {"plan_id", "dimension_count"},
+    TraceEventName.PLAN_CREATED: {"plan_id", "dimension_count", "decision_code"},
     TraceEventName.SKILL_SELECTED: {"skill_id", "stage", "reason_code"},
-    TraceEventName.MCP_TOOL_STARTED: {"tool_call_id", "tool_name", "skill_id"},
+    TraceEventName.MCP_TOOL_STARTED: {
+        "tool_call_id", "tool_name", "skill_id", "safe_parameter_names", "parameter_count"
+    },
     TraceEventName.MCP_TOOL_FINISHED: {
-        "tool_call_id", "tool_name", "latency_ms", "cache_status", "error_code"
+        "tool_call_id", "tool_name", "latency_ms", "cache_status", "error_code",
+        "prompt_tokens", "completion_tokens", "estimated_cost"
     },
     TraceEventName.TOOL_STARTED: {"tool_call_id", "tool_name", "skill_id"},
     TraceEventName.TOOL_FINISHED: {
@@ -60,6 +64,20 @@ _ALLOWED_ATTRIBUTES = {
         "report_sha256", "manifest_sha256"
     },
 }
+_REQUIRED_ATTRIBUTES = {
+    TraceEventName.TERMINAL_COMPLETED: {
+        "terminal_status",
+        "gate_outcome",
+        "latency_ms",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "retry_count",
+        "recovery_count",
+        "report_sha256",
+        "manifest_sha256",
+    }
+}
 
 
 class TraceEvent(TechScoutModel):
@@ -81,9 +99,12 @@ class TraceEvent(TechScoutModel):
 
     @model_validator(mode="after")
     def attributes_are_allowlisted(self) -> "TraceEvent":
-        unknown = set(self.attributes) - _ALLOWED_ATTRIBUTES[self.name]
+        unknown = set(self.attributes) - (_ALLOWED_ATTRIBUTES[self.name] | _COMMON_ATTRIBUTES)
         if unknown:
             raise ValueError("trace event attribute is not allowlisted")
+        missing = _REQUIRED_ATTRIBUTES.get(self.name, set()) - set(self.attributes)
+        if missing:
+            raise ValueError("trace event is missing required attributes")
         return self
 
 

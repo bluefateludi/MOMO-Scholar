@@ -3,20 +3,13 @@
   "fixture_kind": "synthetic_frozen_evaluation",
   "case_id": "techscout-smoke-001",
   "kind": "end_to_end",
-  "runs": [{
-    "harness_variant": "v1",
-    "cache_mode": "cold_live",
-    "latency_ms": 7200,
-    "prompt_tokens": 820,
-    "completion_tokens": 310,
-    "task_checks": {
-    "report_schema_valid": true,
-    "hard_constraints_addressed": true,
-    "required_evidence_available": true,
-    "expected_poc_present": true,
-    "validation_gate_passed": true,
-    "artifacts_and_trace_complete": true
-    },
+  "source_fixture": "tests/fixtures/techscout/happy-path.json",
+  "cache_mode": "cold_live",
+  "supports_poc": true,
+  "expected_contract": {
+    "terminal_status": "completed",
+    "task_success": true,
     "first_pass_success": true
-  }]
+  },
+  "observed_metrics": {}
 }
