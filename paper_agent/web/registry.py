@@ -306,13 +306,35 @@ class RunRegistry:
             )
             db.commit()
 
+    def fail_stuck_techscout(self, run_id: str) -> None:
+        """Last-resort queue release when normal failed publication also fails."""
+        now = utc_now().isoformat()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            changed = db.execute(
+                """UPDATE techscout_runs SET status='failed',stage='terminal',
+                   finished_at=?,updated_at=? WHERE id=? AND status='running'""",
+                (now, now, run_id),
+            ).rowcount
+            if changed:
+                self._append_event_in_transaction(
+                    db, run_id, event_type="run", stage="terminal", status="failed",
+                    label="TechScout terminalization failed safely and released the queue.",
+                )
+            db.commit()
+
     def requeue_techscout(self, run_id: str) -> None:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute(
+            changed = db.execute(
                 "UPDATE techscout_runs SET status='queued',updated_at=? WHERE id=? AND status='running'",
                 (utc_now().isoformat(), run_id),
-            )
+            ).rowcount
+            if changed:
+                self._append_event_in_transaction(
+                    db, run_id, event_type="recovery", stage="plan", status="queued",
+                    label="Web process refresh requeued the checkpointed run.",
+                )
             db.commit()
 
     def admit(self, run_id: str, request: CreateRunRequest, capacity: int) -> RegistryRun:

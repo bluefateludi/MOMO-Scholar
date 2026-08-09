@@ -104,6 +104,10 @@ def test_frozen_wave2_create_poll_trace_and_artifacts(
         assert report["verdict"] == expected_verdict
         assert report["synthetic"] is True
         assert any("real local MCP" in item for item in report["limitations"])
+        if fixture_name == "happy-path.json":
+            assert {item["candidate_id"] for item in report["poc_results"]} == {
+                "chroma", "qdrant-local", "pgvector",
+            }
 
         assert client.get(f"/api/v2/runs/{run_id}/candidates").status_code == 200
         evidence = client.get(f"/api/v2/runs/{run_id}/evidence")
@@ -114,13 +118,17 @@ def test_frozen_wave2_create_poll_trace_and_artifacts(
         assert any(item["skill"] == "skill:official-doc-research@1" for item in trace)
         assert any(item["tool"] == "web.search" for item in trace)
         assert any(item["tool"] == "sandbox.run_smoke_test" for item in trace)
+        if recovery_attempted:
+            assert any(item["status"] == "failed" and "dependency_conflict" in item["label"] for item in trace)
+            assert any(item["event_type"] == "recovery" and "checkpoint=" in item["label"] for item in trace)
+            assert any(item["event_type"] == "recovery" and item["status"] == "completed" for item in trace)
 
     run_dir = tmp_path / "outputs" / "techscout" / run_id
     assert REQUIRED_TERMINAL_ARTIFACTS.issubset({path.name for path in run_dir.iterdir()})
     assert (run_dir / "harness-checkpoints.sqlite3").is_file()
     if recovery_attempted:
         poc_history = json.loads((run_dir / "poc-results.json").read_text(encoding="utf-8"))
-        assert [item["status"] for item in poc_history] == ["failed", "passed"]
+        assert [item["status"] for item in poc_history] == ["failed", "passed", "passed"]
     assert fixture["planning_targets"]["fast_terminal_seconds"] == 120
 
 
@@ -236,6 +244,11 @@ def test_executor_exception_always_publishes_failed_terminal_projection(
     }]
     assert "secret-canary" not in json.dumps(projection)
     assert "secret-canary" not in caplog.text
+    run_dir = tmp_path / "outputs" / "techscout" / run_id
+    assert REQUIRED_TERMINAL_ARTIFACTS.issubset({path.name for path in run_dir.iterdir()})
+    trace_lines = [json.loads(line) for line in (run_dir / "traces.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert trace_lines[-1]["stage"] == "terminal"
+    assert trace_lines[-1]["status"] == "failed"
 
 
 def test_demo_mcp_environment_does_not_inherit_parent_credentials(monkeypatch) -> None:

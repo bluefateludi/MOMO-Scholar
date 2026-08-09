@@ -78,6 +78,6 @@ def get_trace(
     run_id: UUID4,
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
-    cursor: str | None = Query(default=None),
+    cursor: str | None = Query(default=None, max_length=128),
 ) -> TracePage:
     return _service(request).trace(str(run_id), limit, cursor)

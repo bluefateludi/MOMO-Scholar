@@ -61,6 +61,17 @@ def test_claim_is_atomic_and_oldest_only(tmp_path):
     assert registry.get("00000000-0000-4000-8000-000000000002").status == "queued"
 
 
+def test_failed_terminalization_release_does_not_block_next_techscout_run(tmp_path):
+    registry = RunRegistry(tmp_path / "registry.sqlite3")
+    first = "00000000-0000-4000-8000-000000000101"
+    second = "00000000-0000-4000-8000-000000000102"
+    registry.admit_techscout(first, TECHSCOUT_REQUEST, 4)
+    registry.admit_techscout(second, TECHSCOUT_REQUEST, 4)
+    assert registry.claim_oldest_techscout().id == first
+    registry.fail_stuck_techscout(first)
+    assert registry.claim_oldest_techscout().id == second
+
+
 def test_artifact_id_rejects_paths(tmp_path):
     registry = RunRegistry(tmp_path / "registry.sqlite3")
     registry.admit("00000000-0000-4000-8000-000000000001", REQUEST, 4)

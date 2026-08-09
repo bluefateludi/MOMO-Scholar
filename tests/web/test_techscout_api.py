@@ -102,6 +102,10 @@ def test_v2_trace_rejects_invalid_cursor_and_oversized_limit(tmp_path):
             f"/api/v2/runs/{SYNTHETIC_RUN_ID}/trace", params={"limit": 101},
         )
         assert oversized.status_code == 422
+        oversized_cursor = client.get(
+            f"/api/v2/runs/{SYNTHETIC_RUN_ID}/trace", params={"cursor": "x" * 129},
+        )
+        assert oversized_cursor.status_code == 422
 
 
 def test_issue_projection_rejects_raw_server_message_channel():

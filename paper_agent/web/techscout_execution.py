@@ -160,10 +160,12 @@ class DeterministicStageServices:
         run_dir: Path,
         scenario: str,
         progress_sink: Callable[[ResearchStage, str | None, str | None, str], None],
+        trace_sink: Callable[[str, str, str, str], None] | None = None,
     ) -> None:
         self.run_dir = run_dir
         self.scenario = scenario
         self.progress_sink = progress_sink
+        self.trace_sink = trace_sink or (lambda *args: None)
         self.skills = fixed_skill_registry()
         self.tools = _LocalMcpInvoker(scenario)
         self.gate = ValidationGate()
@@ -228,52 +230,42 @@ class DeterministicStageServices:
         return StageResult(state=state.model_copy(update={"plan": plan}), tokens=80)
 
     def _research(self, state: ResearchState) -> StageResult:
-        candidate = state.request.candidates[0]
-        selection = self.skills.route(
-            "official-doc-research",
-            ResearchStage.RESEARCH_CANDIDATES,
-            selection_id=f"selection:{state.run_id.split(':', 1)[1]}:research",
-            reason="Fast Demo requires bounded frozen official evidence.",
-        )
-        self.progress_sink(
-            ResearchStage.RESEARCH_CANDIDATES, selection.skill_id, None,
-            "Routed frozen research through the official-doc skill.",
-        )
-        call = ToolCall(
-            tool_call_id=f"tool-call:{state.run_id.split(':', 1)[1]}:search",
-            tool_name="web.search",
-            skill_id=selection.skill_id,
-            arguments={
-                "query": f"{candidate.name} local persistence metadata filtering",
-                "candidate_id": candidate.candidate_id,
-                "domains": ["docs.example.test"],
-                "max_results": 1,
-            },
-        )
-        result = self.tools.invoke(call)
-        self.progress_sink(
-            ResearchStage.RESEARCH_CANDIDATES, selection.skill_id, call.tool_name,
-            "Local MCP returned frozen evidence.",
-        )
-        if result.status is not ToolStatus.SUCCEEDED:
-            failure = Failure(
-                failure_id=f"failure:{state.run_id.split(':', 1)[1]}:research",
-                code=result.error_code or FailureCode.TOOL_UNAVAILABLE,
-                stage=FailureStage.RESEARCH,
-                message="Frozen local MCP research was unavailable.",
-                recoverable=False,
-                attempt=1,
+        self.sources, self.chunks, self.evidence = [], [], []
+        run_suffix = state.run_id.split(":", 1)[1]
+        for candidate in state.request.candidates:
+            slug = _slug(candidate.name)
+            selection = self.skills.route(
+                "official-doc-research", ResearchStage.RESEARCH_CANDIDATES,
+                selection_id=f"selection:{run_suffix}:research-{slug}",
+                reason="Fast Demo requires bounded frozen official evidence per candidate.",
             )
-            return StageResult(
-                state=state.model_copy(update={"failures": (*state.failures, failure)}),
-                tool_calls=1,
+            self.progress_sink(
+                ResearchStage.RESEARCH_CANDIDATES, selection.skill_id, None,
+                f"Routed {slug} research through the official-doc skill.",
             )
-        output = SearchOutput.model_validate_json(json.dumps(result.output))
-        hit = output.results[0]
-        source_id = f"source:{_slug(candidate.name)}-frozen-docs"
-        chunk_id = f"chunk:{_slug(candidate.name)}-frozen-docs-0001"
-        self.sources = [
-            SourceDocument(
+            call = ToolCall(
+                tool_call_id=f"tool-call:{run_suffix}:search-{slug}",
+                tool_name="web.search", skill_id=selection.skill_id,
+                arguments={"query": f"{candidate.name} local persistence metadata filtering", "candidate_id": candidate.candidate_id, "domains": ["docs.example.test"], "max_results": 1},
+            )
+            result = self.tools.invoke(call)
+            self.progress_sink(
+                ResearchStage.RESEARCH_CANDIDATES, selection.skill_id, call.tool_name,
+                f"Local MCP returned frozen evidence for {slug}.",
+            )
+            if result.status is not ToolStatus.SUCCEEDED:
+                failure = Failure(
+                    failure_id=f"failure:{run_suffix}:research-{slug}",
+                    code=result.error_code or FailureCode.TOOL_UNAVAILABLE,
+                    stage=FailureStage.RESEARCH,
+                    message="Frozen local MCP research was unavailable.", recoverable=False, attempt=1,
+                )
+                return StageResult(state=state.model_copy(update={"failures": (*state.failures, failure)}), tool_calls=len(self.sources) + 1)
+            output = SearchOutput.model_validate_json(json.dumps(result.output))
+            hit = output.results[0]
+            source_id = f"source:{slug}-frozen-docs"
+            chunk_id = f"chunk:{slug}-frozen-docs-0001"
+            self.sources.append(SourceDocument(
                 source_id=source_id,
                 candidate_id=candidate.candidate_id,
                 source_type=SourceType.OFFICIAL_DOCUMENTATION,
@@ -281,29 +273,22 @@ class DeterministicStageServices:
                 title=hit.title,
                 as_of=output.provenance.retrieved_at,
                 content_sha256=output.provenance.snapshot_sha256,
-            )
-        ]
-        self.chunks = [
-            SourceChunk(
+            ))
+            self.chunks.append(SourceChunk(
                 chunk_id=chunk_id,
                 source_id=source_id,
                 text=hit.snippet,
                 ordinal=0,
                 content_sha256=_sha(hit.snippet),
+            ))
+            self.evidence.extend(
+                CandidateEvidence(
+                    evidence_id=f"evidence:{slug}-{index:02d}", candidate_id=candidate.candidate_id,
+                    constraint=constraint, claim=f"Frozen synthetic evidence addresses: {constraint}.",
+                    source_ids=(source_id,), chunk_ids=(chunk_id,), kind=EvidenceKind.RETRIEVED_FACT,
+                )
+                for index, constraint in enumerate(state.request.hard_constraints, start=1)
             )
-        ]
-        self.evidence = [
-            CandidateEvidence(
-                evidence_id=f"evidence:{_slug(candidate.name)}-{index:02d}",
-                candidate_id=candidate.candidate_id,
-                constraint=constraint,
-                claim=f"Frozen synthetic evidence addresses: {constraint}.",
-                source_ids=(source_id,),
-                chunk_ids=(chunk_id,),
-                kind=EvidenceKind.RETRIEVED_FACT,
-            )
-            for index, constraint in enumerate(state.request.hard_constraints, start=1)
-        ]
         return StageResult(
             state=state.model_copy(
                 update={
@@ -311,129 +296,117 @@ class DeterministicStageServices:
                     "evidence_ids": tuple(item.evidence_id for item in self.evidence),
                 }
             ),
-            tool_calls=1,
-            tokens=160,
+            tool_calls=len(state.request.candidates), tokens=160 * len(state.request.candidates),
         )
 
     def _plan_poc(self, state: ResearchState) -> StageResult:
-        candidate = state.request.candidates[0]
-        recipe_id = _recipe_for(candidate.name)
         self.poc_plans = [
             PocPlan(
                 poc_plan_id=f"poc-plan:{_slug(candidate.name)}",
                 candidate_id=candidate.candidate_id,
-                recipe_id=recipe_id,
-                trusted=recipe_id is not None,
+                recipe_id=_recipe_for(candidate.name),
+                trusted=_recipe_for(candidate.name) is not None,
                 checks=("import", "persistence", "query", "filter"),
             )
+            for candidate in state.request.candidates
         ]
         return StageResult(state=state, tokens=60)
 
     def _execute_poc(self, state: ResearchState) -> StageResult:
-        plan = self.poc_plans[0]
-        if not plan.trusted or plan.recipe_id is None:
+        completed: list[PocResult] = []
+        tool_calls = 0
+        recovering = self.scenario == "single_recovery" and any(
+            item.status is PocStatus.FAILED for item in self.poc_history
+        )
+        if recovering:
+            checkpoint = state.checkpoint.checkpoint_id if state.checkpoint else "checkpoint:unavailable"
+            self.trace_sink(
+                "recovery", "verify", "running",
+                f"attempt=1 action=pin_version_and_rerun_poc checkpoint={checkpoint}",
+            )
+        for plan in self.poc_plans:
+            if not plan.trusted or plan.recipe_id is None:
+                poc = PocResult(
+                    poc_result_id=f"poc-result:{_slug(plan.candidate_id)}-research-only",
+                    poc_plan_id=plan.poc_plan_id, candidate_id=plan.candidate_id,
+                    status=PocStatus.RESEARCH_ONLY, timed_out=False, duration_ms=0,
+                    failure_code=FailureCode.POC_RECIPE_UNSUPPORTED,
+                )
+                completed.append(poc)
+                if not any(item.poc_result_id == poc.poc_result_id for item in self.poc_history):
+                    self.poc_history.append(poc)
+                continue
+            selection = self.skills.route(
+                "python-package-smoke-test", ResearchStage.EXECUTE_POC,
+                selection_id=f"selection:{state.run_id.split(':', 1)[1]}:poc-{_slug(plan.candidate_id)}-{state.recovery_count}",
+                reason="Fast Demo uses an allowlisted deterministic local PoC.",
+            )
+            self.progress_sink(ResearchStage.EXECUTE_POC, selection.skill_id, None, f"Routed {_slug(plan.candidate_id)} PoC through the reviewed skill.")
+            inject_conflict = self.scenario == "single_recovery" and not self.poc_history
+            call = ToolCall(
+                tool_call_id=f"tool-call:{state.run_id.split(':', 1)[1]}:poc-{_slug(plan.candidate_id)}-{state.recovery_count}",
+                tool_name="sandbox.run_smoke_test", skill_id=selection.skill_id,
+                arguments={"candidate_id": plan.candidate_id, "recipe_id": plan.recipe_id, "checks": list(plan.checks), "requested_version": "demo-conflict" if inject_conflict else None},
+            )
+            tool_result = self.tools.invoke(call)
+            tool_calls += 1
+            self.progress_sink(ResearchStage.EXECUTE_POC, selection.skill_id, call.tool_name, f"Local MCP completed {_slug(plan.candidate_id)} PoC.")
+            if tool_result.status is not ToolStatus.SUCCEEDED:
+                raise ValueError("local MCP returned an invalid PoC response")
+            output = SmokeTestOutput.model_validate_json(json.dumps(tool_result.output))
+            result_id = f"poc-result:{_slug(plan.candidate_id)}-{state.recovery_count + 1}"
+            if output.status == "failed":
+                poc = PocResult(
+                    poc_result_id=result_id, poc_plan_id=plan.poc_plan_id, candidate_id=plan.candidate_id,
+                    status=PocStatus.FAILED, exit_code=output.exit_code, timed_out=False,
+                    duration_ms=output.duration_ms, failure_code=FailureCode.DEPENDENCY_CONFLICT,
+                )
+                self.poc_results = [poc]
+                self.poc_history.append(poc)
+                checkpoint = state.checkpoint.checkpoint_id if state.checkpoint else "checkpoint:unavailable"
+                self.trace_sink(
+                    "stage", "verify", "failed",
+                    f"dependency_conflict attempt=1 checkpoint={checkpoint}",
+                )
+                failure = Failure(
+                    failure_id=f"failure:{state.run_id.split(':', 1)[1]}:poc-conflict",
+                    code=FailureCode.DEPENDENCY_CONFLICT, stage=FailureStage.POC_EXECUTION,
+                    message="The deterministic PoC found a dependency conflict.", recoverable=True,
+                    recovery_action=RecoveryAction.PIN_VERSION_AND_RERUN_POC, attempt=1,
+                )
+                return StageResult(state=state.model_copy(update={"failures": (*state.failures, failure)}), tool_calls=tool_calls, tokens=100)
+            artifact = PocArtifact(
+                artifact_id=f"artifact:{_slug(plan.candidate_id)}-integrity", kind="deterministic-local-poc",
+                sha256=output.artifact_sha256 or _sha(result_id), size_bytes=64,
+            )
             poc = PocResult(
-                poc_result_id=f"poc-result:{_slug(plan.candidate_id)}-research-only",
-                poc_plan_id=plan.poc_plan_id,
-                candidate_id=plan.candidate_id,
-                status=PocStatus.RESEARCH_ONLY,
-                timed_out=False,
-                duration_ms=0,
-                failure_code=FailureCode.POC_RECIPE_UNSUPPORTED,
+                poc_result_id=result_id, poc_plan_id=plan.poc_plan_id, candidate_id=plan.candidate_id,
+                status=PocStatus.PASSED, resolved_version=output.resolved_version, exit_code=0,
+                timed_out=False, duration_ms=output.duration_ms, artifacts=(artifact,),
             )
-            self.poc_results = [poc]
+            completed.append(poc)
             self.poc_history.append(poc)
-            return StageResult(
-                state=state.model_copy(update={"poc_result_ids": (poc.poc_result_id,)}),
-                tokens=40,
+        self.poc_results = completed
+        if recovering:
+            self.trace_sink(
+                "recovery", "verify", "completed",
+                "attempt=1 outcome=recovered repeated_stage=execute_poc",
             )
-        selection = self.skills.route(
-            "python-package-smoke-test",
-            ResearchStage.EXECUTE_POC,
-            selection_id=f"selection:{state.run_id.split(':', 1)[1]}:poc-{state.recovery_count}",
-            reason="Fast Demo uses an allowlisted deterministic local PoC.",
-        )
-        self.progress_sink(
-            ResearchStage.EXECUTE_POC, selection.skill_id, None,
-            "Routed PoC through the reviewed package smoke skill.",
-        )
-        inject_conflict = self.scenario == "single_recovery" and not self.poc_results
-        call = ToolCall(
-            tool_call_id=f"tool-call:{state.run_id.split(':', 1)[1]}:poc-{state.recovery_count}",
-            tool_name="sandbox.run_smoke_test",
-            skill_id=selection.skill_id,
-            arguments={
-                "candidate_id": plan.candidate_id,
-                "recipe_id": plan.recipe_id,
-                "checks": list(plan.checks),
-                "requested_version": "demo-conflict" if inject_conflict else None,
-            },
-        )
-        tool_result = self.tools.invoke(call)
-        self.progress_sink(
-            ResearchStage.EXECUTE_POC, selection.skill_id, call.tool_name,
-            "Local MCP completed the deterministic PoC.",
-        )
-        if tool_result.status is not ToolStatus.SUCCEEDED:
-            raise ValueError("local MCP returned an invalid PoC response")
-        output = SmokeTestOutput.model_validate_json(json.dumps(tool_result.output))
-        result_id = f"poc-result:{_slug(plan.candidate_id)}-{state.recovery_count + 1}"
-        if output.status == "failed":
-            poc = PocResult(
-                poc_result_id=result_id,
-                poc_plan_id=plan.poc_plan_id,
-                candidate_id=plan.candidate_id,
-                status=PocStatus.FAILED,
-                exit_code=output.exit_code,
-                timed_out=False,
-                duration_ms=output.duration_ms,
-                failure_code=FailureCode.DEPENDENCY_CONFLICT,
-            )
-            failure = Failure(
-                failure_id=f"failure:{state.run_id.split(':', 1)[1]}:poc-conflict",
-                code=FailureCode.DEPENDENCY_CONFLICT,
-                stage=FailureStage.POC_EXECUTION,
-                message="The deterministic PoC found a dependency conflict.",
-                recoverable=True,
-                recovery_action=RecoveryAction.PIN_VERSION_AND_RERUN_POC,
-                attempt=1,
-            )
-            self.poc_results = [poc]
-            self.poc_history.append(poc)
-            return StageResult(
-                state=state.model_copy(update={"failures": (*state.failures, failure)}),
-                tool_calls=1,
-                tokens=100,
-            )
-        artifact = PocArtifact(
-            artifact_id=f"artifact:{_slug(plan.candidate_id)}-integrity",
-            kind="deterministic-local-poc",
-            sha256=output.artifact_sha256 or _sha(result_id),
-            size_bytes=64,
-        )
-        poc = PocResult(
-            poc_result_id=result_id,
-            poc_plan_id=plan.poc_plan_id,
-            candidate_id=plan.candidate_id,
-            status=PocStatus.PASSED,
-            resolved_version=output.resolved_version,
-            exit_code=0,
-            timed_out=False,
-            duration_ms=output.duration_ms,
-            artifacts=(artifact,),
-        )
-        self.poc_results = [poc]
-        self.poc_history.append(poc)
         return StageResult(
-            state=state.model_copy(update={"poc_result_ids": (poc.poc_result_id,)}),
-            tool_calls=1,
-            tokens=100,
+            state=state.model_copy(update={"poc_result_ids": tuple(item.poc_result_id for item in completed)}),
+            tool_calls=tool_calls, tokens=100 * max(1, tool_calls),
         )
 
     def _validate(self, state: ResearchState) -> StageResult:
-        passed = bool(self.poc_results and self.poc_results[-1].status is PocStatus.PASSED)
         candidate = state.request.candidates[0]
-        evidence_by_constraint = {item.constraint: item.evidence_id for item in self.evidence}
+        passed = any(
+            item.candidate_id == candidate.candidate_id and item.status is PocStatus.PASSED
+            for item in self.poc_results
+        )
+        evidence_by_candidate_constraint = {
+            (item.candidate_id, item.constraint): item.evidence_id
+            for item in self.evidence
+        }
         explicit_limited = self.scenario in {
             "cached_degradation", "verified_limited", "research_only",
         }
@@ -450,16 +423,24 @@ class DeterministicStageServices:
                 if self.scenario == "verified_limited"
                 else "No safe winner is claimed because the candidate has no reviewed local PoC recipe."
                 if self.scenario == "research_only"
-                else "The recommended candidate passed frozen evidence and deterministic local PoC validation."
+                else "All supported candidates passed frozen evidence and deterministic local PoC validation; the first equally qualified item in the user-provided shortlist is the deterministic tie-break."
                 if passed
                 else "The first deterministic PoC attempt requires one bounded recovery."
             ),
             constraint_results=tuple(
                 ConstraintResult(
-                    candidate_id=candidate.candidate_id,
+                    candidate_id=item.candidate_id,
                     constraint=constraint,
-                    status=ConstraintStatus.UNKNOWN if limited else ConstraintStatus.SATISFIED,
-                    evidence_ids=() if limited else (evidence_by_constraint[constraint],),
+                    status=(
+                        ConstraintStatus.UNKNOWN
+                        if limited or _recipe_for(item.name) is None
+                        else ConstraintStatus.SATISFIED
+                    ),
+                    evidence_ids=(
+                        ()
+                        if limited or _recipe_for(item.name) is None
+                        else (evidence_by_candidate_constraint[(item.candidate_id, constraint)],)
+                    ),
                     reason=(
                         "Frozen cache fallback limits the decision."
                         if self.scenario == "cached_degradation"
@@ -472,6 +453,7 @@ class DeterministicStageServices:
                         else None
                     ),
                 )
+                for item in state.request.candidates
                 for constraint in state.request.hard_constraints
             ),
             limitations=(
@@ -627,7 +609,12 @@ class TechScoutRunEngine:
             )
 
         services = DeterministicStageServices(
-            run_dir=run_dir, scenario=scenario, progress_sink=progress,
+            run_dir=run_dir,
+            scenario=scenario,
+            progress_sink=progress,
+            trace_sink=lambda event_type, stage, status, label: self.registry.append_event(
+                row.id, event_type=event_type, stage=stage, status=status, label=label,
+            ),
         )
         state = self._initial_state(core_id, row.request)
         checkpoint_path = run_dir / "harness-checkpoints.sqlite3"
@@ -680,6 +667,26 @@ class TechScoutRunEngine:
         )
         path = run_dir / "web-projection.json"
         path.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
+        failed_manifest = RunManifest(
+            run_id=f"run:{row.id}",
+            terminal_status=TerminalStatus.FAILED,
+            artifact_ids=(),
+            limitation_codes=(),
+        )
+        failed_files = {
+            "request.json": row.request.model_dump_json(indent=2),
+            "research-plan.json": "{}",
+            "source-snapshots.jsonl": "",
+            "evidence.jsonl": "",
+            "poc-plan.json": "[]",
+            "poc-results.json": "[]",
+            "decision-report.json": "{}",
+            "decision-report.md": "# TechScout decision\n\nRun failed safely; no report was published.\n",
+            "traces.jsonl": "",
+            "run_manifest.json": failed_manifest.model_dump_json(indent=2),
+        }
+        for name, content in failed_files.items():
+            (run_dir / name).write_text(content, encoding="utf-8")
         return bundle, str(path.relative_to(self.output_root))
 
     @staticmethod
@@ -744,7 +751,6 @@ class TechScoutRunEngine:
     def _bundle(self, row, result, services, scenario, started) -> TechScoutProjectionBundle:
         terminal = result.state.terminal_status or TerminalStatus.FAILED
         status = terminal.value
-        selected = result.state.request.candidates[0]
         report = result.report
         candidates = [
             TechScoutCandidateProjection(
@@ -756,9 +762,19 @@ class TechScoutRunEngine:
                     else "research_only"
                 ),
                 requested_version=item.requested_version,
-                resolved_version=(services.poc_results[-1].resolved_version if item.candidate_id == selected.candidate_id and services.poc_results else None),
-                compatibility=("compatible" if terminal is TerminalStatus.COMPLETED and item.candidate_id == selected.candidate_id else "unknown"),
-                verdict=("recommended" if report and report.recommendation == item.candidate_id else "insufficient_evidence"),
+                resolved_version=next((poc.resolved_version for poc in services.poc_results if poc.candidate_id == item.candidate_id), None),
+                compatibility=(
+                    "compatible"
+                    if any(poc.candidate_id == item.candidate_id and poc.status is PocStatus.PASSED for poc in services.poc_results)
+                    else "unknown"
+                ),
+                verdict=(
+                    "recommended"
+                    if report and report.recommendation == item.candidate_id
+                    else "not_recommended"
+                    if any(poc.candidate_id == item.candidate_id and poc.status is PocStatus.PASSED for poc in services.poc_results)
+                    else "insufficient_evidence"
+                ),
                 evidence_ids=[e.evidence_id for e in services.evidence if e.candidate_id == item.candidate_id],
             )
             for item in result.state.request.candidates
@@ -853,16 +869,6 @@ class TechScoutRunEngine:
 
     def _publish(self, run_dir, result, services, bundle) -> None:
         request = result.state.request
-        events, _ = self.registry.list_events(
-            request.run_id.split(":", 1)[1], after_sequence=0, limit=100,
-        )
-        trace_lines = [event.model_dump_json() for event in events]
-        trace_lines.append(json.dumps({
-            "event_type": "run",
-            "stage": "terminal",
-            "status": result.state.terminal_status.value if result.state.terminal_status else "failed",
-            "label": "Harness reached terminal state.",
-        }))
         files = {
             "request.json": request.model_dump_json(indent=2),
             "research-plan.json": result.state.plan.model_dump_json(indent=2) if result.state.plan else "{}",
@@ -872,12 +878,30 @@ class TechScoutRunEngine:
             "poc-results.json": json.dumps([item.model_dump(mode="json") for item in services.poc_history], indent=2),
             "decision-report.json": result.report.model_dump_json(indent=2) if result.report else "{}",
             "decision-report.md": f"# TechScout decision\n\n{result.report.summary if result.report else 'Run failed safely.'}\n",
-            "traces.jsonl": "\n".join(trace_lines) + "\n",
+            "traces.jsonl": "",
             "run_manifest.json": result.manifest.model_dump_json(indent=2) if result.manifest else "{}",
             "web-projection.json": bundle.model_dump_json(indent=2),
         }
         for name, content in files.items():
             (run_dir / name).write_text(content, encoding="utf-8")
+        self.publish_trace_artifact(request.run_id.split(":", 1)[1])
+
+    def publish_trace_artifact(self, run_id: str) -> None:
+        events = []
+        after = 0
+        while True:
+            page, has_more = self.registry.list_events(
+                run_id, after_sequence=after, limit=100,
+            )
+            events.extend(page)
+            if not has_more or not page:
+                break
+            after = page[-1].sequence
+        path = self.output_root / "techscout" / run_id / "traces.jsonl"
+        path.write_text(
+            "\n".join(event.model_dump_json() for event in events) + ("\n" if events else ""),
+            encoding="utf-8",
+        )
 
 
 class TechScoutSingleRunExecutor:
@@ -926,6 +950,13 @@ class TechScoutSingleRunExecutor:
                     "TechScout worker isolated a failed terminalization",
                     extra={"run_id": row.id, "code": "terminalization_failed"},
                 )
+                try:
+                    self.registry.fail_stuck_techscout(row.id)
+                except Exception:
+                    self._logger.error(
+                        "TechScout queue release failed",
+                        extra={"run_id": row.id, "code": "queue_release_failed"},
+                    )
 
     def _execute(self, row: TechScoutRegistryRun) -> None:
         try:
@@ -936,6 +967,7 @@ class TechScoutSingleRunExecutor:
                 projection_path=projection_path,
                 progress=bundle.detail.progress,
             )
+            self.engine.publish_trace_artifact(row.id)
         except Exception:
             self._logger.error(
                 "TechScout execution failed safely",
@@ -946,3 +978,4 @@ class TechScoutSingleRunExecutor:
                 row.id, "failed", projection_path=projection_path,
                 progress=bundle.detail.progress,
             )
+            self.engine.publish_trace_artifact(row.id)
