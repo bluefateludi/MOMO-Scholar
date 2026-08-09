@@ -57,7 +57,7 @@ def main() -> None:
             "request": {
                 "question": f"Choose a local vector store satisfying {constraint}.",
                 "project_context": "Python 3.11 single-node local RAG service.",
-                "hard_constraints": [constraint, "metadata equality filtering"],
+                "hard_constraints": list(dict.fromkeys((constraint, "metadata equality filtering"))),
                 "candidates": [{"candidate_id": "chroma", "display_name": "Chroma"}],
             },
             "frozen_inputs": {"provenance": "offline synthetic final fixture", "dimension": slug},
@@ -112,7 +112,7 @@ def main() -> None:
         "case_files": case_files,
         "executor_version": "frozen-synthetic-v1",
         "fixture_case_tree_sha256": "e8b90f5e7025155d0a114be1cfade705a8c7be2dafa9d6fdf589ad140243ed0d",
-        "source_tree_sha256": "08a22e8720f668f92f35e127fc3c8b1f49e5f484f8df804ba70bb3ffd6b33066",
+        "source_tree_sha256": "9e16042c061d0ecc6b1074c7e7c1453c9c5dbd8c5eca64b16e35f52e95cdf6c0",
         "execution_policy": {
             "model": "frozen-synthetic-model-v1", "temperature": 0.0,
             "search_snapshot_id": "snapshot:techscout-final-2026-08-09-v1",

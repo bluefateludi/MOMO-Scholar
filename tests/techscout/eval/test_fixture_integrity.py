@@ -40,7 +40,7 @@ def test_final_eval_fixture_tree_is_frozen_before_execution():
         "e8b90f5e7025155d0a114be1cfade705a8c7be2dafa9d6fdf589ad140243ed0d"
     )
     assert hashlib.sha256(b"".join(_canonical_bytes(path) for path in final_sources)).hexdigest() == (
-        "08a22e8720f668f92f35e127fc3c8b1f49e5f484f8df804ba70bb3ffd6b33066"
+        "9e16042c061d0ecc6b1074c7e7c1453c9c5dbd8c5eca64b16e35f52e95cdf6c0"
     )
     for path in final_cases:
         payload = json.loads(path.read_text(encoding="utf-8"))
