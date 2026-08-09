@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 
@@ -15,6 +16,12 @@ EXPECTED_SCENARIOS = {
     "happy_path",
     "no_safe_winner_research_only",
     "bounded_failure_recovery",
+}
+EXPECTED_EVAL_SHA256 = {
+    "smoke-bounded-recovery.json": "20569223990fd1f2765edee3bab94703afd4d4cd7c7c1582eeb3f2edd4b5c730",
+    "smoke-happy-path.json": "6df380d1a99980f46061727cc39d619d1ea4afde7e7ab9dbb7f79fe498a8951f",
+    "smoke-no-safe-winner.json": "a449e3b1c4f6c5c9117e86d79c1c499c1d1eb6b1528f348b508d1d996aaf7e2a",
+    "smoke-suite.json": "6cdfdffbdd1f94a7d32835b93cbcc2c89bd8ad82473f3a99e0f620253e5bd3f3",
 }
 
 
@@ -84,3 +91,16 @@ def test_numbers_are_planning_targets_not_measured_or_resume_claims() -> None:
         assert targets["resume_claim"] is False
         assert targets["fast_terminal_seconds"] == 120
         assert fixture["observed_metrics"] == {}
+
+
+def test_eval_fixture_projection_is_frozen_without_observations() -> None:
+    root = FIXTURE_ROOT / "eval"
+    actual = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.glob("*.json"))
+    }
+    assert actual == EXPECTED_EVAL_SHA256
+    for path in root.glob("smoke-*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") == "techscout-eval-case-v1":
+            assert payload["observed_metrics"] == {}

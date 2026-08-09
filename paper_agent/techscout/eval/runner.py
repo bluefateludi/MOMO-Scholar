@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
+from threading import Lock
 from typing import TypeVar
 
 from paper_agent.techscout.eval.contracts import (
@@ -14,16 +15,77 @@ from paper_agent.techscout.eval.contracts import (
     HarnessVariant,
     RetrievalExecutionResult,
     TaskRunObservation,
+    validate_expected_contract,
 )
 from paper_agent.techscout.eval.executor import EvaluationExecutor, InfrastructureFailure
 from paper_agent.techscout.eval.faults import DeterministicFaultInjector
 from paper_agent.techscout.eval.metrics import summarize
-from paper_agent.techscout.eval.package import publish_package
+from paper_agent.techscout.eval.package import publish_package, publish_partial_results
 from paper_agent.techscout.eval.suite import load_suite
 from paper_agent.techscout.observability import TechScoutTraceRecorder, TraceEventName
 
 
 T = TypeVar("T")
+
+
+class EvaluationCaseTimeout(TimeoutError):
+    pass
+
+
+def _run_bounded_jobs(
+    jobs: list[Callable[[], tuple[str, object]]],
+    *,
+    workers: int,
+    timeout_seconds: int,
+    output_dir: Path,
+) -> tuple[tuple[str, object], ...]:
+    pool = ThreadPoolExecutor(max_workers=workers)
+    starts: dict[int, float] = {}
+    lock = Lock()
+
+    def invoke(index: int, job: Callable[[], tuple[str, object]]):
+        with lock:
+            starts[index] = time.monotonic()
+        return job()
+
+    futures: dict[Future[tuple[str, object]], int] = {
+        pool.submit(invoke, index, job): index for index, job in enumerate(jobs)
+    }
+    remaining = set(futures)
+    completed: dict[int, tuple[str, object]] = {}
+    try:
+        while remaining:
+            done, _ = wait(remaining, timeout=0.05, return_when=FIRST_COMPLETED)
+            for future in done:
+                remaining.remove(future)
+                completed[futures[future]] = future.result()
+            now = time.monotonic()
+            overdue = [
+                futures[future]
+                for future in remaining
+                if futures[future] in starts
+                and now - starts[futures[future]] >= timeout_seconds
+            ]
+            if overdue:
+                raise EvaluationCaseTimeout(
+                    f"evaluation cases exceeded hard timeout: {sorted(overdue)}"
+                )
+    except BaseException as error:
+        for future in remaining:
+            future.cancel()
+        publish_partial_results(
+            output_dir,
+            observations=tuple(completed[index] for index in sorted(completed)),
+            failure_code=(
+                "case_timeout"
+                if isinstance(error, EvaluationCaseTimeout)
+                else "runner_failure"
+            ),
+        )
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+    return tuple(completed[index] for index in sorted(completed))
 
 
 def _with_infrastructure_retry(
@@ -95,7 +157,7 @@ def run_evaluation_suite(
                         case_id=case.case_id,
                     )
                     elapsed = max(0, round((monotonic() - started) * 1_000))
-                    return "task", TaskRunObservation(
+                    observation = TaskRunObservation(
                         case_id=case.case_id,
                         harness_variant=variant,
                         cache_mode=case.cache_mode,
@@ -103,6 +165,8 @@ def run_evaluation_suite(
                         supports_poc=case.supports_poc,
                         result=result,
                     )
+                    validate_expected_contract(case, observation)
+                    return "task", observation
                 jobs.append(run_task)
         elif case.kind is CaseKind.RETRIEVAL:
             jobs.append(
@@ -117,23 +181,24 @@ def run_evaluation_suite(
             )
         else:
             assert case.fault_plan is not None
-            jobs.append(
-                lambda case=case: (
-                    "fault",
-                    executor.run_fault(
+            def run_fault(case=case):
+                injector = DeterministicFaultInjector(case.fault_plan)
+                result = executor.run_fault(
                         case,
-                        DeterministicFaultInjector(case.fault_plan),
+                        injector,
                         timeout_seconds=suite.execution_policy.timeout_seconds,
                         trace=trace,
-                    ),
-                )
-            )
-    try:
-        with ThreadPoolExecutor(max_workers=suite.execution_policy.workers) as pool:
-            observations = tuple(pool.map(lambda job: job(), jobs))
-    except BaseException:
-        trace.seal()
-        raise
+                    )
+                if injector.triggered_count != 1 or result.injected_failure_code != case.fault_plan.failure_code:
+                    raise ValueError("fault executor did not trigger the frozen failure plan")
+                return "fault", result
+            jobs.append(run_fault)
+    observations = _run_bounded_jobs(
+        jobs,
+        workers=suite.execution_policy.workers,
+        timeout_seconds=suite.execution_policy.timeout_seconds,
+        output_dir=output_dir,
+    )
     task_runs = tuple(value for kind, value in observations if kind == "task")
     retrieval = tuple(value for kind, value in observations if kind == "retrieval")
     faults = tuple(value for kind, value in observations if kind == "fault")

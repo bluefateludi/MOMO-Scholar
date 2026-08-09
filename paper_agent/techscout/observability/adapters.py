@@ -7,7 +7,7 @@ from paper_agent.techscout.harness.stages import (
     StageResult,
     StageServices,
 )
-from paper_agent.techscout.models import SkillSelection, ToolCall, ToolResult, ToolStatus
+from paper_agent.techscout.models import GateOutcome, SkillSelection, ToolCall, ToolResult, ToolStatus
 from paper_agent.techscout.observability.recorder import TechScoutTraceRecorder
 from paper_agent.techscout.observability.schema import TraceEventName
 from paper_agent.techscout.runtime_skills import SkillRegistry
@@ -95,13 +95,16 @@ class TracingStageServices:
         artifacts: StageArtifacts,
         deadline: StageDeadline,
     ) -> StageResult:
-        if stage is ResearchStage.RECOVER_ONCE and state.failures:
+        is_recovery = state.gate_outcome is GateOutcome.RECOVER and bool(state.failures)
+        if is_recovery:
+            if state.checkpoint is None:
+                raise ValueError("recovery trace requires a checkpoint link")
             self._trace.record(
                 TraceEventName.RECOVERY_STARTED,
                 status="started",
                 attributes={
                     "failure_id": state.failures[-1].failure_id,
-                    "checkpoint_id": state.checkpoint.checkpoint_id if state.checkpoint else None,
+                    "checkpoint_id": state.checkpoint.checkpoint_id,
                     "stage": stage.value,
                     "recovery_action": state.failures[-1].recovery_action.value
                     if state.failures[-1].recovery_action
@@ -158,13 +161,14 @@ class TracingStageServices:
                     "failure_count": len(result.state.failures),
                 },
             )
-        if stage is ResearchStage.RECOVER_ONCE and state.failures:
+        if is_recovery:
+            assert state.checkpoint is not None
             self._trace.record(
                 TraceEventName.RECOVERY_FINISHED,
                 status="ok" if result.state.recovery_count == 1 else "error",
                 attributes={
                     "failure_id": state.failures[-1].failure_id,
-                    "checkpoint_id": state.checkpoint.checkpoint_id if state.checkpoint else None,
+                    "checkpoint_id": state.checkpoint.checkpoint_id,
                     "stage": stage.value,
                     "succeeded": result.state.recovery_count == 1,
                 },

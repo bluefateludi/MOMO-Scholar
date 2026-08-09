@@ -28,6 +28,39 @@ PACKAGE_ARTIFACTS = frozenset(
 )
 
 
+def publish_partial_results(
+    output_dir: Path,
+    *,
+    observations: tuple[tuple[str, object], ...],
+    failure_code: str,
+) -> None:
+    """Preserve completed observations after a terminal runner failure."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    records = [
+        value.model_dump(mode="json")
+        for _, value in observations
+        if hasattr(value, "model_dump")
+    ]
+    (output_dir / "partial-results.json").write_text(
+        json.dumps(
+            {"sealed": False, "complete": False, "observations": records},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "failures.jsonl").write_text(
+        json.dumps(
+            {"failure_code": failure_code, "partial_result_count": len(records)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _resume_projection(summary: EvaluationSummary) -> str:
     lines = [
         "# MOMO TechScout evaluation evidence",

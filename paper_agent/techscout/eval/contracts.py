@@ -31,6 +31,13 @@ class HarnessVariant(str, Enum):
     V1 = "v1"
 
 
+class ExpectedContract(TechScoutModel):
+    terminal_status: Literal["completed", "completed_with_limitations", "failed"]
+    task_success: bool
+    first_pass_success: bool
+    maximum_recovery_attempts: Literal[0, 1] = 0
+
+
 class EvaluationCase(TechScoutModel):
     schema_version: Literal["techscout-eval-case-v1"]
     fixture_kind: Literal["synthetic_frozen_evaluation"]
@@ -40,7 +47,7 @@ class EvaluationCase(TechScoutModel):
     cache_mode: CacheMode
     supports_poc: bool = False
     fault_plan: FaultPlan | None = None
-    expected_contract: dict[NonEmptyStr, bool | str | int]
+    expected_contract: ExpectedContract
     observed_metrics: dict[NonEmptyStr, object] = Field(default_factory=dict, max_length=0)
 
     @model_validator(mode="after")
@@ -88,6 +95,7 @@ class EvaluationEnvironment(TechScoutModel):
 
 
 class TaskExecutionResult(TechScoutModel):
+    terminal_status: Literal["completed", "completed_with_limitations", "failed"]
     report_schema_valid: bool
     hard_constraints_addressed: bool
     required_evidence_available: bool
@@ -155,6 +163,27 @@ class TaskRunObservation(TechScoutModel):
     @property
     def first_pass_success(self) -> bool:
         return self.task_success and not self.result.recovery_attempted
+
+
+def validate_expected_contract(
+    case: EvaluationCase,
+    observation: TaskRunObservation,
+) -> None:
+    expected = case.expected_contract
+    actual = (
+        observation.result.terminal_status,
+        observation.task_success,
+        observation.first_pass_success,
+        int(observation.result.recovery_attempted),
+    )
+    declared = (
+        expected.terminal_status,
+        expected.task_success,
+        expected.first_pass_success,
+        expected.maximum_recovery_attempts,
+    )
+    if actual != declared:
+        raise ValueError(f"case {case.case_id} did not satisfy its frozen expected contract")
 
 
 class LatencySummary(TechScoutModel):

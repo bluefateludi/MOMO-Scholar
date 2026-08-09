@@ -105,6 +105,10 @@ class TraceEvent(TechScoutModel):
         missing = _REQUIRED_ATTRIBUTES.get(self.name, set()) - set(self.attributes)
         if missing:
             raise ValueError("trace event is missing required attributes")
+        if self.name in {TraceEventName.RECOVERY_STARTED, TraceEventName.RECOVERY_FINISHED}:
+            checkpoint_id = self.attributes.get("checkpoint_id")
+            if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
+                raise ValueError("recovery event requires a checkpoint link")
         return self
 
 
