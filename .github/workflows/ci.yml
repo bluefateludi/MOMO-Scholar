@@ -18,6 +18,8 @@ jobs:
     name: Python quality and package smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      NO_COLOR: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
