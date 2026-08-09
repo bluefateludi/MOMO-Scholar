@@ -14,7 +14,7 @@ EXPECTED_SHA256 = {
 
 def test_frozen_eval_fixtures_have_expected_hashes_and_no_observations():
     actual = {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        path.name: hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         for path in sorted(FIXTURES.glob("*.json"))
     }
     assert actual == EXPECTED_SHA256
