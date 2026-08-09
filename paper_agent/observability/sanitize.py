@@ -11,6 +11,7 @@ from paper_agent.observability.tracing_models import (
 )
 
 REDACTED = "[REDACTED]"
+TRUNCATED = "[TRUNCATED]"
 
 class TraceDataPolicyError(ValueError):
     pass
@@ -148,6 +149,33 @@ def sanitize_event_data(value: Any, *, secrets: tuple[str, ...]) -> Any:
     return _sanitize(value, secrets=known_secrets)
 
 
+def sanitize_bounded_event_data(
+    value: Mapping[str, Any],
+    *,
+    secrets: tuple[str, ...] = (),
+    max_string_length: int = 2_048,
+) -> dict[str, Any]:
+    """Sanitize a structured event before its event-specific schema is applied.
+
+    Prohibited payload fields are omitted instead of retained as redacted keys, and
+    host paths are replaced. This keeps prompts, provider bodies, credentials, and
+    unbounded output out of append-only traces by construction.
+    """
+    if max_string_length < len(TRUNCATED) + 1:
+        raise ValueError("max_string_length is too small")
+    known_secrets = tuple(
+        sorted({secret for secret in secrets if secret}, key=lambda item: (-len(item), item))
+    )
+    sanitized = _sanitize_bounded(
+        value,
+        secrets=known_secrets,
+        max_string_length=max_string_length,
+    )
+    if not isinstance(sanitized, dict):
+        raise TraceDataPolicyError("structured event data must be a mapping")
+    return sanitized
+
+
 def validate_trace_attributes(
     attributes: Mapping[str, Any],
     *,
@@ -220,6 +248,57 @@ def _sanitize(value: Any, *, secrets: tuple[str, ...]) -> Any:
         return result
     if isinstance(value, (list, tuple)):
         return [_sanitize(item, secrets=secrets) for item in value]
+    return _unsupported_type(value)
+
+
+def _sanitize_bounded(
+    value: Any,
+    *,
+    secrets: tuple[str, ...],
+    max_string_length: int,
+) -> Any:
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise TraceDataPolicyError("structured event data must be finite")
+        return value
+    if isinstance(value, str):
+        sanitized = value
+        for secret in secrets:
+            sanitized = sanitized.replace(secret, REDACTED)
+        sanitized = re.sub(
+            r"(?i)(?:[a-z]:\\|/)(?:[^\s\"']+[\\/])+[^\s\"']*",
+            REDACTED,
+            sanitized,
+        )
+        if len(sanitized) > max_string_length:
+            keep = max_string_length - len(TRUNCATED)
+            sanitized = sanitized[:keep] + TRUNCATED
+        return sanitized
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key.strip():
+                raise TraceDataPolicyError("structured event keys must be nonblank strings")
+            normalized = re.sub(r"[^a-z0-9]+", "_", key.casefold()).strip("_")
+            if normalized in _PROHIBITED_TRACE_KEYS or _is_sensitive_key(key):
+                continue
+            result[key] = _sanitize_bounded(
+                item,
+                secrets=secrets,
+                max_string_length=max_string_length,
+            )
+        return result
+    if isinstance(value, (list, tuple)):
+        return [
+            _sanitize_bounded(
+                item,
+                secrets=secrets,
+                max_string_length=max_string_length,
+            )
+            for item in value
+        ]
     return _unsupported_type(value)
 
 

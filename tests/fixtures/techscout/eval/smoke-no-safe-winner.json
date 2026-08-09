@@ -1,0 +1,16 @@
+{
+  "schema_version": "techscout-eval-case-v1",
+  "fixture_kind": "synthetic_frozen_evaluation",
+  "case_id": "techscout-smoke-002",
+  "kind": "end_to_end",
+  "source_fixture": "tests/fixtures/techscout/no-safe-winner-research-only.json",
+  "cache_mode": "warm_cache",
+  "supports_poc": false,
+  "expected_contract": {
+    "contract_kind": "end_to_end",
+    "terminal_status": "completed_with_limitations",
+    "task_success": true,
+    "first_pass_success": true
+  },
+  "observed_metrics": {}
+}
