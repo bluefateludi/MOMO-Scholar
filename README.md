@@ -1,11 +1,26 @@
-# MOMO Scholar
+# MOMO TechScout
 
-MOMO Scholar is a local CLI that builds citation-traceable literature surveys from public, text-native arXiv papers. PDF-backed analysis is the default; OCR and non-arXiv sources are outside the current scope.
+MOMO TechScout is an evidence-grounded research and verification agent for Python AI developers choosing open-source components. A task supplies the project environment, hard constraints, and candidate components; TechScout runs a bounded, checkpointed investigation and returns either a traceable recommendation, an explicit `no_safe_winner`, or a limited/failed result.
 
-## Local Web demo (offline)
+The current V1 family is deliberately narrow: local-RAG Python vector stores. Chroma and Qdrant Local have reviewed PoC recipes. pgvector and unknown candidates remain research-only unless a later decision adds a trusted fixture. The PoCs check small compatibility contracts; they do not certify production performance.
 
-The bundled Web demo is immutable synthetic data. It needs no provider key and
-makes no provider or research-network call.
+**Hero Demo 已验收：** 以 `origin/master@b7516a7b478834614f6ce2ccf1ae63a5c73c3140` 为实际运行基线的 Chromium 验收中，连续三次 Fast Demo 均在 120 秒预算内终态化，浏览器 wall-clock 分别为 **45.081 s、15.360 s、12.879 s**；验收记录与稳定性修复随后合入 PR #92（`7c6a9ed25b50f790d3a0b39a541e46258da71f5a`）。这是冻结 synthetic Fast Demo 的产品验收，不是 Live 模型质量或组件性能基准。
+
+Final documentation authority includes PR #93 at `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`. Its sealed audit authorizes the synthetic runner only as evaluation-infrastructure acceptance; all real-model/product Task Success, Recall, Recovery-rate, Token, latency, and Cost resume metrics are **N/A**.
+
+## What works today
+
+| Surface | Current status | Honest interpretation |
+|---|---|---|
+| Fast Demo (`mode=fast`) | Implemented | Runs the real bounded LangGraph Harness, fixed Skill router, local stdio MCP transport, checkpoints, deterministic gate, artifacts, and sealed Trace over frozen synthetic evidence and deterministic synthetic PoC responses. It makes no live provider, research-network, or Docker call. |
+| Verified request (`mode=verified`) | Explicitly limited | The API accepts the request, but the current Web executor returns `completed_with_limitations` with `live_execution_unavailable`; it is not a successful Live verification run. |
+| Offline fixture | Implemented | Immutable/simulated UI and API fixture for reviewing screens and contracts. It is not research output, a benchmark, or proof of Docker execution. |
+| Live execution | Future integration | Bounded Tavily, HTTPS fetch, read-only GitHub, cache, and Docker sandbox modules exist, but they are not connected to the default Web run path at this authority. |
+| Evaluation | Infrastructure accepted; product-effect metrics N/A | PR #93 sealed the original failed precheck, one data-only amended synthetic run, its authority index, and the final audit. The recorded `12/40/8` values are diagnostics only—not resume or model/product-effect evidence. |
+
+## Quick start: current Fast Demo
+
+Prerequisites: Python 3.10+, Node.js/npm, and a local checkout. No provider key or Docker daemon is required for this path.
 
 ```console
 python -m pip install -e .
@@ -16,41 +31,45 @@ cd ..
 python -m paper_agent.web
 ```
 
-Open `http://127.0.0.1:8000`, choose **Open offline demo**, and keep the
-`Synthetic offline demo` warning visible while reviewing the report, paper
-analysis, Evidence, and eight artifact downloads. Do not submit the create-run
-form unless a separately authorized live provider run is intended. See the
-[Stage 4 demo runbook](docs/stage4-demo-runbook.md) for the 3–5 minute script and
-[final delivery record](docs/final-delivery.md) for architecture, verified
-metrics, and pending authorities.
+Open `http://127.0.0.1:8000`, submit a Fast Demo task, or open the synthetic offline fixture. Keep its synthetic labeling visible when presenting it. The server binds to loopback by default because the local product has no authentication.
 
-## Install and configure
+The package and CLI names still retain the historical `paper_agent` / `paper-agent` compatibility surface. The legacy paper workflow remains attributable to MOMO Scholar and is not presented as a TechScout evaluation baseline.
 
-```console
-python -m pip install -e .
-copy .env.example .env
+## Architecture
+
+```mermaid
+flowchart LR
+    UI["React UI"] --> API["FastAPI v2 run API"]
+    API --> Q["SQLite run queue and events"]
+    API --> H["Bounded LangGraph Harness"]
+    H --> SK["Fixed runtime Skills"]
+    SK --> MCP["Local stdio MCP gateway"]
+    MCP --> FE["Frozen evidence adapter\ncurrent Fast Demo"]
+    MCP --> FP["Deterministic PoC adapter\ncurrent Fast Demo"]
+    H --> CP["Separate SQLite checkpoints"]
+    H --> VG["Deterministic Validation Gate"]
+    VG --> AR["Immutable report, manifest, artifacts"]
+    H --> TR["Sanitized sealed Trace"]
+    LIVE["Live search, GitHub, Docker adapters\nimplemented modules; not Web-wired"] -. future integration .-> MCP
 ```
 
-Set `DASHSCOPE_API_KEY=your-key-here` in `.env`. The same key powers DashScope embeddings and Qwen generation.
+The deterministic gate—not model prose—controls publishability. Unknown recipes cannot cross the PoC boundary, unsupported critical recommendations are rejected, and recovery may repeat only the failed stage within the policy bound.
 
-## Run
+## Result semantics
 
-Default PDF workflow:
+- `completed`: the active execution boundary passed its required gates. For the current synthetic Fast Demo, this is fixture acceptance only—not a live component claim.
+- `completed_with_limitations`: a useful report exists but evidence, provider, Docker, or verification coverage is incomplete.
+- `failed`: no safe schema-valid report could be published.
+- `no_safe_winner`: evidence or trusted verification did not cover the hard constraints; TechScout refuses to fabricate a recommendation.
 
-```console
-paper-agent run "hybrid retrieval for scientific literature review" --limit 3
-```
+## Documentation
 
-Explicit abstract-only workflow (generation still uses Qwen):
+- [Delivery status and documentation map](docs/techscout/README.md)
+- [Architecture and artifact authority](docs/techscout/architecture.md)
+- [Run modes and operator guide](docs/techscout/running.md)
+- [V1 support matrix and security boundary](docs/techscout/support-and-safety.md)
+- [Final evaluation and browser acceptance authority](docs/techscout/final-delivery.md)
+- [Interview story and four STAR resume drafts](docs/techscout/interview-and-resume.md)
+- [Product-scope ADR](docs/decisions/0001-techscout-product-scope-and-support.md)
 
-```console
-paper-agent run "hybrid retrieval for scientific literature review" --limit 3 --no-pdf
-```
-
-Runs are written below `outputs/` unless `--output-dir` is supplied. See [the full-text survey guide](docs/fulltext-survey.md) for artifacts, terminal states, failure semantics, limits, licensing, and verification.
-
-Local sealed traces are enabled by default. See
-[Trace and Observability](docs/observability.md) for artifact authority,
-fresh/reuse correlation, validation, security, and optional OTLP export.
-
-MOMO Scholar is licensed under AGPL-3.0; see `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+MOMO TechScout is licensed under AGPL-3.0; see `LICENSE` and `THIRD_PARTY_NOTICES.md`.
