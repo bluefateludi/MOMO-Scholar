@@ -43,7 +43,7 @@ jobs:
 
       - name: Offline Python tests
         env:
-          NO_COLOR: "1"
+          _TYPER_FORCE_DISABLE_TERMINAL: "1"
         run: python -m pytest
 
       - name: Build wheel without dependency resolution
