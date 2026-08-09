@@ -53,7 +53,7 @@ def test_v2_fixture_projects_run_report_candidates_evidence_and_trace(tmp_path):
         assert len(second["items"]) == 2 and second["next_cursor"] is None
 
 
-def test_v2_create_is_honest_until_harness_stream_is_connected(tmp_path):
+def test_v2_create_enters_real_harness_queue(tmp_path):
     body = {
         "question": "Choose a local vector store",
         "project_context": "A Python local RAG application",
@@ -67,8 +67,9 @@ def test_v2_create_is_honest_until_harness_stream_is_connected(tmp_path):
     }
     with _client(tmp_path) as client:
         response = client.post("/api/v2/runs", json=body)
-        assert response.status_code == 503
-        assert response.json()["error"]["code"] == "techscout_execution_unavailable"
+        assert response.status_code == 202
+        assert response.json()["status"] in {"queued", "running"}
+        assert response.json()["synthetic"] is True
 
 
 def test_v2_trace_does_not_project_a_legacy_registry_run(tmp_path):

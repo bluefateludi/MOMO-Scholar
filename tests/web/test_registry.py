@@ -7,6 +7,7 @@ from paper_agent.web.api_models import CreateRunRequest
 from paper_agent.web.errors import WebError
 from paper_agent.web.event_cursor import decode_event_cursor, encode_event_cursor
 from paper_agent.web.registry import RunRegistry
+from paper_agent.web.techscout_api_models import TechScoutCreateRunRequest
 
 
 REQUEST = CreateRunRequest.model_validate({
@@ -17,6 +18,18 @@ REQUEST = CreateRunRequest.model_validate({
         "mode": "lexical", "candidate_k": 4, "top_k": 2, "rrf_k": 60,
         "analysis_evidence_per_paper": 1,
     },
+})
+
+TECHSCOUT_REQUEST = TechScoutCreateRunRequest.model_validate({
+    "question": "Choose a local vector store",
+    "project_context": "A Python local RAG service",
+    "environment": {
+        "python_version": "3.11", "operating_system": "Linux",
+        "deployment": "single node",
+    },
+    "hard_constraints": ["local persistence"],
+    "candidates": [{"name": "Chroma"}],
+    "mode": "fast",
 })
 
 
@@ -67,7 +80,7 @@ def test_run_events_migrate_and_page_with_opaque_cursor(tmp_path):
     )
 
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 2
 
     first, has_more = registry.list_events(run_id, after_sequence=0, limit=1)
@@ -79,6 +92,55 @@ def test_run_events_migrate_and_page_with_opaque_cursor(tmp_path):
     assert second[0].label == "Fetched allowlisted metadata"
     assert second[0].tool == "github.read"
     assert has_more is False
+
+
+def test_v2_registry_migration_preserves_trace_and_accepts_techscout_runs(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    run_id = "00000000-0000-4000-8000-000000000010"
+    now = "2026-08-09T12:00:00+00:00"
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+            PRAGMA user_version=2;
+            CREATE TABLE runs (
+              id TEXT PRIMARY KEY, artifact_run_id TEXT UNIQUE, origin TEXT NOT NULL,
+              status TEXT NOT NULL, phase TEXT NOT NULL, request_json TEXT NOT NULL,
+              progress_json TEXT NOT NULL, error_json TEXT, created_at TEXT NOT NULL,
+              started_at TEXT, finished_at TEXT, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE run_events (
+              sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
+              event_type TEXT NOT NULL, stage TEXT, status TEXT NOT NULL,
+              label TEXT NOT NULL, skill TEXT, tool TEXT, duration_ms INTEGER,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+            );
+            CREATE INDEX idx_run_events_run_sequence ON run_events(run_id,sequence);
+        """)
+        db.execute(
+            "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                run_id, None, "live", "queued", "queued",
+                REQUEST.model_dump_json(), '{"completed_units":0,"total_units":null,"paper_id":null}',
+                None, now, None, None, now,
+            ),
+        )
+        db.execute(
+            "INSERT INTO run_events(run_id,event_type,stage,status,label,created_at) VALUES (?,?,?,?,?,?)",
+            (run_id, "run", "queued", "queued", "Preserved v2 trace", now),
+        )
+
+    registry = RunRegistry(path)
+    events, _ = registry.list_events(run_id, after_sequence=0, limit=10)
+    techscout = registry.admit_techscout(
+        "00000000-0000-4000-8000-000000000011", TECHSCOUT_REQUEST, 4,
+    )
+
+    assert events[0].label == "Preserved v2 trace"
+    assert techscout.status == "queued"
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        foreign_keys = db.execute("PRAGMA foreign_key_list(run_events)").fetchall()
+    assert foreign_keys == []
 
 
 def test_trace_rejects_invalid_cursor_and_unbounded_text(tmp_path):

@@ -1,0 +1,37 @@
+{
+  "schema_version": "techscout-web-smoke-v1",
+  "fixture_kind": "synthetic_frozen_acceptance",
+  "task_id": "techscout-web-smoke-cached",
+  "scenario": "cached_degradation",
+  "network_policy": "offline",
+  "request": {
+    "question": "Choose a cached local vector store while the frozen provider uses cache fallback.",
+    "project_context": "A Python 3.11 single-node local RAG service under provider degradation.",
+    "environment": {
+      "python": "3.11",
+      "os": "linux-container",
+      "deployment": "single-node-local"
+    },
+    "hard_constraints": ["local persistence", "metadata equality filtering"],
+    "mode": "fast",
+    "candidates": [
+      {"candidate_id": "qdrant-local", "display_name": "Qdrant Local", "package_name": "qdrant-client"}
+    ]
+  },
+  "frozen_inputs": {
+    "provenance": "synthetic test data served from the deterministic local MCP cache",
+    "cache_status": "hit",
+    "cache_fallback": true
+  },
+  "expected": {
+    "terminal_status": "completed_with_limitations",
+    "decision": "no_safe_winner",
+    "limitation_code": "cached_provider_degradation"
+  },
+  "planning_targets": {
+    "classification": "planning_target",
+    "fast_terminal_seconds": 120,
+    "measured_result": null,
+    "resume_claim": false
+  }
+}

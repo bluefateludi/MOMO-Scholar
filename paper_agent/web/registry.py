@@ -14,6 +14,12 @@ from paper_agent.modeling import StrictModel
 from paper_agent.observability.sanitize import sanitize_event_data
 from paper_agent.web.api_models import ApiStatus, CreateRunRequest, Phase, RunProgress
 from paper_agent.web.errors import WebError
+from paper_agent.web.techscout_api_models import (
+    TechScoutCreateRunRequest,
+    TechScoutProgress,
+    TechScoutStage,
+    TechScoutStatus,
+)
 
 
 _CREDENTIAL_VALUE = re.compile(
@@ -63,6 +69,19 @@ class RegistryEvent(StrictModel):
     created_at: datetime
 
 
+class TechScoutRegistryRun(StrictModel):
+    id: str
+    status: TechScoutStatus
+    stage: TechScoutStage
+    request: TechScoutCreateRunRequest
+    progress: TechScoutProgress
+    projection_path: str | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    updated_at: datetime
+
+
 class RunRegistry:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -84,7 +103,7 @@ class RunRegistry:
         with self._connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version > 2:
+            if version > 3:
                 raise RuntimeError("run registry schema is newer than this server")
             db.execute("BEGIN IMMEDIATE")
             db.execute("""
@@ -114,7 +133,186 @@ class RunRegistry:
                 db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_run_events_run_sequence ON run_events(run_id,sequence)"
                 )
-            db.execute("PRAGMA user_version=2")
+            if version < 3:
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS techscout_runs (
+                      id TEXT PRIMARY KEY,
+                      status TEXT NOT NULL CHECK (status IN ('queued','running','completed','completed_with_limitations','failed')),
+                      stage TEXT NOT NULL CHECK (stage IN ('plan','research','verify','decide','terminal')),
+                      request_json TEXT NOT NULL, progress_json TEXT NOT NULL,
+                      projection_path TEXT, created_at TEXT NOT NULL, started_at TEXT,
+                      finished_at TEXT, updated_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("ALTER TABLE run_events RENAME TO run_events_v2")
+                db.execute("""
+                    CREATE TABLE run_events (
+                      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                      run_id TEXT NOT NULL,
+                      event_type TEXT NOT NULL CHECK (event_type IN ('run','stage','skill','tool','recovery','approval')),
+                      stage TEXT, status TEXT NOT NULL, label TEXT NOT NULL,
+                      skill TEXT, tool TEXT, duration_ms INTEGER,
+                      created_at TEXT NOT NULL
+                    )
+                """)
+                db.execute("""
+                    INSERT INTO run_events
+                    SELECT sequence,run_id,event_type,stage,status,label,skill,tool,duration_ms,created_at
+                    FROM run_events_v2
+                """)
+                db.execute("DROP TABLE run_events_v2")
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_run_events_run_sequence ON run_events(run_id,sequence)"
+                )
+            db.execute("PRAGMA user_version=3")
+            db.commit()
+
+    def admit_techscout(
+        self, run_id: str, request: TechScoutCreateRunRequest, capacity: int,
+    ) -> TechScoutRegistryRun:
+        now = utc_now().isoformat()
+        progress = TechScoutProgress(
+            stage="plan", completed_stages=[], elapsed_seconds=0,
+        )
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            active = db.execute(
+                "SELECT COUNT(*) FROM techscout_runs WHERE status IN ('queued','running')"
+            ).fetchone()[0]
+            if active >= capacity:
+                db.rollback()
+                raise WebError(503, "queue_full")
+            db.execute(
+                "INSERT INTO techscout_runs VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    run_id, "queued", "plan", request.model_dump_json(),
+                    progress.model_dump_json(), None, now, None, None, now,
+                ),
+            )
+            self._append_event_in_transaction(
+                db, run_id, event_type="run", stage="plan", status="queued",
+                label="TechScout run accepted by the local queue.",
+            )
+            db.commit()
+        return self.get_techscout(run_id)
+
+    def get_techscout(self, run_id: str) -> TechScoutRegistryRun:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM techscout_runs WHERE id=?", (run_id,),
+            ).fetchone()
+        if row is None:
+            raise WebError(404, "run_not_found")
+        return self._parse_techscout(row)
+
+    def list_techscout(self) -> list[TechScoutRegistryRun]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM techscout_runs ORDER BY created_at DESC,id DESC"
+            ).fetchall()
+        return [self._parse_techscout(row) for row in rows]
+
+    def active_techscout(self) -> list[TechScoutRegistryRun]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM techscout_runs WHERE status IN ('queued','running') ORDER BY created_at,id"
+            ).fetchall()
+        return [self._parse_techscout(row) for row in rows]
+
+    def claim_oldest_techscout(self) -> TechScoutRegistryRun | None:
+        now = utc_now().isoformat()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute(
+                "SELECT 1 FROM techscout_runs WHERE status='running' LIMIT 1"
+            ).fetchone():
+                db.rollback()
+                return None
+            row = db.execute(
+                "SELECT id FROM techscout_runs WHERE status='queued' ORDER BY created_at,id LIMIT 1"
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                return None
+            changed = db.execute(
+                "UPDATE techscout_runs SET status='running',started_at=COALESCE(started_at,?),updated_at=? WHERE id=? AND status='queued'",
+                (now, now, row["id"]),
+            ).rowcount
+            if changed:
+                self._append_event_in_transaction(
+                    db, row["id"], event_type="stage", stage="plan",
+                    status="running", label="TechScout execution started.",
+                )
+            db.commit()
+        return self.get_techscout(row["id"]) if changed else None
+
+    def update_techscout_progress(
+        self,
+        run_id: str,
+        progress: TechScoutProgress,
+        *,
+        event_type: str = "stage",
+        label: str | None = None,
+        skill: str | None = None,
+        tool: str | None = None,
+    ) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT stage FROM techscout_runs WHERE id=?", (run_id,),
+            ).fetchone()
+            if row is None:
+                db.rollback()
+                raise WebError(404, "run_not_found")
+            db.execute(
+                "UPDATE techscout_runs SET stage=?,progress_json=?,updated_at=? WHERE id=?",
+                (progress.stage, progress.model_dump_json(), utc_now().isoformat(), run_id),
+            )
+            if label is not None:
+                self._append_event_in_transaction(
+                    db, run_id, event_type=event_type, stage=progress.stage,
+                    status="running", label=label, skill=skill, tool=tool,
+                )
+            db.commit()
+
+    def terminal_techscout(
+        self,
+        run_id: str,
+        status: TechScoutStatus,
+        *,
+        projection_path: str | None,
+        progress: TechScoutProgress,
+    ) -> None:
+        if status not in {"completed", "completed_with_limitations", "failed"}:
+            raise ValueError("terminal TechScout status required")
+        now = utc_now().isoformat()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute(
+                "SELECT 1 FROM techscout_runs WHERE id=?", (run_id,),
+            ).fetchone() is None:
+                db.rollback()
+                raise WebError(404, "run_not_found")
+            db.execute(
+                """UPDATE techscout_runs SET status=?,stage='terminal',progress_json=?,
+                   projection_path=?,finished_at=?,updated_at=? WHERE id=?""",
+                (
+                    status, progress.model_dump_json(), projection_path, now, now, run_id,
+                ),
+            )
+            self._append_event_in_transaction(
+                db, run_id, event_type="run", stage="terminal", status=status,
+                label="TechScout run reached a terminal state.",
+            )
+            db.commit()
+
+    def requeue_techscout(self, run_id: str) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "UPDATE techscout_runs SET status='queued',updated_at=? WHERE id=? AND status='running'",
+                (utc_now().isoformat(), run_id),
+            )
             db.commit()
 
     def admit(self, run_id: str, request: CreateRunRequest, capacity: int) -> RegistryRun:
@@ -235,7 +433,7 @@ class RunRegistry:
     ) -> None:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            if db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
+            if not self._run_exists(db, run_id):
                 db.rollback()
                 raise WebError(404, "run_not_found")
             self._append_event_in_transaction(
@@ -248,7 +446,9 @@ class RunRegistry:
     def list_events(
         self, run_id: str, *, after_sequence: int, limit: int,
     ) -> tuple[list[RegistryEvent], bool]:
-        self.get(run_id)
+        with self._connect() as db:
+            if not self._run_exists(db, run_id):
+                raise WebError(404, "run_not_found")
         with self._connect() as db:
             rows = db.execute(
                 "SELECT * FROM run_events WHERE run_id=? AND sequence>? ORDER BY sequence LIMIT ?",
@@ -397,6 +597,28 @@ class RunRegistry:
             request=CreateRunRequest.model_validate_json(row["request_json"]),
             progress=RunProgress.model_validate_json(row["progress_json"]),
             error=RegistryError.model_validate_json(row["error_json"]) if row["error_json"] else None,
+            created_at=TypeAdapter(datetime).validate_python(row["created_at"]),
+            started_at=TypeAdapter(datetime).validate_python(row["started_at"]) if row["started_at"] else None,
+            finished_at=TypeAdapter(datetime).validate_python(row["finished_at"]) if row["finished_at"] else None,
+            updated_at=TypeAdapter(datetime).validate_python(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _run_exists(db: sqlite3.Connection, run_id: str) -> bool:
+        return (
+            db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is not None
+            or db.execute(
+                "SELECT 1 FROM techscout_runs WHERE id=?", (run_id,)
+            ).fetchone() is not None
+        )
+
+    @staticmethod
+    def _parse_techscout(row: sqlite3.Row) -> TechScoutRegistryRun:
+        return TechScoutRegistryRun(
+            id=row["id"], status=row["status"], stage=row["stage"],
+            request=TechScoutCreateRunRequest.model_validate_json(row["request_json"]),
+            progress=TechScoutProgress.model_validate_json(row["progress_json"]),
+            projection_path=row["projection_path"],
             created_at=TypeAdapter(datetime).validate_python(row["created_at"]),
             started_at=TypeAdapter(datetime).validate_python(row["started_at"]) if row["started_at"] else None,
             finished_at=TypeAdapter(datetime).validate_python(row["finished_at"]) if row["finished_at"] else None,

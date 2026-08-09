@@ -29,8 +29,7 @@ def _service(request: Request) -> TechScoutProjectionService:
 
 @router.post("", response_model=TechScoutRunSummary, status_code=202, responses=ERRORS)
 def create_run(body: TechScoutCreateRunRequest, request: Request) -> TechScoutRunSummary:
-    _service(request).create()
-    raise AssertionError("unreachable")
+    return _service(request).create(body)
 
 
 @router.get("", response_model=TechScoutRunList, responses=ERRORS)

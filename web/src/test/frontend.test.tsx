@@ -26,7 +26,7 @@ describe("TechScout task input", () => {
     expect(screen.getByRole("textbox", { name: /python version/i })).toHaveValue("3.11");
     expect(screen.getByRole("textbox", { name: /hard constraints/i })).toHaveValue("local persistence\nmetadata equality filtering");
     expect(screen.getByRole("textbox", { name: /candidate shortlist/i })).toHaveValue("Chroma, Qdrant Local, pgvector");
-    expect(screen.getByRole("radio", { name: "Fast" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Fast Demo" })).toBeChecked();
     expect(await screen.findByText(/Synthetic offline fixture/i)).toBeInTheDocument();
   });
 
@@ -39,7 +39,7 @@ describe("TechScout task input", () => {
   });
 });
 
-describe("fixture-backed Wave 1 views", () => {
+describe("fixture-backed TechScout views", () => {
   it("renders the four-stage progress, candidate, recovery, approval, and collapsed Trace", async () => {
     render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}`]}><Routes><Route path="/runs/:id" element={<RunPage/>}/></Routes></MemoryRouter>);
     expect(await screen.findByText(techScoutRun.question)).toBeInTheDocument();
