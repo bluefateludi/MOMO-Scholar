@@ -49,7 +49,7 @@ MOMO Scholar 已有检索、Evidence、Trace、评测、API 和 Web 基础设施
 
 - **S（情境）：** 全仓测试、focused 回归、浏览器验收和 synthetic 评测诊断容易被混成一个“效果数字”。
 - **T（任务）：** 建立可追溯的交付证据层级，让每个数字都带范围、commit 和适用边界。
-- **A（行动）：** 分离 full-integration、PR focused、三项 CI、浏览器 acceptance 与 synthetic runner authority；保留原始失败、单次数据修订、延迟封存 preflight 和禁止再跑四条限制，并把 synthetic Task Success、Recall、token/cost 和 recovery-rate 的 Resume authority 标为 N/A。
+- **A（行动）：** 分离 full-integration、PR focused、三项 CI、浏览器 acceptance 与 synthetic runner authority；永久保留四条限制：原始失败、单次数据修订且禁止再跑、延迟封存 preflight、以及 synthetic 行为导致产品/简历指标 N/A。
 - **R（结果）：** 产品全量集成在 `b7516a7` authority 达到 1462 passed、3 skipped；最终 PR #92 在 `7c6a9ed` 完成 focused Python 118 passed、2 skipped与 Web 22 passed，并保持 Python、Web、sandbox 三项 CI 全绿。
 
 简历一句话：**建立按 scope/commit 分层的质量门与交付证据：全量集成 1462 passed、3 skipped，PR #92 focused Python 118 passed、2 skipped及 Web 22 passed，Python/Web/sandbox 三项 CI 全绿，同时禁止 synthetic 诊断冒充产品效果。**

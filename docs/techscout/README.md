@@ -16,7 +16,7 @@ Every capability is labeled with one of these meanings:
 1. [Architecture and authority](architecture.md) — component boundaries, data flow, and the source of truth.
 2. [Running the product](running.md) — exact Fast, Verified/Live, and Offline semantics.
 3. [Support and safety](support-and-safety.md) — supported candidates, research-only behavior, sandbox limits, approvals, and known limitations.
-4. [Final delivery](final-delivery.md) — browser, test/CI, and sealed synthetic-runner authorities plus the final fact check.
+4. [Final delivery](final-delivery.md) — browser, test/CI, and sealed synthetic-runner authorities plus the final fact-check invariants.
 5. [Interview and resume](interview-and-resume.md) — project narrative and four Chinese STAR drafts using only authorized claims.
 
 ## Current release boundary

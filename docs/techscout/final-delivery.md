@@ -63,9 +63,9 @@ The synthetic numbers must not appear as resume achievements or README headline 
 3. Static preflight ran before the amendment, but its attestation was sealed only afterward from captured console output; it was not independently sealed at execution time.
 4. Rankings, fault outcomes, token counts, and E2E services were authored synthetic fixture behavior. Consequently Task Success, First-pass, Recovery, Recall@5, retries, tokens, cold-live/warm-cache latency, and cost are permanently **N/A** for resume/model/product-effect claims.
 
-## Final two-axis fact check
+## Final fact-check invariants
 
-The checks below were rerun after normally merging PR #93 authority `ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab` into the documentation branch.
+These invariants define the state that implementation/Standards and specification/provenance review must preserve. Review execution and CI status belong to the pull-request record rather than a self-certifying documentation claim.
 
 ### Axis A — implementation and standards
 
