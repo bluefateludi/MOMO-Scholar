@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from paper_agent.eval.evidence_package import EvidencePackageBuilder, verify_evidence_package
+from paper_agent.techscout.eval.contracts import EvaluationSummary, HarnessVariant
 
 
 def _manifest(root: Path) -> tuple[dict[str, object], Path, str]:
@@ -13,40 +14,56 @@ def _manifest(root: Path) -> tuple[dict[str, object], Path, str]:
     return manifest, path, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def main(failed: Path, amended: Path, index: Path, output: Path) -> None:
-    failed_manifest, failed_path, failed_sha = _manifest(failed)
-    amended_manifest, amended_path, amended_sha = _manifest(amended)
-    index_manifest, index_path, index_sha = _manifest(index)
-    summary = {
+def build_audit_summary(
+    amended: EvaluationSummary,
+    *,
+    failed_manifest_sha256: str,
+    amended_manifest_sha256: str,
+    index_manifest_sha256: str,
+) -> dict[str, object]:
+    v0 = amended.task_metrics[HarnessVariant.V0]
+    v1 = amended.task_metrics[HarnessVariant.V1]
+    return {
         "schema_version": "techscout-final-eval-audit-authority-v1",
         "status": "COMPLETE_SYNTHETIC_ACCEPTANCE_NOT_RESUME_METRICS",
         "completed_population": {
-            "end_to_end_tasks": 12,
-            "v0_v1_observations": 24,
-            "retrieval_cases": 40,
-            "fault_cases": 8,
+            "end_to_end_tasks": amended.e2e_case_count,
+            "v0_v1_observations": amended.e2e_run_count,
+            "retrieval_cases": amended.retrieval_case_count,
+            "fault_cases": amended.fault_case_count,
         },
         "recorded_synthetic_diagnostics": {
-            "v0_task_success": "12/12",
-            "v1_task_success": "12/12",
-            "v0_first_pass": "12/12",
-            "v1_first_pass": "12/12",
-            "fault_recovery": "6/8",
-            "retrieval_recall_at_5": 0.9,
-            "version_filter_accuracy": 0.925,
-            "v0_warm_cache_p50_p95_ms": [235, 265],
-            "v1_warm_cache_p50_p95_ms": [250, 296],
+            "v0_task_success": f"{v0.task_success_count}/{v0.task_count}",
+            "v1_task_success": f"{v1.task_success_count}/{v1.task_count}",
+            "v0_first_pass": f"{v0.first_pass_success_count}/{v0.task_count}",
+            "v1_first_pass": f"{v1.first_pass_success_count}/{v1.task_count}",
+            "fault_recovery": (
+                f"{amended.fault_recovery_success_count}/{amended.fault_recovery_attempt_count}"
+            ),
+            "retrieval_recall_at_5": amended.retrieval_recall_at_5,
+            "version_filter_accuracy": amended.version_filter_accuracy,
+            "v0_warm_cache_p50_p95_ms": [
+                v0.latency["warm_cache"].p50_ms,
+                v0.latency["warm_cache"].p95_ms,
+            ],
+            "v1_warm_cache_p50_p95_ms": [
+                v1.latency["warm_cache"].p50_ms,
+                v1.latency["warm_cache"].p95_ms,
+            ],
         },
         "resume_authoritative_metrics": {
-            "task_success": None,
-            "first_pass_success": None,
-            "recovery_success": None,
-            "retrieval_recall_at_5": None,
-            "retries": None,
-            "tokens": None,
-            "cold_live_latency": None,
-            "warm_cache_latency": None,
-            "cost": None,
+            name: None
+            for name in (
+                "task_success",
+                "first_pass_success",
+                "recovery_success",
+                "retrieval_recall_at_5",
+                "retries",
+                "tokens",
+                "cold_live_latency",
+                "warm_cache_latency",
+                "cost",
+            )
         },
         "audit_reason": (
             "Rankings, recovery outcomes, token counts, and E2E services were authored "
@@ -55,11 +72,26 @@ def main(failed: Path, amended: Path, index: Path, output: Path) -> None:
         "full_run_attempt_count": 2,
         "further_full_reruns_authorized": False,
         "authority_manifest_sha256": {
-            "failed_precheck": failed_sha,
-            "amended": amended_sha,
-            "prior_index": index_sha,
+            "failed_precheck": failed_manifest_sha256,
+            "amended": amended_manifest_sha256,
+            "prior_index": index_manifest_sha256,
         },
     }
+
+
+def main(failed: Path, amended: Path, index: Path, output: Path) -> None:
+    failed_manifest, failed_path, failed_sha = _manifest(failed)
+    amended_manifest, amended_path, amended_sha = _manifest(amended)
+    index_manifest, index_path, index_sha = _manifest(index)
+    amended_summary = EvaluationSummary.model_validate_json(
+        (amended / "eval-summary.json").read_text(encoding="utf-8")
+    )
+    summary = build_audit_summary(
+        amended_summary,
+        failed_manifest_sha256=failed_sha,
+        amended_manifest_sha256=amended_sha,
+        index_manifest_sha256=index_sha,
+    )
     report = """# MOMO TechScout final evaluation audit authority
 
 The amended runner completed 12 E2E tasks (24 V0/V1 observations), 40 retrieval
