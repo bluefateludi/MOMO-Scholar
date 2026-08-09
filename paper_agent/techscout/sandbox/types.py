@@ -17,6 +17,14 @@ ImageRef = Annotated[
     ),
 ]
 MemoryLimit = Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]*[kmg]$")]
+DockerNetwork = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"),
+]
+ApprovedHost = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$"),
+]
 
 
 class PocStage(str, Enum):
@@ -49,6 +57,25 @@ class SandboxLimits(TechScoutModel):
     tmpfs: MemoryLimit = "64m"
     timeout_seconds: float = Field(default=60.0, gt=0, le=120)
     output_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
+
+
+class InstallNetworkPolicy(TechScoutModel):
+    """An externally enforced Docker egress network approved for package install."""
+
+    docker_network: DockerNetwork
+    allowed_destinations: tuple[ApprovedHost, ...] = Field(min_length=1)
+    egress_allowlist_enforced: bool
+
+    @model_validator(mode="after")
+    def require_wave1_allowlist(self) -> Self:
+        if self.docker_network.casefold() in {"bridge", "host", "default", "none"}:
+            raise ValueError("install network must be a dedicated allowlisted network")
+        approved = {"pypi.org", "files.pythonhosted.org"}
+        if not set(self.allowed_destinations).issubset(approved):
+            raise ValueError("install destination is not approved for Wave 1")
+        if not self.egress_allowlist_enforced:
+            raise ValueError("install network must enforce its destination allowlist")
+        return self
 
 
 class CompiledCommand(TechScoutModel):

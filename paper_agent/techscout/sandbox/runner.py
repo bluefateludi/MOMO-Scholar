@@ -2,14 +2,17 @@
 
 import subprocess
 import time
+import re
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from paper_agent.techscout.errors import FailureCode
 from paper_agent.techscout.sandbox.types import (
     CompiledCommand,
     ExecutionStatus,
+    InstallNetworkPolicy,
     NetworkAccess,
     PocStage,
     SandboxLimits,
@@ -28,16 +31,20 @@ class DockerCliRunner:
         limits: SandboxLimits | None = None,
         *,
         docker_executable: str = "docker",
-        install_network: str = "bridge",
+        install_network: InstallNetworkPolicy | None = None,
     ) -> None:
         self._workspace_root = workspace_root.resolve(strict=True)
         self._limits = limits or SandboxLimits()
         self._docker_executable = docker_executable
-        if install_network not in {"bridge", "none"}:
-            raise ValueError("install network must be bridge or none")
         self._install_network = install_network
 
-    def docker_argv(self, command: CompiledCommand, run_workspace: Path) -> list[str]:
+    def docker_argv(
+        self,
+        command: CompiledCommand,
+        run_workspace: Path,
+        *,
+        cidfile: Path | None = None,
+    ) -> list[str]:
         workspace = run_workspace.resolve(strict=True)
         if workspace != self._workspace_root and self._workspace_root not in workspace.parents:
             raise ValueError("run workspace must stay inside the configured workspace root")
@@ -47,9 +54,13 @@ class DockerCliRunner:
             command.stage is PocStage.INSTALL
             and command.network_access is NetworkAccess.INSTALL_ONLY
         ):
-            network = self._install_network
+            if self._install_network is None:
+                raise PermissionError(
+                    "install requires a dedicated destination-allowlisted Docker network"
+                )
+            network = self._install_network.docker_network
 
-        return [
+        argv = [
             self._docker_executable,
             "run",
             "--rm",
@@ -77,12 +88,16 @@ class DockerCliRunner:
             f"type=bind,source={workspace},target=/workspace",
             "--env",
             "HOME=/tmp",
-            command.image,
-            *command.argv,
         ]
+        if cidfile is not None:
+            argv.extend(("--cidfile", str(cidfile)))
+        argv.extend((command.image, *command.argv))
+        return argv
 
     def run(self, command: CompiledCommand, run_workspace: Path) -> SandboxResult:
-        argv = self.docker_argv(command, run_workspace)
+        workspace = run_workspace.resolve(strict=True)
+        cidfile = workspace / f".techscout-container-{uuid4().hex}.cid"
+        argv = self.docker_argv(command, workspace, cidfile=cidfile)
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -93,6 +108,7 @@ class DockerCliRunner:
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
+            self._force_remove_container(cidfile)
             return SandboxResult(
                 command=command,
                 status=ExecutionStatus.TIMED_OUT,
@@ -113,6 +129,8 @@ class DockerCliRunner:
                 stderr=_bounded_text(str(exc), self._limits.output_bytes),
                 failure_code=FailureCode.TOOL_UNAVAILABLE,
             )
+        finally:
+            cidfile.unlink(missing_ok=True)
 
         succeeded = completed.returncode == 0
         return SandboxResult(
@@ -125,6 +143,24 @@ class DockerCliRunner:
             stderr=_bounded_text(completed.stderr, self._limits.output_bytes),
             failure_code=None if succeeded else FailureCode.POC_NONZERO_EXIT,
         )
+
+    def _force_remove_container(self, cidfile: Path) -> None:
+        try:
+            container_id = cidfile.read_text(encoding="utf-8").strip()
+        except OSError:
+            return
+        if re.fullmatch(r"[a-f0-9]{12,64}", container_id) is None:
+            return
+        try:
+            subprocess.run(
+                [self._docker_executable, "rm", "--force", container_id],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
 
 
 class FakeSandboxRunner:

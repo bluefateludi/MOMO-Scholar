@@ -22,6 +22,7 @@ class RecipeCommand:
 class ReviewedRecipe:
     recipe_id: StableId
     package_name: str
+    package_version: str
     candidate_names: frozenset[str]
     checks: frozenset[str]
     commands: dict[PocStage, RecipeCommand]
@@ -37,6 +38,7 @@ def _recipes() -> tuple[ReviewedRecipe, ...]:
         ReviewedRecipe(
             recipe_id="recipe:chroma-local@1",
             package_name="chromadb",
+            package_version="1.0.15",
             candidate_names=frozenset({"chroma", "chromadb"}),
             checks=frozenset({"install", "import", "persistence", "upsert", "query", "filter"}),
             commands={
@@ -63,6 +65,7 @@ def _recipes() -> tuple[ReviewedRecipe, ...]:
         ReviewedRecipe(
             recipe_id="recipe:qdrant-local@1",
             package_name="qdrant-client",
+            package_version="1.15.1",
             candidate_names=frozenset({"qdrant", "qdrant local", "qdrant-client"}),
             checks=frozenset({"install", "import", "persistence", "upsert", "query", "filter"}),
             commands={
@@ -100,9 +103,24 @@ class RecipeRegistry:
     def trusted_recipe_ids(self) -> frozenset[StableId]:
         return frozenset(self._recipes)
 
+    @property
+    def trusted_recipe_versions(self) -> dict[StableId, str]:
+        return {
+            recipe_id: recipe.package_version
+            for recipe_id, recipe in self._recipes.items()
+        }
+
     def get(self, recipe_id: StableId | None) -> ReviewedRecipe:
         if recipe_id is None or recipe_id not in self._recipes:
             raise UnsupportedRecipeError(
                 "recipe is not reviewed; candidate must remain research-only"
             )
         return self._recipes[recipe_id]
+
+
+def version_matches(requested: str, actual: str) -> bool:
+    """Match the exact and trailing-wildcard forms supported by Wave 1."""
+    normalized = requested.strip()
+    if normalized.endswith(".*"):
+        return actual.startswith(normalized[:-1])
+    return normalized == actual

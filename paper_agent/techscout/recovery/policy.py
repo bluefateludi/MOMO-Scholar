@@ -1,6 +1,12 @@
 """At most one local recovery of only the failed stage."""
 
-from paper_agent.techscout.errors import Failure, RecoveryAction, StableId
+from paper_agent.techscout.errors import (
+    Failure,
+    FailureCode,
+    FailureStage,
+    RecoveryAction,
+    StableId,
+)
 from paper_agent.techscout.models import TechScoutModel
 from paper_agent.techscout.state import ResearchStage
 
@@ -24,6 +30,35 @@ class RecoveryPolicy:
         "validation": ResearchStage.VALIDATE,
         "reporting": ResearchStage.REVIEW_REPORT,
     }
+    _ALLOWED: dict[
+        tuple[FailureCode, FailureStage],
+        frozenset[RecoveryAction],
+    ] = {
+        (FailureCode.SEARCH_TIMEOUT, FailureStage.RESEARCH): frozenset(
+            {RecoveryAction.USE_CACHE_OR_RETRY_SEARCH}
+        ),
+        (FailureCode.SEARCH_RATE_LIMITED, FailureStage.RESEARCH): frozenset(
+            {RecoveryAction.USE_CACHE_OR_RETRY_SEARCH}
+        ),
+        (FailureCode.PAGE_PARSING_FAILED, FailureStage.RESEARCH): frozenset(
+            {RecoveryAction.FETCH_ALTERNATE_SOURCE}
+        ),
+        (FailureCode.MALFORMED_MCP_RESPONSE, FailureStage.RESEARCH): frozenset(
+            {RecoveryAction.RETRY_TOOL_CALL}
+        ),
+        (FailureCode.DEPENDENCY_CONFLICT, FailureStage.POC_EXECUTION): frozenset(
+            {RecoveryAction.PIN_VERSION_AND_RERUN_POC}
+        ),
+        (FailureCode.VERSION_CONFLICT, FailureStage.POC_EXECUTION): frozenset(
+            {RecoveryAction.PIN_VERSION_AND_RERUN_POC}
+        ),
+        (FailureCode.REPORT_SCHEMA_INVALID, FailureStage.REPORTING): frozenset(
+            {RecoveryAction.REPAIR_REPORT}
+        ),
+        (FailureCode.REPORT_EVIDENCE_INVALID, FailureStage.REPORTING): frozenset(
+            {RecoveryAction.REPAIR_REPORT}
+        ),
+    }
 
     def decide(
         self,
@@ -33,11 +68,13 @@ class RecoveryPolicy:
         checkpoint_id: StableId | None,
     ) -> RecoveryDecision:
         stage = self._STAGES.get(failure.stage.value)
+        allowed_actions = self._ALLOWED.get((failure.code, failure.stage), frozenset())
         permitted = (
             failure.recoverable
             and recovery_count == 0
             and checkpoint_id is not None
             and stage is not None
+            and failure.recovery_action in allowed_actions
         )
         if permitted:
             return RecoveryDecision(

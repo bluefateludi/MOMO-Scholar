@@ -5,6 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN python -m pip install --no-cache-dir \
+      --timeout 30 \
+      --retries 2 \
       chromadb==1.0.15 \
       qdrant-client==1.15.1
 

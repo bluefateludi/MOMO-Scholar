@@ -11,6 +11,7 @@ from paper_agent.techscout.sandbox.runner import DockerCliRunner, FakeSandboxRun
 from paper_agent.techscout.sandbox.types import (
     CompilationDisposition,
     ExecutionStatus,
+    InstallNetworkPolicy,
     PocStage,
     SandboxLimits,
     SandboxResult,
@@ -64,6 +65,10 @@ def test_compiler_emits_only_reviewed_explicit_argv() -> None:
         (_plan("recipe:pgvector@1"), _candidate("pgvector", "pgvector")),
         (_plan(None, trusted=False), _candidate()),
         (_plan(), _candidate("Qdrant Local", "chromadb")),
+        (
+            _plan(),
+            _candidate().model_copy(update={"requested_version": "2.*"}),
+        ),
         (
             PocPlan(
                 poc_plan_id="poc-plan:qdrant:1",
@@ -124,8 +129,18 @@ def test_docker_argv_applies_resource_mount_and_network_boundaries(tmp_path: Pat
     ]
 
     install = PocCompiler().compile(_plan(), _candidate(), PocStage.INSTALL)
-    install_argv = runner.docker_argv(install, run_workspace)
-    assert install_argv[install_argv.index("--network") + 1] == "bridge"
+    with pytest.raises(PermissionError, match="destination-allowlisted"):
+        runner.docker_argv(install, run_workspace)
+    network_runner = DockerCliRunner(
+        tmp_path,
+        install_network=InstallNetworkPolicy(
+            docker_network="techscout-pypi-egress",
+            allowed_destinations=("pypi.org", "files.pythonhosted.org"),
+            egress_allowlist_enforced=True,
+        ),
+    )
+    install_argv = network_runner.docker_argv(install, run_workspace)
+    assert install_argv[install_argv.index("--network") + 1] == "techscout-pypi-egress"
 
     outside = tmp_path.parent / "outside-techscout-run"
     outside.mkdir(exist_ok=True)
@@ -184,6 +199,29 @@ def test_timeout_and_nonzero_exit_are_bounded_structured_results(
     assert failed.status is ExecutionStatus.FAILED
     assert failed.exit_code == 7
     assert failed.failure_code is FailureCode.POC_NONZERO_EXIT
+
+
+def test_timeout_force_removes_daemon_owned_container(monkeypatch, tmp_path: Path) -> None:
+    run_workspace = tmp_path / "run-001"
+    run_workspace.mkdir()
+    command = PocCompiler().compile(_plan(), _candidate(), PocStage.TEST)
+    cleanup_calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        if argv[1] == "run":
+            cidfile = Path(argv[argv.index("--cidfile") + 1])
+            cidfile.write_text("a" * 64, encoding="utf-8")
+            raise subprocess.TimeoutExpired(argv, 60)
+        cleanup_calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = DockerCliRunner(tmp_path).run(command, run_workspace)
+
+    assert result.status is ExecutionStatus.TIMED_OUT
+    assert cleanup_calls == [["docker", "rm", "--force", "a" * 64]]
+    assert not list(run_workspace.glob(".techscout-container-*.cid"))
 
 
 def test_fake_runner_is_deterministic_fifo(tmp_path: Path) -> None:

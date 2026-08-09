@@ -2,7 +2,11 @@
 
 from paper_agent.techscout.models import Candidate, PocPlan
 from paper_agent.techscout.errors import FailureCode
-from paper_agent.techscout.sandbox.recipes import RecipeRegistry, UnsupportedRecipeError
+from paper_agent.techscout.sandbox.recipes import (
+    RecipeRegistry,
+    UnsupportedRecipeError,
+    version_matches,
+)
 from paper_agent.techscout.sandbox.types import (
     CompilationDisposition,
     CompilationResult,
@@ -33,6 +37,16 @@ class PocCompiler:
             raise UnsupportedRecipeError("candidate package does not match reviewed recipe")
         if candidate.name.casefold() not in recipe.candidate_names:
             raise UnsupportedRecipeError("candidate name does not match reviewed recipe")
+        if (
+            candidate.requested_version is not None
+            and not version_matches(candidate.requested_version, recipe.package_version)
+        ):
+            raise UnsupportedRecipeError("requested version does not match reviewed recipe pin")
+        if (
+            candidate.resolved_version is not None
+            and candidate.resolved_version != recipe.package_version
+        ):
+            raise UnsupportedRecipeError("resolved version does not match reviewed recipe pin")
         unknown_checks = set(plan.checks) - recipe.checks
         if unknown_checks:
             raise UnsupportedRecipeError(

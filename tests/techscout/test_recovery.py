@@ -93,6 +93,36 @@ def test_recovery_repeats_only_failed_stage_once_and_links_checkpoint() -> None:
     assert exhausted.action is RecoveryAction.PUBLISH_LIMITED_RESULT
 
 
+def test_recovery_rejects_forged_or_stop_only_failure_actions() -> None:
+    policy = RecoveryPolicy()
+    unsafe = Failure(
+        failure_id="failure:run-001:policy:001",
+        code=FailureCode.UNSAFE_REQUEST,
+        stage=FailureStage.POLICY,
+        message="Unsafe request.",
+        recoverable=True,
+        recovery_action=RecoveryAction.REQUEST_APPROVAL,
+        attempt=1,
+    )
+    mismatched = Failure(
+        failure_id="failure:run-001:poc:002",
+        code=FailureCode.DEPENDENCY_CONFLICT,
+        stage=FailureStage.POC_EXECUTION,
+        message="Dependency conflict.",
+        recoverable=True,
+        recovery_action=RecoveryAction.DIAGNOSE_AND_RERUN_POC,
+        attempt=1,
+    )
+
+    for failure in (unsafe, mismatched):
+        decision = policy.decide(
+            failure,
+            recovery_count=0,
+            checkpoint_id="checkpoint:run-001:failure",
+        )
+        assert decision.should_recover is False
+
+
 def test_high_risk_operations_require_approval_and_default_to_denial() -> None:
     policy = ApprovalPolicy()
 

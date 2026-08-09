@@ -15,6 +15,7 @@ from paper_agent.techscout.models import (
     CandidateEvidence,
     ConstraintStatus,
     DecisionReport,
+    EvidenceKind,
     GateDecision,
     GateOutcome,
     PocPlan,
@@ -24,9 +25,11 @@ from paper_agent.techscout.models import (
     RunManifest,
     SourceChunk,
     SourceDocument,
+    SourceType,
     TechScoutModel,
     Verdict,
 )
+from paper_agent.techscout.sandbox.recipes import RecipeRegistry, version_matches
 
 
 REQUIRED_TERMINAL_ARTIFACTS = frozenset(
@@ -85,6 +88,9 @@ class _Finding:
 class ValidationGate:
     """Apply stable validation checks in a fixed order."""
 
+    def __init__(self, registry: RecipeRegistry | None = None) -> None:
+        self._registry = registry or RecipeRegistry()
+
     def evaluate(self, data: ValidationInput) -> ValidationResult:
         findings: list[_Finding] = []
         candidates = {item.candidate_id: item for item in data.request.candidates}
@@ -92,6 +98,7 @@ class ValidationGate:
         chunks = {item.chunk_id: item for item in data.chunks}
         evidence = {item.evidence_id: item for item in data.evidence}
         plans = {item.poc_plan_id: item for item in data.poc_plans}
+        recipe_versions = self._registry.trusted_recipe_versions
 
         self._check_unique_ids(data, findings)
         if data.report.run_id != data.request.run_id:
@@ -119,17 +126,35 @@ class ValidationGate:
                 )
             )
 
+        allowed_source_types = {
+            SourceType.OFFICIAL_DOCUMENTATION,
+            SourceType.GITHUB_REPOSITORY,
+            SourceType.GITHUB_RELEASE,
+            SourceType.GITHUB_ISSUE,
+        }
         for item in data.evidence:
             if item.candidate_id not in candidates:
                 findings.append(
                     _Finding(FailureCode.REPORT_EVIDENCE_INVALID, f"{item.evidence_id} has unknown candidate")
                 )
+            resolved_sources: list[SourceDocument] = []
             for source_id in item.source_ids:
                 source = sources.get(source_id)
                 if source is None or source.candidate_id != item.candidate_id:
                     findings.append(
                         _Finding(FailureCode.REPORT_EVIDENCE_INVALID, f"{item.evidence_id} has unresolvable source")
                     )
+                else:
+                    resolved_sources.append(source)
+            if item.kind is EvidenceKind.RETRIEVED_FACT and not any(
+                source.source_type in allowed_source_types for source in resolved_sources
+            ):
+                findings.append(
+                    _Finding(
+                        FailureCode.REPORT_EVIDENCE_INVALID,
+                        f"{item.evidence_id} lacks official or GitHub evidence",
+                    )
+                )
             for chunk_id in item.chunk_ids:
                 chunk = chunks.get(chunk_id)
                 if chunk is None or chunk.source_id not in item.source_ids:
@@ -162,7 +187,10 @@ class ValidationGate:
                     _Finding(FailureCode.POC_RECIPE_UNSUPPORTED, "PoC result has no matching plan")
                 )
                 continue
-            if plan.trusted and plan.recipe_id not in data.trusted_recipe_ids:
+            if plan.trusted and (
+                plan.recipe_id not in data.trusted_recipe_ids
+                or plan.recipe_id not in recipe_versions
+            ):
                 findings.append(
                     _Finding(FailureCode.POC_RECIPE_UNSUPPORTED, "PoC plan names an unreviewed recipe")
                 )
@@ -176,6 +204,25 @@ class ValidationGate:
                 findings.append(
                     _Finding(FailureCode.VERSION_CONFLICT, "candidate and PoC resolved versions differ")
                 )
+            if result.status is PocStatus.PASSED:
+                expected_version = recipe_versions.get(plan.recipe_id)
+                if result.resolved_version is None:
+                    findings.append(
+                        _Finding(FailureCode.VERSION_CONFLICT, "passed PoC did not resolve a version")
+                    )
+                elif expected_version is not None and result.resolved_version != expected_version:
+                    findings.append(
+                        _Finding(FailureCode.VERSION_CONFLICT, "PoC version does not match reviewed recipe pin")
+                    )
+                if (
+                    candidate is not None
+                    and candidate.requested_version is not None
+                    and result.resolved_version is not None
+                    and not version_matches(candidate.requested_version, result.resolved_version)
+                ):
+                    findings.append(
+                        _Finding(FailureCode.VERSION_CONFLICT, "PoC version does not satisfy requested version")
+                    )
             missing_artifacts = {
                 artifact.artifact_id for artifact in result.artifacts
             } - data.verified_poc_artifact_ids
@@ -192,27 +239,26 @@ class ValidationGate:
                     _Finding(
                         FailureCode.POC_TIMEOUT,
                         "PoC timed out",
-                        recoverable=data.recovery_count == 0,
-                        action=(
-                            RecoveryAction.DIAGNOSE_AND_RERUN_POC
-                            if data.recovery_count == 0
-                            else RecoveryAction.PUBLISH_LIMITED_RESULT
-                        ),
+                        action=RecoveryAction.PUBLISH_LIMITED_RESULT,
                     )
                 )
             elif result.status is PocStatus.FAILED:
                 code = result.failure_code or FailureCode.POC_NONZERO_EXIT
-                action = (
-                    RecoveryAction.PIN_VERSION_AND_RERUN_POC
-                    if code in {FailureCode.DEPENDENCY_CONFLICT, FailureCode.VERSION_CONFLICT}
-                    else RecoveryAction.DIAGNOSE_AND_RERUN_POC
-                )
+                diagnosed_fix = code in {
+                    FailureCode.DEPENDENCY_CONFLICT,
+                    FailureCode.VERSION_CONFLICT,
+                }
+                action = RecoveryAction.PIN_VERSION_AND_RERUN_POC
                 findings.append(
                     _Finding(
                         code,
                         "PoC exited unsuccessfully",
-                        recoverable=data.recovery_count == 0,
-                        action=action if data.recovery_count == 0 else RecoveryAction.PUBLISH_LIMITED_RESULT,
+                        recoverable=diagnosed_fix and data.recovery_count == 0,
+                        action=(
+                            action
+                            if diagnosed_fix and data.recovery_count == 0
+                            else RecoveryAction.PUBLISH_LIMITED_RESULT
+                        ),
                     )
                 )
 
@@ -223,6 +269,7 @@ class ValidationGate:
             if not passed or not any(
                 plans[result.poc_plan_id].trusted
                 and plans[result.poc_plan_id].recipe_id in data.trusted_recipe_ids
+                and plans[result.poc_plan_id].recipe_id in recipe_versions
                 for result in passed
                 if result.poc_plan_id in plans
             ):
@@ -245,10 +292,20 @@ class ValidationGate:
             }
             for constraint in data.request.hard_constraints:
                 item = recommended_constraints.get(constraint)
+                has_authoritative_evidence = item is not None and any(
+                    any(
+                        source_id in sources
+                        and sources[source_id].source_type in allowed_source_types
+                        for source_id in evidence[evidence_id].source_ids
+                    )
+                    for evidence_id in item.evidence_ids
+                    if evidence_id in evidence
+                )
                 if (
                     item is None
                     or item.status is not ConstraintStatus.SATISFIED
                     or not item.evidence_ids
+                    or not has_authoritative_evidence
                 ):
                     findings.append(
                         _Finding(
@@ -327,7 +384,6 @@ class ValidationGate:
                     FailureCode.POC_TIMEOUT,
                     FailureCode.POC_NONZERO_EXIT,
                     FailureCode.DEPENDENCY_CONFLICT,
-                    FailureCode.VERSION_CONFLICT,
                     FailureCode.TOOL_UNAVAILABLE,
                 }
                 for failure in failures

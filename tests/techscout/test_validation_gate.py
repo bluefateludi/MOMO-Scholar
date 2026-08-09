@@ -199,6 +199,53 @@ def test_validation_gate_rejects_unsupported_critical_recommendation() -> None:
     assert FailureCode.REPORT_EVIDENCE_INVALID in codes
 
 
+def test_validation_gate_requires_resolved_reviewed_version() -> None:
+    data = _valid_input()
+    unresolved = data.poc_results[0].model_copy(update={"resolved_version": None})
+
+    result = ValidationGate().evaluate(
+        data.model_copy(update={"poc_results": (unresolved,)})
+    )
+
+    assert result.decision.outcome is GateOutcome.FAILED
+    assert FailureCode.VERSION_CONFLICT in {failure.code for failure in result.failures}
+
+
+def test_validation_gate_requires_official_or_github_evidence() -> None:
+    data = _valid_input()
+    package_only = data.sources[0].model_copy(
+        update={"source_type": SourceType.PACKAGE_METADATA}
+    )
+
+    result = ValidationGate().evaluate(
+        data.model_copy(update={"sources": (package_only, *data.sources[1:])})
+    )
+
+    assert result.decision.outcome is GateOutcome.RECOVER
+    assert any("lacks official or GitHub evidence" in failure.message for failure in result.failures)
+
+
+def test_recommendation_requires_authoritative_evidence_for_each_constraint() -> None:
+    data = _valid_input()
+    local_only = data.evidence[0].model_copy(
+        update={
+            "kind": EvidenceKind.LOCAL_MEASUREMENT,
+            "source_ids": (),
+            "chunk_ids": (),
+        }
+    )
+
+    result = ValidationGate().evaluate(
+        data.model_copy(update={"evidence": (local_only, *data.evidence[1:])})
+    )
+
+    assert result.decision.outcome is GateOutcome.RECOVER
+    assert any(
+        "recommendation does not prove hard constraint: persistence" in failure.message
+        for failure in result.failures
+    )
+
+
 def test_validation_gate_requests_one_local_poc_recovery_for_dependency_failure() -> None:
     data = _valid_input()
     failed = data.poc_results[0].model_copy(

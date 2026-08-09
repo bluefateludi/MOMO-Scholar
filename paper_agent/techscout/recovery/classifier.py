@@ -48,14 +48,19 @@ class FailureClassifier:
             code = FailureCode.POC_NONZERO_EXIT
             action = RecoveryAction.DIAGNOSE_AND_RERUN_POC
 
-        recoverable = code is not FailureCode.TOOL_UNAVAILABLE and attempt == 1
+        recoverable = (
+            code in {FailureCode.DEPENDENCY_CONFLICT, FailureCode.VERSION_CONFLICT}
+            and attempt == 1
+        )
         return Failure(
             failure_id=failure_id,
             code=code,
             stage=FailureStage.POC_EXECUTION,
             message=_message(code, result.exit_code),
             recoverable=recoverable,
-            recovery_action=action if recoverable else RecoveryAction.PUBLISH_LIMITED_RESULT,
+            recovery_action=(
+                action if recoverable else RecoveryAction.PUBLISH_LIMITED_RESULT
+            ),
             attempt=attempt,
             details={
                 "exit_code": result.exit_code,
