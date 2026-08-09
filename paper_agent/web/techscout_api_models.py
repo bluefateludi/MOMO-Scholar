@@ -121,6 +121,12 @@ class TechScoutApprovalProjection(StrictModel):
     reason: str | None = None
 
 
+class TechScoutIssueProjection(StrictModel):
+    stage: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")
+    code: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9_]+$")
+    retryable_by_new_run: bool = False
+
+
 class TechScoutRunDetail(TechScoutRunSummary):
     project_context: str
     environment: TechScoutEnvironmentRequest
@@ -128,6 +134,7 @@ class TechScoutRunDetail(TechScoutRunSummary):
     candidates: list[TechScoutCandidateProjection]
     recovery: TechScoutRecoveryProjection
     approval: TechScoutApprovalProjection
+    issues: list[TechScoutIssueProjection]
 
 
 class TechScoutRunList(StrictModel):
@@ -137,7 +144,7 @@ class TechScoutRunList(StrictModel):
 
 class TechScoutReportProjection(StrictModel):
     run_id: UUID4
-    verdict: Literal["recommended", "no_safe_winner", "failed"]
+    verdict: Literal["recommended", "no_safe_winner"]
     recommendation: str | None = None
     summary: str
     constraints: list[TechScoutConstraintProjection]

@@ -893,6 +893,18 @@ export interface components {
             /** Source Url */
             source_url?: string | null;
         };
+        /** TechScoutIssueProjection */
+        TechScoutIssueProjection: {
+            /** Code */
+            code: string;
+            /**
+             * Retryable By New Run
+             * @default false
+             */
+            retryable_by_new_run: boolean;
+            /** Stage */
+            stage: string;
+        };
         /** TechScoutPocProjection */
         TechScoutPocProjection: {
             /** Candidate Id */
@@ -968,7 +980,7 @@ export interface components {
              * Verdict
              * @enum {string}
              */
-            verdict: "recommended" | "no_safe_winner" | "failed";
+            verdict: "recommended" | "no_safe_winner";
         };
         /** TechScoutRunDetail */
         TechScoutRunDetail: {
@@ -992,6 +1004,8 @@ export interface components {
              * Format: uuid4
              */
             id: string;
+            /** Issues */
+            issues: components["schemas"]["TechScoutIssueProjection"][];
             /**
              * Mode
              * @enum {string}

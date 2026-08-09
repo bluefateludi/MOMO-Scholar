@@ -77,4 +77,13 @@ describe("TechScout polling", () => {
     await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve(); }); expect(result.current.run?.status).toBe("completed");
     await act(async () => { vi.advanceTimersByTime(30_000); await Promise.resolve(); }); expect(getRun).toHaveBeenCalledTimes(2);
   });
+
+  it.each(["completed_with_limitations", "failed"] as const)("stops on the %s terminal status", async (status) => {
+    const terminal = { ...techScoutRun, status };
+    const getRun = vi.fn().mockResolvedValue({ data: terminal });
+    const api = { getRun } as unknown as TechScoutApi;
+    const { result } = renderHook(() => useTechScoutRunPolling(terminal.id, api));
+    await waitFor(() => expect(result.current.run?.status).toBe(status));
+    expect(getRun).toHaveBeenCalledTimes(1);
+  });
 });

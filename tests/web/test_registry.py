@@ -5,6 +5,7 @@ import pytest
 
 from paper_agent.web.api_models import CreateRunRequest
 from paper_agent.web.errors import WebError
+from paper_agent.web.event_cursor import decode_event_cursor, encode_event_cursor
 from paper_agent.web.registry import RunRegistry
 
 
@@ -69,13 +70,15 @@ def test_run_events_migrate_and_page_with_opaque_cursor(tmp_path):
         assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         assert db.execute("SELECT COUNT(*) FROM run_events").fetchone()[0] == 2
 
-    first = registry.trace(run_id, limit=1)
-    assert len(first.items) == 1
-    assert first.next_cursor is not None
-    second = registry.trace(run_id, limit=1, cursor=first.next_cursor)
-    assert second.items[0].label == "Fetched allowlisted metadata"
-    assert second.items[0].tool == "github.read"
-    assert second.next_cursor is None
+    first, has_more = registry.list_events(run_id, after_sequence=0, limit=1)
+    assert len(first) == 1 and has_more is True
+    cursor = encode_event_cursor(first[-1].sequence)
+    second, has_more = registry.list_events(
+        run_id, after_sequence=decode_event_cursor(cursor), limit=1,
+    )
+    assert second[0].label == "Fetched allowlisted metadata"
+    assert second[0].tool == "github.read"
+    assert has_more is False
 
 
 def test_trace_rejects_invalid_cursor_and_unbounded_text(tmp_path):
@@ -83,11 +86,62 @@ def test_trace_rejects_invalid_cursor_and_unbounded_text(tmp_path):
     run_id = "00000000-0000-4000-8000-000000000001"
     registry.admit(run_id, REQUEST, 4)
     with pytest.raises(WebError) as error:
-        registry.trace(run_id, limit=10, cursor="not-a-cursor")
+        decode_event_cursor("not-a-cursor")
     assert error.value.code == "validation_error"
 
     registry.append_event(
         run_id, event_type="stage", stage="research", status="running",
         label="x" * 500,
     )
-    assert len(registry.trace(run_id, 10).items[-1].label) == 240
+    events, _ = registry.list_events(run_id, after_sequence=0, limit=10)
+    assert len(events[-1].label) == 240
+
+
+def test_trace_redacts_common_credential_shapes_before_persistence(tmp_path):
+    registry = RunRegistry(tmp_path / "registry.sqlite3")
+    run_id = "00000000-0000-4000-8000-000000000001"
+    registry.admit(run_id, REQUEST, 4)
+    registry.append_event(
+        run_id, event_type="tool", stage="research", status="failed",
+        label=(
+            "Authorization: Bearer secret-canary "
+            "https://example.test/path?api_key=also-secret&safe=1 password=hunter2 "
+            "provider-body-canary"
+        ),
+        tool="token=tool-secret",
+        secrets=("provider-body-canary",),
+    )
+    events, _ = registry.list_events(run_id, after_sequence=0, limit=10)
+    persisted = events[-1].model_dump_json()
+    assert "secret-canary" not in persisted
+    assert "also-secret" not in persisted
+    assert "hunter2" not in persisted
+    assert "tool-secret" not in persisted
+    assert "provider-body-canary" not in persisted
+    assert persisted.count("[REDACTED]") >= 5
+
+
+def test_progress_and_event_append_are_one_transaction(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    registry = RunRegistry(path)
+    run_id = "00000000-0000-4000-8000-000000000001"
+    registry.admit(run_id, REQUEST, 4)
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE run_events")
+
+    with pytest.raises(sqlite3.OperationalError):
+        registry.update_progress(run_id, "search", registry.get(run_id).progress)
+    assert registry.get(run_id).phase == "queued"
+
+
+def test_terminal_state_and_event_append_are_one_transaction(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    registry = RunRegistry(path)
+    run_id = "00000000-0000-4000-8000-000000000001"
+    registry.admit(run_id, REQUEST, 4)
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE run_events")
+
+    with pytest.raises(sqlite3.OperationalError):
+        registry.terminal(run_id, "failed")
+    assert registry.get(run_id).status == "queued"

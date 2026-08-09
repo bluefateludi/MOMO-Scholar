@@ -1845,6 +1845,36 @@
         "title": "TechScoutEvidenceProjection",
         "type": "object"
       },
+      "TechScoutIssueProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Code",
+            "type": "string"
+          },
+          "retryable_by_new_run": {
+            "default": false,
+            "title": "Retryable By New Run",
+            "type": "boolean"
+          },
+          "stage": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "code"
+        ],
+        "title": "TechScoutIssueProjection",
+        "type": "object"
+      },
       "TechScoutPocProjection": {
         "additionalProperties": false,
         "properties": {
@@ -2074,8 +2104,7 @@
           "verdict": {
             "enum": [
               "recommended",
-              "no_safe_winner",
-              "failed"
+              "no_safe_winner"
             ],
             "title": "Verdict",
             "type": "string"
@@ -2150,6 +2179,13 @@
             "title": "Id",
             "type": "string"
           },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TechScoutIssueProjection"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
           "mode": {
             "enum": [
               "fast",
@@ -2201,7 +2237,8 @@
           "hard_constraints",
           "candidates",
           "recovery",
-          "approval"
+          "approval",
+          "issues"
         ],
         "title": "TechScoutRunDetail",
         "type": "object"

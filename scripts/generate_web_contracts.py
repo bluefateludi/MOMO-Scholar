@@ -12,10 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from paper_agent.web.app import create_app
+from paper_agent.web.techscout_fixtures import DETAIL, EVIDENCE, REPORT, TRACE
 
 
 OPENAPI_PATH = ROOT / "openapi" / "web-v1.json"
 TYPESCRIPT_PATH = ROOT / "web" / "src" / "api" / "openapi.generated.ts"
+FIXTURE_TYPESCRIPT_PATH = ROOT / "web" / "src" / "api" / "techscoutFixtures.generated.ts"
 
 
 def openapi_text() -> str:
@@ -50,6 +52,21 @@ def generated_typescript_matches(expected_path: Path, generated_path: Path) -> b
     )
 
 
+def fixture_typescript_text() -> str:
+    payload = {
+        "detail": DETAIL.model_dump(mode="json"),
+        "evidence": [item.model_dump(mode="json") for item in EVIDENCE],
+        "report": REPORT.model_dump(mode="json"),
+        "trace": TRACE.model_dump(mode="json"),
+    }
+    return (
+        "// Generated from paper_agent.web.techscout_fixtures; do not edit.\n"
+        "export const generatedTechScoutFixture = "
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+        + " as const;\n"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
@@ -59,6 +76,9 @@ def main() -> None:
         OPENAPI_PATH.parent.mkdir(parents=True, exist_ok=True)
         OPENAPI_PATH.write_text(expected_openapi, encoding="utf-8", newline="\n")
         generate_typescript(OPENAPI_PATH, TYPESCRIPT_PATH)
+        FIXTURE_TYPESCRIPT_PATH.write_text(
+            fixture_typescript_text(), encoding="utf-8", newline="\n",
+        )
         return
     if not OPENAPI_PATH.is_file() or OPENAPI_PATH.read_text(encoding="utf-8") != expected_openapi:
         raise SystemExit("openapi/web-v1.json is stale; run npm run contracts:generate")
@@ -67,6 +87,11 @@ def main() -> None:
         generate_typescript(OPENAPI_PATH, generated)
         if not generated_typescript_matches(TYPESCRIPT_PATH, generated):
             raise SystemExit("web TypeScript contracts are stale; run npm run contracts:generate")
+    if (
+        not FIXTURE_TYPESCRIPT_PATH.is_file()
+        or FIXTURE_TYPESCRIPT_PATH.read_text(encoding="utf-8") != fixture_typescript_text()
+    ):
+        raise SystemExit("web TechScout fixture is stale; run npm run contracts:generate")
 
 
 if __name__ == "__main__":

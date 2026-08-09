@@ -51,6 +51,32 @@ describe("fixture-backed Wave 1 views", () => {
     expect(await screen.findByText(/Investigation plan frozen/i)).toBeInTheDocument();
   });
 
+  it("shows truthful failed and limited terminal states", async () => {
+    const failed = { ...techScoutRun, synthetic: false, status: "failed" as const, issues: [{ stage: "verify", code: "poc_timeout", retryable_by_new_run: true }] };
+    vi.mocked(techScoutApi.getRun).mockResolvedValue({ data: failed });
+    const failedView = render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}`]}><Routes><Route path="/runs/:id" element={<RunPage/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("no report was published");
+    expect(screen.getByText(/verify \/ poc_timeout/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open decision report/i })).not.toBeInTheDocument();
+    failedView.unmount();
+
+    const limited = { ...techScoutRun, status: "completed_with_limitations" as const, issues: [{ stage: "verify", code: "research_only_candidate", retryable_by_new_run: false }] };
+    vi.mocked(techScoutApi.getRun).mockResolvedValue({ data: limited });
+    render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}`]}><Routes><Route path="/runs/:id" element={<RunPage/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByText("Completed with limitations.")).toBeInTheDocument();
+    expect(screen.getByText(/no trusted verification recipe/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open decision report/i })).toBeInTheDocument();
+  });
+
+  it("exposes the current stage to assistive technology", async () => {
+    const running = { ...techScoutRun, status: "running" as const, progress: { ...techScoutRun.progress, stage: "research" as const, completed_stages: ["plan" as const] } };
+    vi.mocked(techScoutApi.getRun).mockResolvedValue({ data: running });
+    render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}`]}><Routes><Route path="/runs/:id" element={<RunPage/>}/></Routes></MemoryRouter>);
+    const current = (await screen.findByText("Research")).closest("li");
+    expect(current).toHaveAttribute("aria-current", "step");
+    expect(current).toHaveTextContent("current");
+  });
+
   it("keeps the synthetic warning on report, candidate, and evidence views", async () => {
     const routes = <Routes><Route path="/runs/:id/report" element={<ReportPage/>}/><Route path="/runs/:id/candidates/:candidateId" element={<CandidatePage/>}/><Route path="/runs/:id/evidence/:evidenceId" element={<EvidencePage/>}/></Routes>;
     const { unmount } = render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/report`]}>{routes}</MemoryRouter>);

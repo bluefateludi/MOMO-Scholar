@@ -11,9 +11,19 @@ from typing import Iterator
 from pydantic import TypeAdapter
 
 from paper_agent.modeling import StrictModel
+from paper_agent.observability.sanitize import sanitize_event_data
 from paper_agent.web.api_models import ApiStatus, CreateRunRequest, Phase, RunProgress
 from paper_agent.web.errors import WebError
-from paper_agent.web.techscout_api_models import TraceEvent, TracePage
+
+
+_CREDENTIAL_VALUE = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|credential|password|passwd|secret|token)\b"
+    r"\s*[:=]\s*(?:bearer\s+)?[^\s,;]+"
+)
+_BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]+")
+_SENSITIVE_QUERY_VALUE = re.compile(
+    r"(?i)([?&](?:api[_-]?key|authorization|password|secret|token)=)[^&#\s]+"
+)
 
 
 def utc_now() -> datetime:
@@ -41,6 +51,18 @@ class RegistryError(StrictModel):
     paper_id: str | None = None
 
 
+class RegistryEvent(StrictModel):
+    sequence: int
+    event_type: str
+    stage: str | None
+    status: str
+    label: str
+    skill: str | None
+    tool: str | None
+    duration_ms: int | None
+    created_at: datetime
+
+
 class RunRegistry:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -64,6 +86,7 @@ class RunRegistry:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version > 2:
                 raise RuntimeError("run registry schema is newer than this server")
+            db.execute("BEGIN IMMEDIATE")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
                   id TEXT PRIMARY KEY,
@@ -92,6 +115,7 @@ class RunRegistry:
                     "CREATE INDEX IF NOT EXISTS idx_run_events_run_sequence ON run_events(run_id,sequence)"
                 )
             db.execute("PRAGMA user_version=2")
+            db.commit()
 
     def admit(self, run_id: str, request: CreateRunRequest, capacity: int) -> RegistryRun:
         now = utc_now().isoformat()
@@ -150,28 +174,51 @@ class RunRegistry:
 
     def update_progress(self, run_id: str, phase: Phase, progress: RunProgress) -> None:
         phases = ["queued","initializing","search","acquisition","chunking","retrieval","analysis","synthesis","citation_check","publishing","terminal"]
-        current = self.get(run_id)
-        if phases.index(phase) < phases.index(current.phase):
-            return
-        self._update(run_id, phase=phase, progress_json=progress.model_dump_json())
-        if phase != current.phase:
-            self.append_event(
-                run_id, event_type="stage", stage=phase, status="running",
-                label=f"Entered {phase.replace('_', ' ')} stage.",
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT phase FROM runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                db.rollback()
+                raise WebError(404, "run_not_found")
+            current_phase = row["phase"]
+            if phases.index(phase) < phases.index(current_phase):
+                db.rollback()
+                return
+            now = utc_now().isoformat()
+            db.execute(
+                "UPDATE runs SET phase=?,progress_json=?,updated_at=? WHERE id=?",
+                (phase, progress.model_dump_json(), now, run_id),
             )
+            if phase != current_phase:
+                self._append_event_in_transaction(
+                    db, run_id, event_type="stage", stage=phase, status="running",
+                    label=f"Entered {phase.replace('_', ' ')} stage.",
+                )
+            db.commit()
 
     def terminal(self, run_id: str, status: ApiStatus, *, finished_at: datetime | None = None, error: RegistryError | dict[str, object] | None = None) -> None:
         if status not in ("completed", "completed_with_degradation", "failed", "interrupted"):
             raise ValueError("terminal status required")
-        self._update(
-            run_id, status=status, phase="terminal",
-            finished_at=(finished_at or utc_now()).isoformat(),
-            error_json=(RegistryError.model_validate(error).model_dump_json() if error else None),
-        )
-        self.append_event(
-            run_id, event_type="run", stage="terminal", status=status,
-            label="Run reached a terminal state.",
-        )
+        now = utc_now().isoformat()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
+                db.rollback()
+                raise WebError(404, "run_not_found")
+            db.execute(
+                """UPDATE runs SET status=?,phase='terminal',finished_at=?,error_json=?,updated_at=?
+                   WHERE id=?""",
+                (
+                    status, (finished_at or utc_now()).isoformat(),
+                    RegistryError.model_validate(error).model_dump_json() if error else None,
+                    now, run_id,
+                ),
+            )
+            self._append_event_in_transaction(
+                db, run_id, event_type="run", stage="terminal", status=status,
+                label="Run reached a terminal state.",
+            )
+            db.commit()
 
     def append_event(
         self,
@@ -184,6 +231,7 @@ class RunRegistry:
         skill: str | None = None,
         tool: str | None = None,
         duration_ms: int | None = None,
+        secrets: tuple[str, ...] = (),
     ) -> None:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -193,23 +241,21 @@ class RunRegistry:
             self._append_event_in_transaction(
                 db, run_id, event_type=event_type, stage=stage, status=status,
                 label=label, skill=skill, tool=tool, duration_ms=duration_ms,
+                secrets=secrets,
             )
             db.commit()
 
-    def trace(self, run_id: str, limit: int, cursor: str | None = None) -> TracePage:
+    def list_events(
+        self, run_id: str, *, after_sequence: int, limit: int,
+    ) -> tuple[list[RegistryEvent], bool]:
         self.get(run_id)
-        after = self._decode_event_cursor(cursor) if cursor else 0
         with self._connect() as db:
             rows = db.execute(
                 "SELECT * FROM run_events WHERE run_id=? AND sequence>? ORDER BY sequence LIMIT ?",
-                (run_id, after, limit + 1),
+                (run_id, after_sequence, limit + 1),
             ).fetchall()
         page = rows[:limit]
-        items = [self._trace_event(row) for row in page]
-        next_cursor = None
-        if len(rows) > limit and page:
-            next_cursor = self._encode_event_cursor(page[-1]["sequence"])
-        return TracePage(items=items, next_cursor=next_cursor)
+        return [self._parse_event(row) for row in page], len(rows) > limit
 
     @staticmethod
     def _append_event_in_transaction(
@@ -223,6 +269,7 @@ class RunRegistry:
         skill: str | None = None,
         tool: str | None = None,
         duration_ms: int | None = None,
+        secrets: tuple[str, ...] = (),
     ) -> None:
         if event_type not in {"run", "stage", "skill", "tool", "recovery", "approval"}:
             raise ValueError("unsupported event type")
@@ -232,7 +279,15 @@ class RunRegistry:
         def clean(value: str | None, maximum: int) -> str | None:
             if value is None:
                 return None
-            normalized = re.sub(r"[\x00-\x1f\x7f]", " ", value).strip()
+            redacted = sanitize_event_data(value, secrets=secrets)
+            if not isinstance(redacted, str):
+                raise ValueError("trace text must be a string")
+            normalized = re.sub(r"[\x00-\x1f\x7f]", " ", redacted).strip()
+            normalized = _BEARER_VALUE.sub("[REDACTED]", normalized)
+            normalized = _CREDENTIAL_VALUE.sub(
+                lambda match: f"{match.group(1)}=[REDACTED]", normalized,
+            )
+            normalized = _SENSITIVE_QUERY_VALUE.sub(r"\1[REDACTED]", normalized)
             if not normalized:
                 raise ValueError("trace text must not be empty")
             return normalized[:maximum]
@@ -249,25 +304,9 @@ class RunRegistry:
         )
 
     @staticmethod
-    def _encode_event_cursor(sequence: int) -> str:
-        return urlsafe_b64encode(f"event:{sequence}".encode("ascii")).decode("ascii")
-
-    @staticmethod
-    def _decode_event_cursor(cursor: str) -> int:
-        try:
-            decoded = urlsafe_b64decode(cursor.encode("ascii")).decode("ascii")
-            prefix, value = decoded.split(":", 1)
-            sequence = int(value)
-            if prefix != "event" or sequence < 0:
-                raise ValueError
-            return sequence
-        except (ValueError, UnicodeError) as exc:
-            raise WebError(422, "validation_error") from exc
-
-    @classmethod
-    def _trace_event(cls, row: sqlite3.Row) -> TraceEvent:
-        return TraceEvent(
-            cursor=cls._encode_event_cursor(row["sequence"]),
+    def _parse_event(row: sqlite3.Row) -> RegistryEvent:
+        return RegistryEvent(
+            sequence=row["sequence"],
             event_type=row["event_type"], stage=row["stage"], status=row["status"],
             label=row["label"], skill=row["skill"], tool=row["tool"],
             duration_ms=row["duration_ms"],

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from paper_agent.web.event_cursor import encode_event_cursor
 from paper_agent.web.techscout_api_models import (
     TechScoutApprovalProjection,
     TechScoutCandidateProjection,
@@ -13,6 +14,8 @@ from paper_agent.web.techscout_api_models import (
     TechScoutRecoveryProjection,
     TechScoutReportProjection,
     TechScoutRunDetail,
+    TraceEvent,
+    TracePage,
 )
 
 
@@ -83,7 +86,7 @@ DETAIL = TechScoutRunDetail(
     recovery=TechScoutRecoveryProjection(
         attempted=False, outcome="not_needed", attempts_used=0,
     ),
-    approval=TechScoutApprovalProjection(required=False, status="not_required"),
+    approval=TechScoutApprovalProjection(required=False, status="not_required"), issues=[],
 )
 
 REPORT = TechScoutReportProjection(
@@ -118,3 +121,28 @@ REPORT = TechScoutReportProjection(
         "pgvector remains research-only without a reviewed PostgreSQL fixture.",
     ], evidence_ids=[item.evidence_id for item in EVIDENCE], synthetic=True,
 )
+
+TRACE = TracePage(items=[
+    TraceEvent(
+        cursor=encode_event_cursor(1), event_type="stage", stage="plan",
+        status="completed", label="Investigation plan frozen from the synthetic request.",
+        duration_ms=900, created_at=AS_OF + timedelta(seconds=1),
+    ),
+    TraceEvent(
+        cursor=encode_event_cursor(2), event_type="skill", stage="research",
+        status="completed", label="Official-source fixture selected.",
+        skill="official-source-research", duration_ms=4200,
+        created_at=AS_OF + timedelta(seconds=2),
+    ),
+    TraceEvent(
+        cursor=encode_event_cursor(3), event_type="tool", stage="verify",
+        status="completed", label="Allowlisted fixture recipe completed.",
+        skill="vector-store-verification", tool="poc.run_allowlisted",
+        duration_ms=710, created_at=AS_OF + timedelta(seconds=3),
+    ),
+    TraceEvent(
+        cursor=encode_event_cursor(4), event_type="stage", stage="decide",
+        status="completed", label="Deterministic gate published the fixture decision.",
+        duration_ms=1300, created_at=AS_OF + timedelta(seconds=4),
+    ),
+])
