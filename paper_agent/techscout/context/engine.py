@@ -41,7 +41,13 @@ class HybridContextRetriever:
         documents: Sequence[SourceDocument],
         chunks: Sequence[SourceChunk],
         run_id: str,
+        top_k: int | None = None,
     ) -> tuple[SourceChunk, ...]:
+        limit = self._max_chunks if top_k is None else top_k
+        if limit < 1 or limit > self._max_chunks:
+            raise ValueError(
+                f"context top_k must be between 1 and {self._max_chunks}"
+            )
         source_ids = [document.source_id for document in documents]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("source identifiers must be unique")
@@ -70,7 +76,7 @@ class HybridContextRetriever:
         by_id = {chunk.chunk_id: chunk for chunk in scoped}
         return tuple(
             by_id[item.chunk_id]
-            for item in outcome.evidence[: self._max_chunks]
+            for item in outcome.evidence[:limit]
             if item.chunk_id in by_id
         )
 
@@ -107,6 +113,7 @@ class ContextEngine:
         prior_failure: Failure | None = None,
         risks: Sequence[str] = (),
         limitations: Sequence[str] = (),
+        top_k: int | None = None,
     ) -> ContextPacket:
         summary = f"{request.question} Project: {request.project_context}"
         if stage is ContextStage.INTAKE_PLANNING:
@@ -164,6 +171,7 @@ class ContextEngine:
                 documents=scoped_documents,
                 chunks=scoped_chunks,
                 run_id=f"{request.run_id}:context:{stage.value}",
+                top_k=top_k,
             )
             selected_source_ids = {chunk.source_id for chunk in selected_chunks}
             if stage is ContextStage.POC_PLANNING:

@@ -7,6 +7,8 @@ import pytest
 from paper_agent.techscout.models import CacheStatus
 from paper_agent.techscout.tools.adapters import (
     AdapterTimeout,
+    CachedFetchAdapter,
+    CachedGitHubAdapter,
     CachedSearchAdapter,
     GitHubReadOnlyAdapter,
     HttpxFetchAdapter,
@@ -18,7 +20,9 @@ from paper_agent.techscout.tools.adapters import (
 from paper_agent.techscout.tools.cache import ContentAddressedCache
 from paper_agent.techscout.tools.contracts import (
     FetchInput,
+    FetchOutput,
     GitHubInspectInput,
+    GitHubInspectOutput,
     SearchHit,
     SearchInput,
     SearchOutput,
@@ -80,6 +84,77 @@ def test_content_addressed_cache_hit_and_explicit_stale_fallback(tmp_path) -> No
     ).search(_request())
     assert fallback.provenance.cache_status is CacheStatus.STALE
     assert fallback.provenance.cache_fallback is True
+
+
+def test_fetch_and_github_cache_fallback_preserve_non_live_provenance(tmp_path) -> None:
+    cache = ContentAddressedCache(tmp_path, ttl=timedelta(hours=1))
+    fetch_request = FetchInput(
+        url="https://docs.example.com/page",
+        candidate_id="candidate:test",
+    )
+    fetch_output = FetchOutput(
+        url=fetch_request.url,
+        candidate_id=fetch_request.candidate_id,
+        media_type="text/plain",
+        content="cached docs",
+        size_bytes=11,
+        provenance=SourceProvenance(
+            provider="httpx",
+            retrieved_at=NOW,
+            snapshot_sha256="b" * 64,
+            cache_status=CacheStatus.MISS,
+        ),
+    )
+    cache.put(cache.key("web.fetch", fetch_request), fetch_output, now=NOW)
+
+    class FailingFetch:
+        def fetch(self, request):
+            raise AdapterTimeout("offline")
+
+    cached_fetch = CachedFetchAdapter(
+        delegate=FailingFetch(),
+        cache=cache,
+        clock=lambda: NOW + timedelta(hours=2),
+    ).fetch(fetch_request)
+    assert cached_fetch.provenance.cache_status is CacheStatus.STALE
+    assert cached_fetch.provenance.cache_fallback is True
+
+    github_request = GitHubInspectInput(
+        repository_url="https://github.com/acme/vector",
+        candidate_id="candidate:test",
+        release_limit=0,
+        issue_limit=0,
+    )
+    github_output = GitHubInspectOutput(
+        candidate_id="candidate:test",
+        repository_url="https://github.com/acme/vector",
+        default_branch="main",
+        description="cached repository",
+        stars=1,
+        archived=False,
+        readme_excerpt="cached readme",
+        releases=(),
+        issues=(),
+        provenance=SourceProvenance(
+            provider="github-rest",
+            retrieved_at=NOW,
+            snapshot_sha256="c" * 64,
+            cache_status=CacheStatus.MISS,
+        ),
+    )
+    cache.put(cache.key("github.inspect_repository", github_request), github_output, now=NOW)
+
+    class FailingGitHub:
+        def inspect_repository(self, request):
+            raise AdapterTimeout("offline")
+
+    cached_github = CachedGitHubAdapter(
+        delegate=FailingGitHub(),
+        cache=cache,
+        clock=lambda: NOW + timedelta(hours=2),
+    ).inspect_repository(github_request)
+    assert cached_github.provenance.cache_status is CacheStatus.STALE
+    assert cached_github.provenance.cache_fallback is True
 
 
 def test_tavily_is_bounded_and_normalizes_provenance() -> None:

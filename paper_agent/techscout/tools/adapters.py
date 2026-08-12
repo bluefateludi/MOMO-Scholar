@@ -353,9 +353,85 @@ class CachedSearchAdapter:
         return result
 
 
-def _with_cache(
-    output: SearchOutput, status: CacheStatus, *, fallback: bool
-) -> SearchOutput:
+class CachedFetchAdapter:
+    """Cache bounded fetches without disguising cached bytes as a live response."""
+
+    def __init__(
+        self,
+        *,
+        delegate: FetchAdapter,
+        cache: ContentAddressedCache,
+        max_stale: timedelta = timedelta(days=7),
+        clock: Clock = _utc_now,
+    ) -> None:
+        if max_stale.total_seconds() <= 0:
+            raise ValueError("maximum stale age must be positive")
+        self._delegate = delegate
+        self._cache = cache
+        self._max_stale = max_stale
+        self._clock = clock
+
+    def fetch(self, request: FetchInput) -> FetchOutput:
+        return self._load(
+            namespace="web.fetch",
+            request=request,
+            model=FetchOutput,
+            operation=self._delegate.fetch,
+        )
+
+    def _load(self, *, namespace, request, model, operation):
+        now = self._clock()
+        key = self._cache.key(namespace, request)
+        cached = self._cache.get(key, model, now=now, allow_stale=True)
+        if cached is not None and not cached.stale:
+            return _with_cache(cached.value, CacheStatus.HIT, fallback=False)
+        try:
+            result = operation(request)
+        except AdapterError:
+            if cached is None or now - cached.stored_at > self._max_stale:
+                raise
+            return _with_cache(cached.value, CacheStatus.STALE, fallback=True)
+        self._cache.put(key, result, now=now)
+        return result
+
+
+class CachedGitHubAdapter:
+    """Cache bounded GitHub inspection while retaining original provenance."""
+
+    def __init__(
+        self,
+        *,
+        delegate: GitHubAdapter,
+        cache: ContentAddressedCache,
+        max_stale: timedelta = timedelta(days=7),
+        clock: Clock = _utc_now,
+    ) -> None:
+        if max_stale.total_seconds() <= 0:
+            raise ValueError("maximum stale age must be positive")
+        self._delegate = delegate
+        self._cache = cache
+        self._max_stale = max_stale
+        self._clock = clock
+
+    def inspect_repository(self, request: GitHubInspectInput) -> GitHubInspectOutput:
+        now = self._clock()
+        key = self._cache.key("github.inspect_repository", request)
+        cached = self._cache.get(
+            key, GitHubInspectOutput, now=now, allow_stale=True
+        )
+        if cached is not None and not cached.stale:
+            return _with_cache(cached.value, CacheStatus.HIT, fallback=False)
+        try:
+            result = self._delegate.inspect_repository(request)
+        except AdapterError:
+            if cached is None or now - cached.stored_at > self._max_stale:
+                raise
+            return _with_cache(cached.value, CacheStatus.STALE, fallback=True)
+        self._cache.put(key, result, now=now)
+        return result
+
+
+def _with_cache(output, status: CacheStatus, *, fallback: bool):
     provenance = output.provenance.model_copy(
         update={"cache_status": status, "cache_fallback": fallback}
     )
