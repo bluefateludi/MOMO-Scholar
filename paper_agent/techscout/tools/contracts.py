@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from paper_agent.techscout.errors import StableId
+from paper_agent.techscout.errors import FailureCode, StableId
 from paper_agent.techscout.models import (
     CacheStatus,
     HttpsUrl,
@@ -113,6 +113,7 @@ class SmokeTestOutput(TechScoutModel):
     exit_code: int | None = None
     duration_ms: int = Field(ge=0)
     artifact_sha256: Sha256 | None = None
+    failure_code: FailureCode | None = None
 
 
 TOOL_INPUT_MODELS = {

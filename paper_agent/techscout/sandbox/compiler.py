@@ -33,6 +33,10 @@ class PocCompiler:
             raise UnsupportedRecipeError("PoC plan candidate does not match candidate")
 
         recipe = self._registry.get(plan.recipe_id)
+        if candidate.candidate_id not in recipe.candidate_ids:
+            raise UnsupportedRecipeError(
+                "candidate identifier does not match reviewed recipe"
+            )
         if candidate.package_name != recipe.package_name:
             raise UnsupportedRecipeError("candidate package does not match reviewed recipe")
         if candidate.name.casefold() not in recipe.candidate_names:

@@ -35,7 +35,20 @@ def main() -> None:
         reopened = QdrantClient(path=directory)
         assert reopened.count("techscout_smoke", exact=True).count == 2
         reopened.close()
-        print(json.dumps({"checks": ["import", "persistence", "upsert", "query", "filter"]}))
+        print(
+            json.dumps(
+                {
+                    "checks": [
+                        "import",
+                        "create",
+                        "persistence",
+                        "upsert",
+                        "query",
+                        "filter",
+                    ]
+                }
+            )
+        )
 
 
 if __name__ == "__main__":

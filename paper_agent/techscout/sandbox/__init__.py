@@ -3,6 +3,11 @@
 from paper_agent.techscout.sandbox.compiler import PocCompiler
 from paper_agent.techscout.sandbox.recipes import RecipeRegistry
 from paper_agent.techscout.sandbox.runner import DockerCliRunner, FakeSandboxRunner
+from paper_agent.techscout.sandbox.service import (
+    PocStageAttempt,
+    RealPocAdapter,
+    RealPocService,
+)
 from paper_agent.techscout.sandbox.types import (
     CompilationDisposition,
     CompilationResult,
@@ -24,7 +29,10 @@ __all__ = [
     "InstallNetworkPolicy",
     "PocCompiler",
     "PocStage",
+    "PocStageAttempt",
     "RecipeRegistry",
+    "RealPocAdapter",
+    "RealPocService",
     "SandboxLimits",
     "SandboxResult",
 ]
