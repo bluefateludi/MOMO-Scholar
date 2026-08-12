@@ -28,12 +28,20 @@ cd web
 npm ci
 npm run build
 cd ..
-python -m paper_agent.web
+techscout serve
 ```
 
 Open `http://127.0.0.1:8000`, submit a Fast Demo task, or open the synthetic offline fixture. Keep its synthetic labeling visible when presenting it. The server binds to loopback by default because the local product has no authentication.
 
-The package and CLI names still retain the historical `paper_agent` / `paper-agent` compatibility surface. The legacy paper workflow remains attributable to MOMO Scholar and is not presented as a TechScout evaluation baseline.
+For a Docker-based local start, use:
+
+```console
+docker compose up --build
+```
+
+Compose publishes only `127.0.0.1:8000`, persists local run data in a named volume, and does not mount the Docker socket. This starts the same synthetic Fast Demo Web path; it does not enable Live providers or sandbox-backed Verified execution.
+
+`python -m paper_agent.web` remains a compatible Web entry point. The historical `paper-agent` command and `paper_agent` imports are also preserved for the Scholar workflow; they are not presented as a TechScout evaluation baseline.
 
 ## Architecture
 

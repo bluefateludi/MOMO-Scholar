@@ -11,7 +11,7 @@ The words Fast, Live, and Offline describe evidence/execution authority, not jus
 | Offline fixture/replay | no new research run | Bundled immutable or frontend mock data; the lifecycle may be simulated. | Implemented for UI review and deterministic acceptance only. |
 | Live | no honest default Web path yet | Intended to refresh missing/stale official/GitHub evidence through bounded adapters and run reviewed recipes in Docker. | Future integration. The adapters/runners existing in source do not make the end-to-end path implemented. |
 
-## Start the current local product
+## Start with the TechScout CLI
 
 ```console
 python -m pip install -e .
@@ -19,12 +19,30 @@ cd web
 npm ci
 npm run build
 cd ..
-python -m paper_agent.web
+techscout serve
 ```
 
 Then open `http://127.0.0.1:8000`. The v2 API is under `/api/v2/runs`; the UI submits `fast` or `verified`. The default server is single-process and loopback-only. Binding beyond loopback requires the explicit CLI flag and is not recommended because authentication is not implemented.
 
-No `docker compose` file or `techscout` console command exists at the current authority. The installed console script remains `paper-agent` and still addresses the historical Scholar workflow. Do not advertise planned commands as working quick starts.
+`techscout --help` and `techscout serve --help` show the current mode boundary. A non-loopback bind is rejected unless the operator explicitly adds `--allow-network`:
+
+```console
+techscout serve --host 0.0.0.0 --allow-network
+```
+
+That opt-in exposes an unauthenticated local product and must be protected by the operator's network boundary. The compatibility command `python -m paper_agent.web` remains available. The installed `paper-agent` console script still addresses the historical Scholar workflow.
+
+## Start with Docker Compose
+
+Prerequisites: Docker Engine with Docker Compose v2 and a local checkout.
+
+```console
+docker compose up --build
+```
+
+Then open `http://127.0.0.1:8000`. Compose binds the published host port to loopback, runs the application with a read-only root filesystem and dropped capabilities, and stores Web state/artifacts in the `techscout-data` named volume. Stop it with `docker compose down`; add `--volumes` only when you intentionally want to delete that local run data.
+
+The Web container does not receive `/var/run/docker.sock`. Compose starts only the existing Web product: Fast Demo remains frozen and synthetic, while a `verified` request still terminates as `completed_with_limitations` with `live_execution_unavailable`. The real sandbox runner and reviewed recipes remain a separate, explicit opt-in boundary described below.
 
 ## Optional sandbox smoke
 

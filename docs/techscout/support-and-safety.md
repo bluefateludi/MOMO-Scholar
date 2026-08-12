@@ -43,6 +43,8 @@ Normal read-only research and reviewed sandbox checks do not interrupt. Writes o
 
 The Web server is intended for a single local user. It enforces same-origin requests, bounded JSON request bodies, no-store API responses, content-type checks, CSP, frame denial, artifact allowlists, and sanitized cursor-bounded Trace projections. It has no authentication or multi-tenant isolation, so loopback is the safe default.
 
+The local Compose quick start publishes the Web service only on `127.0.0.1`, uses a read-only container filesystem with dropped capabilities, and does not mount the Docker socket. Its application container is not a sandbox runner and cannot make `verified` a Live execution path. Real sandbox execution remains separate and explicitly opt-in.
+
 ## Explicit limitations and future work
 
 - The current Web Fast Demo is synthetic even though it uses real orchestration seams.

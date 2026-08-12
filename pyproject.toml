@@ -37,6 +37,7 @@ observability = [
 ]
 [project.scripts]
 paper-agent = "paper_agent.cli:app"
+techscout = "paper_agent.techscout.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["paper_agent", "paper_agent.*"]
