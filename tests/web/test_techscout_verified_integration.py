@@ -127,7 +127,7 @@ class _Poc:
         )
 
 
-def _factory(*, cache: bool = False, poc: _Poc | None = None):
+def _factory(*, cache: bool = False, github_cache: bool | None = None, poc: _Poc | None = None):
     poc = poc or _Poc()
     retrieval = HybridEvidenceRetriever(
         lexical_source=LexicalCandidateSource(), vector_source=None,
@@ -135,7 +135,8 @@ def _factory(*, cache: bool = False, poc: _Poc | None = None):
     )
     context_engine = ContextEngine(HybridContextRetriever(retrieval))
     research = LiveEvidenceResearchService(
-        search=_Search(cache), fetch=_Fetch(cache), github=_GitHub(cache),
+        search=_Search(cache), fetch=_Fetch(cache),
+        github=_GitHub(cache if github_cache is None else github_cache),
         context_engine=context_engine,
     )
     return lambda **kwargs: VerifiedStageServices(
@@ -210,6 +211,16 @@ def test_cache_degradation_and_docker_unavailable_are_honest_terminal_results(tm
     assert "docker_unavailable" in report["limitations"]
 
 
+def test_mixed_source_authority_does_not_promote_cached_evidence_to_live(tmp_path: Path) -> None:
+    _, _, evidence, trace = _run(tmp_path, _factory(cache=True, github_cache=False))
+    assert {item["acquisition_state"] for item in evidence} == {"cache"}
+    research_labels = " ".join(
+        item["label"] for item in trace if item["event_type"] == "tool"
+    )
+    assert "cache_state=cache" in research_labels
+    assert "cache_state=live" in research_labels
+
+
 def test_unsupported_candidate_is_research_only_and_recovery_repeats_one_poc_stage(tmp_path: Path) -> None:
     poc = _Poc()
     detail, report, _, _ = _run(tmp_path / "unsupported", _factory(poc=poc), _body([{"name": "pgvector"}]))
@@ -222,3 +233,34 @@ def test_unsupported_candidate_is_research_only_and_recovery_repeats_one_poc_sta
     assert len(recovering.execute_calls) == 1
     assert len(recovering.rerun_calls) == 1
     assert any(item["event_type"] == "recovery" and "checkpoint=" in item["label"] for item in trace)
+
+
+def test_non_hero_environment_never_runs_reviewed_recipe(tmp_path: Path) -> None:
+    poc = _Poc()
+    body = _body([{"name": "Chroma"}])
+    body["environment"]["python_version"] = "3.12"
+    detail, report, _, _ = _run(tmp_path, _factory(poc=poc), body)
+    assert detail["status"] == "completed_with_limitations"
+    assert report["poc_results"][0]["status"] == "research_only"
+    assert poc.execute_calls == ["candidate:chroma"]
+
+
+def test_one_recovery_transition_reruns_only_one_failed_candidate(tmp_path: Path) -> None:
+    poc = _Poc("recover")
+    detail, report, _, _ = _run(tmp_path, _factory(poc=poc))
+    assert detail["recovery"]["attempts_used"] == 1
+    assert len(poc.rerun_calls) == 1
+    assert detail["status"] == "failed"
+    assert "docker_unavailable" not in str(detail)
+    assert "limitations" not in report
+
+
+def test_cache_degradation_does_not_mask_exhausted_poc_failure(tmp_path: Path) -> None:
+    detail, report, evidence, _ = _run(
+        tmp_path,
+        _factory(cache=True, poc=_Poc("recover")),
+        _body([{"name": "Chroma"}]),
+    )
+    assert {item["acquisition_state"] for item in evidence} == {"cache"}
+    assert detail["status"] == "failed"
+    assert "limitations" not in report

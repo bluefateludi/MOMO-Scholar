@@ -22,6 +22,7 @@ from paper_agent.techscout.harness import (
     SQLiteCheckpointAdapter,
     StageArtifacts,
     StageDeadline,
+    StageDeadlineExceeded,
     StageResult,
     TechScoutHarness,
 )
@@ -208,6 +209,8 @@ class DeterministicStageServices:
         artifacts: StageArtifacts,
         deadline: StageDeadline,
     ) -> StageResult:
+        if datetime.now(timezone.utc) >= deadline.deadline_at:
+            raise StageDeadlineExceeded("verified run deadline reached")
         self.progress_sink(stage, None, None, f"Harness entered {stage.value}.")
         if stage is ResearchStage.PLAN_RESEARCH:
             result = self._plan(state)
@@ -237,6 +240,8 @@ class DeterministicStageServices:
             )
         else:
             result = StageResult(state=state, tokens=20)
+        if datetime.now(timezone.utc) >= deadline.deadline_at:
+            raise StageDeadlineExceeded("verified stage exceeded the run deadline")
         self._save_workspace()
         return result
 
@@ -457,6 +462,10 @@ class DeterministicStageServices:
                 if self.scenario == "docker_unavailable"
                 else "No safe winner is claimed because neither live nor cached evidence is available."
                 if self.scenario == "research_unavailable"
+                else "No safe winner is claimed because the reviewed PoC failed after bounded recovery."
+                if self.scenario == "verification_failed"
+                else "Live evidence and reviewed Docker PoCs satisfy the Hero Case gates; the first equally qualified item in the user-provided shortlist is the deterministic tie-break."
+                if self.scenario == "verified" and passed
                 else "All supported candidates passed frozen evidence and deterministic local PoC validation; the first equally qualified item in the user-provided shortlist is the deterministic tie-break."
                 if passed
                 else "The first deterministic PoC attempt requires one bounded recovery."
@@ -486,6 +495,8 @@ class DeterministicStageServices:
                         if self.scenario == "docker_unavailable"
                         else "Live and cached evidence are unavailable."
                         if self.scenario == "research_unavailable"
+                        else "The reviewed PoC failed after bounded recovery."
+                        if self.scenario == "verification_failed"
                         else "The PoC requires bounded recovery."
                         if limited
                         else None
@@ -505,6 +516,8 @@ class DeterministicStageServices:
                 if self.scenario == "docker_unavailable"
                 else ("live_evidence_unavailable",)
                 if self.scenario == "research_unavailable"
+                else ("verification_failed",)
+                if self.scenario == "verification_failed"
                 else ()
             ),
         )
@@ -551,6 +564,11 @@ class DeterministicStageServices:
         )
         outcome = validation.decision.outcome
         failures = (*state.failures, *validation.failures)
+        if self.scenario == "verification_failed" and (
+            state.recovery_count >= 1
+            or not any(failure.recoverable for failure in failures)
+        ):
+            outcome = GateOutcome.FAILED
         if explicit_limited and outcome is GateOutcome.PASSED:
             outcome = GateOutcome.LIMITED
             limitation = Failure(
@@ -571,7 +589,7 @@ class DeterministicStageServices:
                 attempt=1,
             )
             failures = (*failures, limitation)
-        if outcome is not GateOutcome.RECOVER:
+        if outcome not in {GateOutcome.RECOVER, GateOutcome.FAILED}:
             self._draft_report = report
             self._draft_manifest = manifest
         return StageResult(
@@ -596,6 +614,10 @@ class DeterministicStageServices:
             "acquisition_states": {
                 key: value.value
                 for key, value in getattr(self, "acquisition_states", {}).items()
+            },
+            "source_acquisition_states": {
+                key: value.value
+                for key, value in getattr(self, "source_acquisition_states", {}).items()
             },
             "failed_poc_stage": {
                 key: value.value
@@ -646,9 +668,13 @@ class DeterministicStageServices:
                 key: PocStage(value)
                 for key, value in payload.get("failed_poc_stage", {}).items()
             }
+            self.source_acquisition_states = {
+                key: AcquisitionState(value)
+                for key, value in payload.get("source_acquisition_states", {}).items()
+            }
 
 
-class VerifiedStageServices(DeterministicStageServices):
+class VerifiedStageServices:
     """Verified Hero Case stages composed from the existing live and Docker services."""
 
     synthetic = False
@@ -663,16 +689,72 @@ class VerifiedStageServices(DeterministicStageServices):
         **kwargs,
     ) -> None:
         self.acquisition_states: dict[str, AcquisitionState] = {}
+        self.source_acquisition_states: dict[str, AcquisitionState] = {}
         self._failed_poc_stage: dict[str, PocStage] = {}
-        super().__init__(scenario="verified", **kwargs)
+        self.run_dir = kwargs["run_dir"]
+        self.progress_sink = kwargs["progress_sink"]
+        self.trace_sink = kwargs.get("trace_sink") or (lambda *args: None)
+        self.gate = ValidationGate()
+        self.recipe_registry = RecipeRegistry()
+        self.sources: list[SourceDocument] = []
+        self.chunks: list[SourceChunk] = []
+        self.evidence: list[CandidateEvidence] = []
+        self.poc_plans: list[PocPlan] = []
+        self.poc_results: list[PocResult] = []
+        self.poc_history: list[PocResult] = []
+        self._draft_report: DecisionReport | None = None
+        self._draft_manifest: RunManifest | None = None
+        self.scenario = "verified"
+        self._active_deadline: StageDeadline | None = None
         self._research_service = research_service
         self._context_engine = context_engine
         self._poc_service = poc_service
+        DeterministicStageServices._load_workspace(self)
+
+    def _workspace_path(self) -> Path:
+        return self.run_dir / "stage-workspace.json"
+
+    def execute(
+        self,
+        stage: ResearchStage,
+        state: ResearchState,
+        artifacts: StageArtifacts,
+        deadline: StageDeadline,
+    ) -> StageResult:
+        self._active_deadline = deadline
+        if datetime.now(timezone.utc) >= deadline.deadline_at:
+            raise StageDeadlineExceeded("verified run deadline reached")
+        self.progress_sink(stage, None, None, f"Harness entered {stage.value}.")
+        if stage is ResearchStage.PLAN_RESEARCH:
+            result = self._plan(state)
+        elif stage is ResearchStage.RESEARCH_CANDIDATES:
+            result = self._research(state)
+        elif stage is ResearchStage.PLAN_POC:
+            result = self._plan_poc(state)
+        elif stage is ResearchStage.EXECUTE_POC:
+            result = self._execute_poc(state)
+        elif stage is ResearchStage.VALIDATE:
+            result = self._validate(state)
+        elif stage is ResearchStage.REVIEW_REPORT:
+            if self._draft_report is None:
+                raise ValueError("validated report is missing")
+            result = StageResult(state=state, artifacts=StageArtifacts(report=self._draft_report))
+        elif stage is ResearchStage.PUBLISH:
+            if self._draft_manifest is None:
+                raise ValueError("validated manifest is missing")
+            result = StageResult(state=state, artifacts=StageArtifacts(manifest=self._draft_manifest))
+        else:
+            result = StageResult(state=state)
+        if datetime.now(timezone.utc) >= deadline.deadline_at:
+            raise StageDeadlineExceeded("verified stage exceeded the run deadline")
+        DeterministicStageServices._save_workspace(self)
+        return result
 
     def _research(self, state: ResearchState) -> StageResult:
         self.sources, self.chunks, self.evidence = [], [], []
         as_of = datetime.now(timezone.utc)
         for candidate in state.request.candidates:
+            self._require_remaining_seconds(26)
             try:
                 policy = hero_case_policy(candidate)
             except ValueError:
@@ -688,7 +770,17 @@ class VerifiedStageServices(DeterministicStageServices):
             )
             self.acquisition_states[candidate.candidate_id] = delivery.research.state
             self.sources.extend(delivery.research.documents)
-            self.chunks.extend(delivery.research.chunks)
+            selected_chunks = tuple(delivery.context.chunks)
+            self.chunks.extend(selected_chunks)
+            attempt_by_reference = {
+                item.reference.rstrip("/"): item.state
+                for item in delivery.research.attempts
+                if item.available
+            }
+            for source in delivery.research.documents:
+                self.source_acquisition_states[source.source_id] = attempt_by_reference.get(
+                    source.url.rstrip("/"), delivery.research.state
+                )
             if delivery.context.chunks:
                 selected = delivery.context.chunks[0]
                 source = next(
@@ -713,7 +805,12 @@ class VerifiedStageServices(DeterministicStageServices):
                 "tool",
                 "research",
                 delivery.research.state.value,
-                "live evidence acquired with bounded provider parameters and source hashes",
+                " ".join(
+                    (
+                        f"source_hash={source.content_sha256} cache_state={self.source_acquisition_states[source.source_id].value}"
+                        for source in delivery.research.documents
+                    )
+                ) or f"cache_state={delivery.research.state.value}",
             )
         return StageResult(
             state=state.model_copy(update={
@@ -722,6 +819,16 @@ class VerifiedStageServices(DeterministicStageServices):
             }),
             tool_calls=len(state.request.candidates),
         )
+
+    def _plan(self, state: ResearchState) -> StageResult:
+        plan = ResearchPlan(
+            plan_id=f"plan:{state.run_id.split(':', 1)[1]}",
+            investigation_dimensions=("Python 3.11 compatibility", "local RAG behavior", "source authority"),
+            required_capabilities=("official-doc-research", "github-project-analysis", "python-package-smoke-test"),
+            planned_evidence=("bounded live or cached official/GitHub evidence", "reviewed Docker PoC artifact"),
+            poc_intent="Run the closed Chroma/Qdrant Local Hero Case recipes; keep unsupported candidates research-only.",
+        )
+        return StageResult(state=state.model_copy(update={"plan": plan}), tokens=80)
 
     def _plan_poc(self, state: ResearchState) -> StageResult:
         for candidate in state.request.candidates:
@@ -736,12 +843,16 @@ class VerifiedStageServices(DeterministicStageServices):
                     candidate_version=candidate.resolved_version or candidate.requested_version,
                     trusted_recipe_schema={"recipe_id": _recipe_for(candidate.name), "closed_registry": True},
                 )
+        hero_environment = (
+            state.request.environment.python_version == "3.11"
+            and "local" in state.request.environment.deployment.casefold()
+        )
         self.poc_plans = [
             PocPlan(
                 poc_plan_id=f"poc-plan:{_slug(candidate.name)}:verified",
                 candidate_id=candidate.candidate_id,
                 recipe_id=_recipe_for(candidate.name),
-                trusted=_recipe_for(candidate.name) is not None,
+                trusted=hero_environment and _recipe_for(candidate.name) is not None,
                 checks=("install", "import", "create", "upsert", "query", "filter", "persistence"),
             )
             for candidate in state.request.candidates
@@ -752,9 +863,12 @@ class VerifiedStageServices(DeterministicStageServices):
         if self._failed_poc_stage:
             return self._recover_poc(state)
         results: list[PocResult] = []
-        failures = state.failures
+        failures = list(state.failures)
+        recoverable_failure: Failure | None = None
         by_id = {item.candidate_id: item for item in state.request.candidates}
         for plan in self.poc_plans:
+            # A full recipe can block for two independently bounded Docker stages.
+            self._require_remaining_seconds(90)
             result = self._poc_service.execute(
                 plan,
                 by_id[plan.candidate_id],
@@ -768,25 +882,35 @@ class VerifiedStageServices(DeterministicStageServices):
             )
             if result.status in {PocStatus.FAILED, PocStatus.TIMED_OUT}:
                 stage = self._failed_stage(result)
-                self._failed_poc_stage[result.candidate_id] = stage
-                failures = (*failures, Failure(
+                can_recover = (
+                    recoverable_failure is None
+                    and result.failure_code not in {FailureCode.TOOL_UNAVAILABLE, FailureCode.POC_RECIPE_UNSUPPORTED}
+                )
+                failure = Failure(
                     failure_id=f"failure:{state.run_id.split(':', 1)[1]}:{_slug(result.candidate_id)}",
                     code=result.failure_code or FailureCode.POC_NONZERO_EXIT,
                     stage=FailureStage.POC_EXECUTION,
                     message="The reviewed Docker PoC stage failed.",
-                    recoverable=result.failure_code not in {FailureCode.TOOL_UNAVAILABLE, FailureCode.POC_RECIPE_UNSUPPORTED},
+                    recoverable=can_recover,
                     recovery_action=(
                         RecoveryAction.DIAGNOSE_AND_RERUN_POC
-                        if result.failure_code not in {FailureCode.TOOL_UNAVAILABLE, FailureCode.POC_RECIPE_UNSUPPORTED}
+                        if can_recover
                         else RecoveryAction.PUBLISH_LIMITED_RESULT
                     ),
                     attempt=1,
-                ))
+                )
+                if can_recover:
+                    self._failed_poc_stage[result.candidate_id] = stage
+                    recoverable_failure = failure
+                else:
+                    failures.append(failure)
+        if recoverable_failure is not None:
+            failures.append(recoverable_failure)
         self.poc_results = results
         return StageResult(
             state=state.model_copy(update={
                 "poc_result_ids": tuple(item.poc_result_id for item in results),
-                "failures": failures,
+                "failures": tuple(failures),
             }),
             tool_calls=sum(item.status is not PocStatus.RESEARCH_ONLY for item in results),
         )
@@ -800,6 +924,7 @@ class VerifiedStageServices(DeterministicStageServices):
             if stage is None:
                 recovered.append(result)
                 continue
+            self._require_remaining_seconds(45)
             attempt = self._poc_service.rerun_stage(
                 plan_by_id[result.candidate_id],
                 by_id[result.candidate_id],
@@ -807,13 +932,22 @@ class VerifiedStageServices(DeterministicStageServices):
                 stage=stage,
             )
             artifacts = result.artifacts + ((attempt.artifact,) if attempt.artifact else ())
+            complete_status = (
+                attempt.status
+                if stage is PocStage.TEST
+                else PocStatus.FAILED
+            )
             merged = result.model_copy(update={
-                "status": attempt.status,
+                "status": complete_status,
                 "exit_code": attempt.exit_code,
                 "timed_out": attempt.timed_out,
                 "duration_ms": result.duration_ms + attempt.duration_ms,
                 "artifacts": artifacts,
-                "failure_code": attempt.failure_code,
+                "failure_code": (
+                    attempt.failure_code
+                    if complete_status is not PocStatus.FAILED or attempt.failure_code is not None
+                    else FailureCode.POC_NONZERO_EXIT
+                ),
             })
             recovered.append(merged)
             self.poc_history.append(merged)
@@ -858,10 +992,23 @@ class VerifiedStageServices(DeterministicStageServices):
                     gate_rules=("cover every hard constraint",) if stage is ContextStage.VALIDATION else (),
                 )
         states = set(self.acquisition_states.values())
-        if AcquisitionState.UNAVAILABLE in states and not self.sources:
+        verification_failed = any(
+            item.status in {PocStatus.FAILED, PocStatus.TIMED_OUT}
+            and item.failure_code is not FailureCode.TOOL_UNAVAILABLE
+            for item in self.poc_results
+        )
+        if verification_failed:
+            self.scenario = "verification_failed"
+        elif AcquisitionState.UNAVAILABLE in states:
             self.scenario = "research_unavailable"
         elif AcquisitionState.CACHE in states:
             self.scenario = "cached_degradation"
+        elif any(item.status in {PocStatus.FAILED, PocStatus.TIMED_OUT} for item in self.poc_results):
+            self.scenario = (
+                "docker_unavailable"
+                if any(item.failure_code is FailureCode.TOOL_UNAVAILABLE for item in self.poc_results)
+                else "verification_failed"
+            )
         elif not any(item.status is PocStatus.PASSED for item in self.poc_results):
             self.scenario = (
                 "research_only"
@@ -870,7 +1017,16 @@ class VerifiedStageServices(DeterministicStageServices):
             )
         else:
             self.scenario = "verified"
-        return super()._validate(state)
+        return DeterministicStageServices._validate(self, state)
+
+    def _require_remaining_seconds(self, required: float) -> None:
+        if self._active_deadline is None:
+            raise StageDeadlineExceeded("verified stage lacks a deadline")
+        remaining = (
+            self._active_deadline.deadline_at - datetime.now(timezone.utc)
+        ).total_seconds()
+        if remaining < required:
+            raise StageDeadlineExceeded("insufficient whole-run deadline remains")
 
     def _candidate_context(self, candidate_id: str) -> CandidateContextData:
         source_ids = {item.source_id for item in self.sources if item.candidate_id == candidate_id}
@@ -890,7 +1046,7 @@ class StageServicesFactory(Protocol):
         progress_sink: Callable[[ResearchStage, str | None, str | None, str], None],
         trace_sink: Callable[[str, str, str, str], None] | None = None,
         trace: TechScoutTraceRecorder | None = None,
-    ) -> DeterministicStageServices: ...
+    ) -> object: ...
 
 
 class TechScoutRunEngine:
@@ -944,7 +1100,9 @@ class TechScoutRunEngine:
             ),
             "trace": trace,
         }
-        if row.request.mode == "verified" and self.verified_services_factory is not None:
+        if row.request.mode == "verified":
+            if self.verified_services_factory is None:
+                raise ValueError("verified stage services are unavailable")
             services = self.verified_services_factory(**service_kwargs)
         else:
             services = DeterministicStageServices(scenario=scenario, **service_kwargs)
@@ -1199,8 +1357,8 @@ class TechScoutRunEngine:
                 acquisition_state=(
                     "synthetic"
                     if services.synthetic
-                    else getattr(services, "acquisition_states", {}).get(
-                        item.candidate_id, AcquisitionState.UNAVAILABLE
+                    else getattr(services, "source_acquisition_states", {}).get(
+                        item.source_ids[0], AcquisitionState.UNAVAILABLE
                     ).value
                 ),
                 snapshot_sha256=next(

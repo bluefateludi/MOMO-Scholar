@@ -12,7 +12,7 @@ from paper_agent.evidence.hybrid import HybridEvidenceRetriever
 from paper_agent.evidence.retriever import LexicalCandidateSource
 from paper_agent.techscout.context import ContextEngine, HybridContextRetriever
 from paper_agent.techscout.research import LiveEvidenceResearchService
-from paper_agent.techscout.sandbox import DockerCliRunner, InstallNetworkPolicy
+from paper_agent.techscout.sandbox import DockerCliRunner, InstallNetworkPolicy, SandboxLimits
 from paper_agent.techscout.sandbox.service import RealPocService
 from paper_agent.techscout.tools.adapters import (
     AdapterError,
@@ -49,14 +49,20 @@ def make_verified_services_factory(
         client = httpx.Client()
         cache = ContentAddressedCache(cache_root)
         live_search = (
-            TavilySearchAdapter(client=client, api_key=settings.tavily_api_key)
+            TavilySearchAdapter(
+                client=client, api_key=settings.tavily_api_key, timeout_seconds=4
+            )
             if settings.tavily_api_key
             else _UnavailableSearch()
         )
         search = CachedSearchAdapter(delegate=live_search, cache=cache)
-        fetch = CachedFetchAdapter(delegate=HttpxFetchAdapter(client=client), cache=cache)
+        fetch = CachedFetchAdapter(
+            delegate=HttpxFetchAdapter(client=client, timeout_seconds=4), cache=cache
+        )
         github = CachedGitHubAdapter(
-            delegate=GitHubReadOnlyAdapter(client=client, token=settings.github_token),
+            delegate=GitHubReadOnlyAdapter(
+                client=client, token=settings.github_token, timeout_seconds=4
+            ),
             cache=cache,
         )
         retrieval = HybridEvidenceRetriever(
@@ -73,6 +79,7 @@ def make_verified_services_factory(
             fetch=fetch,
             github=github,
             context_engine=context_engine,
+            max_sources=1,
         )
         install_network = None
         if settings.techscout_docker_install_network:
@@ -82,7 +89,11 @@ def make_verified_services_factory(
                 egress_allowlist_enforced=settings.techscout_docker_egress_allowlist_enforced,
             )
         poc = RealPocService(
-            DockerCliRunner(workspace_root, install_network=install_network),
+            DockerCliRunner(
+                workspace_root,
+                limits=SandboxLimits(timeout_seconds=40),
+                install_network=install_network,
+            ),
             secrets=tuple(
                 value for value in (settings.tavily_api_key, settings.github_token) if value
             ),
