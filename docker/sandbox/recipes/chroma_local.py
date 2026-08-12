@@ -28,7 +28,20 @@ def main() -> None:
         )
         assert result["ids"] == [["one"]]
         assert reopened.count() == 2
-        print(json.dumps({"checks": ["import", "persistence", "upsert", "query", "filter"]}))
+        print(
+            json.dumps(
+                {
+                    "checks": [
+                        "import",
+                        "create",
+                        "persistence",
+                        "upsert",
+                        "query",
+                        "filter",
+                    ]
+                }
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ class RecipeCommand:
 @dataclass(frozen=True)
 class ReviewedRecipe:
     recipe_id: StableId
+    candidate_ids: frozenset[StableId]
     package_name: str
     package_version: str
     candidate_names: frozenset[str]
@@ -37,10 +38,13 @@ def _recipes() -> tuple[ReviewedRecipe, ...]:
     return (
         ReviewedRecipe(
             recipe_id="recipe:chroma-local@1",
+            candidate_ids=frozenset({"candidate:chromadb"}),
             package_name="chromadb",
             package_version="1.0.15",
             candidate_names=frozenset({"chroma", "chromadb"}),
-            checks=frozenset({"install", "import", "persistence", "upsert", "query", "filter"}),
+            checks=frozenset(
+                {"install", "import", "create", "persistence", "upsert", "query", "filter"}
+            ),
             commands={
                 PocStage.INSTALL: RecipeCommand(
                     argv=(
@@ -64,10 +68,13 @@ def _recipes() -> tuple[ReviewedRecipe, ...]:
         ),
         ReviewedRecipe(
             recipe_id="recipe:qdrant-local@1",
+            candidate_ids=frozenset({"candidate:qdrant-client"}),
             package_name="qdrant-client",
             package_version="1.15.1",
             candidate_names=frozenset({"qdrant", "qdrant local", "qdrant-client"}),
-            checks=frozenset({"install", "import", "persistence", "upsert", "query", "filter"}),
+            checks=frozenset(
+                {"install", "import", "create", "persistence", "upsert", "query", "filter"}
+            ),
             commands={
                 PocStage.INSTALL: RecipeCommand(
                     argv=(

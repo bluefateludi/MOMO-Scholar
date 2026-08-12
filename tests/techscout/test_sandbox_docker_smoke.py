@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from paper_agent.techscout.models import Candidate, PocPlan
-from paper_agent.techscout.sandbox.compiler import PocCompiler
+from paper_agent.techscout.models import Candidate, PocPlan, PocStatus
 from paper_agent.techscout.sandbox.runner import DockerCliRunner
-from paper_agent.techscout.sandbox.types import ExecutionStatus, PocStage
+from paper_agent.techscout.sandbox.service import RealPocService
+from paper_agent.techscout.sandbox.types import InstallNetworkPolicy
 
 
 pytestmark = pytest.mark.skipif(
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(
         ),
     ),
 )
-def test_reviewed_recipe_runs_with_no_network(
+def test_real_poc_service_runs_reviewed_recipe_and_publishes_artifact(
     candidate: Candidate,
     recipe_id: str,
     tmp_path: Path,
@@ -46,12 +46,24 @@ def test_reviewed_recipe_runs_with_no_network(
         candidate_id=candidate.candidate_id,
         recipe_id=recipe_id,
         trusted=True,
-        checks=("import", "persistence", "upsert", "query", "filter"),
+        checks=("import", "create", "persistence", "upsert", "query", "filter"),
     )
-    command = PocCompiler().compile(plan, candidate, PocStage.TEST)
-    runner = DockerCliRunner(tmp_path)
+    runner = DockerCliRunner(
+        tmp_path,
+        install_network=InstallNetworkPolicy(
+            docker_network=os.environ.get(
+                "TECHSCOUT_INSTALL_NETWORK", "techscout-pypi-egress"
+            ),
+            allowed_destinations=("pypi.org", "files.pythonhosted.org"),
+            egress_allowlist_enforced=True,
+        ),
+    )
 
-    assert command.network_access.value == "none"
-    result = runner.run(command, tmp_path)
+    result = RealPocService(runner).execute(
+        plan,
+        candidate,
+        run_workspace=tmp_path,
+    )
 
-    assert result.status is ExecutionStatus.SUCCEEDED, result.stderr
+    assert result.status is PocStatus.PASSED
+    assert result.artifacts
