@@ -35,6 +35,13 @@ def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
     )
 
 
+def test_pyproject_exposes_techscout_and_preserves_paper_agent_commands() -> None:
+    scripts = _load_pyproject()["project"]["scripts"]
+
+    assert scripts["techscout"] == "paper_agent.techscout.cli:app"
+    assert scripts["paper-agent"] == "paper_agent.cli:app"
+
+
 def test_pdf_runtime_and_agpl_metadata_are_declared() -> None:
     pyproject = _load_pyproject()
     assert "pymupdf>=1.24,<2" in pyproject["project"]["dependencies"]
@@ -121,7 +128,12 @@ def test_wheel_excludes_runtime_outputs_directory(tmp_path: Path) -> None:
     )
     with zipfile.ZipFile(wheels[0]) as wheel:
         members = wheel.namelist()
+        entry_points = wheel.read(next(
+            member for member in members if member.endswith("entry_points.txt")
+        )).decode("utf-8")
     assert any(member.startswith("paper_agent/") for member in members)
+    assert "paper-agent = paper_agent.cli:app" in entry_points
+    assert "techscout = paper_agent.techscout.cli:app" in entry_points
     assert any(member.endswith("licenses/LICENSE") for member in members)
     assert any(member.endswith("licenses/THIRD_PARTY_NOTICES.md") for member in members)
     assert not any(member.startswith("outputs/") for member in members)

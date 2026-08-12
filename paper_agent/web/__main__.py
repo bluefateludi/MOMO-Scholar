@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import ipaddress
-import logging
 from pathlib import Path
 
-import uvicorn
-
-from paper_agent.web.app import create_app
+from paper_agent.web_server import run_web_server
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the local-only MOMO Scholar Web API/UI")
+    parser = argparse.ArgumentParser(description="Run the local-only MOMO TechScout Web API/UI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--state-root", type=Path, default=Path("outputs/.web"))
@@ -20,19 +16,16 @@ def main() -> None:
     parser.add_argument("--allow-network", action="store_true")
     args = parser.parse_args()
     try:
-        loopback = ipaddress.ip_address(args.host).is_loopback
-    except ValueError:
-        loopback = args.host == "localhost"
-    if not loopback and not args.allow_network:
-        parser.error("non-loopback binding requires --allow-network; the Web MVP has no authentication")
-    if not loopback:
-        logging.warning("MOMO Scholar Web is binding beyond loopback without authentication")
-    app = create_app(
-        state_root=args.state_root,
-        output_root=args.output_root,
-        allowed_origins=tuple(args.dev_origin),
-    )
-    uvicorn.run(app, host=args.host, port=args.port, workers=1)
+        run_web_server(
+            host=args.host,
+            port=args.port,
+            state_root=args.state_root,
+            output_root=args.output_root,
+            dev_origins=tuple(args.dev_origin),
+            allow_network=args.allow_network,
+        )
+    except ValueError as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":
