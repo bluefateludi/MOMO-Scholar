@@ -23,7 +23,8 @@ from paper_agent.web.routes.runs import router
 from paper_agent.web.service import RunService
 from paper_agent.web.routes.techscout import router as techscout_router
 from paper_agent.web.techscout_service import TechScoutProjectionService
-from paper_agent.web.techscout_execution import TechScoutSingleRunExecutor
+from paper_agent.web.techscout_execution import StageServicesFactory, TechScoutSingleRunExecutor
+from paper_agent.web.verified_composition import make_verified_services_factory
 
 
 def _error(code: str, message: str, details: dict[str, object] | None = None, status: int = 500) -> JSONResponse:
@@ -41,6 +42,7 @@ def create_app(
     queue_capacity: int = 4,
     runner: PipelineRunner | None = None,
     settings_loader: Callable[[], Settings] = load_settings,
+    verified_services_factory: StageServicesFactory | None = None,
 ) -> FastAPI:
     if "*" in allowed_origins:
         raise ValueError("allowed_origins must contain exact origins, never '*'")
@@ -55,7 +57,16 @@ def create_app(
         runner=runner or __import__("paper_agent.pipeline", fromlist=["run_pipeline"]).run_pipeline,
         settings_loader=settings_loader,
     )
-    techscout_executor = TechScoutSingleRunExecutor(registry, output_root)
+    verified_services_factory = verified_services_factory or make_verified_services_factory(
+        output_root=output_root,
+        state_root=state_root,
+        settings_loader=settings_loader,
+    )
+    techscout_executor = TechScoutSingleRunExecutor(
+        registry,
+        output_root,
+        verified_services_factory=verified_services_factory,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

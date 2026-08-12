@@ -29,24 +29,28 @@ EVIDENCE = [
         kind="retrieved_fact", claim="Chroma documents local persistent storage.",
         source_title="Synthetic Chroma persistence snapshot",
         source_type="official_documentation", source_url=None, as_of=AS_OF,
+        acquisition_state="synthetic", snapshot_sha256="0" * 64,
     ),
     TechScoutEvidenceProjection(
         evidence_id="ev-chroma-poc", candidate_id="chroma",
         kind="local_measurement", claim="The frozen allowlisted fixture passes persistence and metadata filtering checks.",
         source_title="Synthetic allowlisted PoC result", source_type="poc",
         source_url=None, as_of=AS_OF,
+        acquisition_state="synthetic", snapshot_sha256="0" * 64,
     ),
     TechScoutEvidenceProjection(
         evidence_id="ev-qdrant-local", candidate_id="qdrant-local",
         kind="retrieved_fact", claim="Qdrant documents an embedded local mode.",
         source_title="Synthetic Qdrant Local snapshot",
         source_type="official_documentation", source_url=None, as_of=AS_OF,
+        acquisition_state="synthetic", snapshot_sha256="0" * 64,
     ),
     TechScoutEvidenceProjection(
         evidence_id="ev-pgvector-research-only", candidate_id="pgvector",
         kind="retrieved_fact", claim="pgvector requires PostgreSQL; this fixture has no trusted PostgreSQL recipe.",
         source_title="Synthetic pgvector package snapshot",
         source_type="package_metadata", source_url=None, as_of=AS_OF,
+        acquisition_state="synthetic", snapshot_sha256="0" * 64,
     ),
 ]
 
@@ -103,16 +107,16 @@ REPORT = TechScoutReportProjection(
         TechScoutPocProjection(
             candidate_id="chroma", recipe_id="fixture:chroma-local-contract-v1",
             status="passed", checks=["import", "persistence", "upsert", "query", "filter"],
-            duration_ms=640, synthetic=True,
+            duration_ms=640, synthetic=True, verified=False,
         ),
         TechScoutPocProjection(
             candidate_id="qdrant-local", recipe_id="fixture:qdrant-local-contract-v1",
             status="passed", checks=["import", "persistence", "upsert", "query", "filter"],
-            duration_ms=710, synthetic=True,
+            duration_ms=710, synthetic=True, verified=False,
         ),
         TechScoutPocProjection(
             candidate_id="pgvector", status="research_only", checks=[], duration_ms=0,
-            synthetic=True,
+            synthetic=True, verified=False,
         ),
     ],
     limitations=[

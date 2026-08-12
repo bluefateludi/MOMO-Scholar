@@ -88,6 +88,8 @@ class TechScoutEvidenceProjection(StrictModel):
     source_type: Literal["official_documentation", "github_repository", "package_metadata", "poc"]
     source_url: str | None = None
     as_of: datetime
+    acquisition_state: Literal["live", "cache", "unavailable", "synthetic"]
+    snapshot_sha256: str
 
 
 class TechScoutPocProjection(StrictModel):
@@ -97,6 +99,7 @@ class TechScoutPocProjection(StrictModel):
     checks: list[str]
     duration_ms: int = Field(ge=0)
     synthetic: bool
+    verified: bool
 
 
 class TechScoutConstraintProjection(StrictModel):

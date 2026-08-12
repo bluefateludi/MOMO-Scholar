@@ -868,6 +868,11 @@ export interface components {
         /** TechScoutEvidenceProjection */
         TechScoutEvidenceProjection: {
             /**
+             * Acquisition State
+             * @enum {string}
+             */
+            acquisition_state: "live" | "cache" | "unavailable" | "synthetic";
+            /**
              * As Of
              * Format: date-time
              */
@@ -883,6 +888,8 @@ export interface components {
              * @enum {string}
              */
             kind: "retrieved_fact" | "local_measurement" | "model_inference";
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
             /** Source Title */
             source_title: string;
             /**
@@ -922,6 +929,8 @@ export interface components {
             status: "passed" | "failed" | "timed_out" | "research_only";
             /** Synthetic */
             synthetic: boolean;
+            /** Verified */
+            verified: boolean;
         };
         /** TechScoutProgress */
         TechScoutProgress: {

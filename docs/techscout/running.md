@@ -7,9 +7,9 @@ The words Fast, Live, and Offline describe evidence/execution authority, not jus
 | User-facing path | Request/API value | Evidence and execution | Current outcome |
 |---|---|---|---|
 | Fast Demo | `fast` | Frozen synthetic source records and deterministic synthetic PoC responses pass through the real Harness, Skill policy, local stdio MCP transport, checkpoints, gate, artifacts, and Trace. No provider, external research network, or Docker is used. | Implemented. A `completed` result proves the fixture vertical slice passed, not that a real candidate was verified. |
-| Verified (Live intent) | `verified` | The current Web executor does not connect live providers or the real Docker runner. | Explicitly limited with `live_execution_unavailable`; never describe this as a completed Live run. |
+| Verified | `verified` | Bounded Tavily/HTTPS/GitHub research with explicit cache fallback, candidate-scoped context, and reviewed Docker PoCs for Chroma/Qdrant Local. | `completed` only when live authority and required PoCs pass; otherwise bounded `completed_with_limitations`/`no_safe_winner` or safe `failed`. |
 | Offline fixture/replay | no new research run | Bundled immutable or frontend mock data; the lifecycle may be simulated. | Implemented for UI review and deterministic acceptance only. |
-| Live | no honest default Web path yet | Intended to refresh missing/stale official/GitHub evidence through bounded adapters and run reviewed recipes in Docker. | Future integration. The adapters/runners existing in source do not make the end-to-end path implemented. |
+| Live authority | part of `verified` | Refreshes missing/stale official/GitHub evidence and records `live`, `cache`, or `unavailable` per candidate. | Implemented for the fixed Hero Case; external success is never fabricated when credentials/network are absent. |
 
 ## Start with the TechScout CLI
 
@@ -42,7 +42,7 @@ docker compose up --build
 
 Then open `http://127.0.0.1:8000`. Compose binds the published host port to loopback, runs the application with a read-only root filesystem and dropped capabilities, and stores Web state/artifacts in the `techscout-data` named volume. Stop it with `docker compose down`; add `--volumes` only when you intentionally want to delete that local run data.
 
-The Web container does not receive `/var/run/docker.sock`. Compose starts only the existing Web product: Fast Demo remains frozen and synthetic, while a `verified` request still terminates as `completed_with_limitations` with `live_execution_unavailable`. The real sandbox runner and reviewed recipes remain a separate, explicit opt-in boundary described below.
+The Web container does not receive `/var/run/docker.sock`. Fast Demo remains frozen and synthetic. A Verified request from that container therefore normally reports Docker unavailable unless the operator supplies a separately secured runner boundary; it never borrows Fast fixtures.
 
 ## Optional sandbox smoke
 
@@ -62,7 +62,7 @@ This verifies the sandbox path when local Docker prerequisites are deliberately 
 Check these fields before discussing the result:
 
 - `synthetic` / fixture notice: if true, do not present claims as live research.
-- `mode`: `fast` currently means the frozen harness-backed demo; `verified` currently means an attempted boundary that returns limited.
+- `mode`: `fast` means the frozen harness-backed demo; `verified` means live/cache research plus reviewed Docker intent.
 - terminal status: distinguish `completed`, `completed_with_limitations`, and `failed`.
 - verdict: `recommended` versus `no_safe_winner`.
 - candidate support level: only `v1_supported` candidates may be recommendation-eligible.

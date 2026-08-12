@@ -14,7 +14,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
 from paper_agent.modeling import StrictModel
 from paper_agent.techscout.errors import Failure, FailureCode, FailureStage, RecoveryAction
@@ -57,7 +57,15 @@ from paper_agent.techscout.observability.adapters import (
 )
 from paper_agent.techscout.observability.recorder import TechScoutTraceRecorder
 from paper_agent.techscout.runtime_skills import fixed_skill_registry
+from paper_agent.techscout.context import CandidateContextData, ContextEngine, ContextStage
+from paper_agent.techscout.research import (
+    AcquisitionState,
+    LiveEvidenceResearchService,
+    hero_case_policy,
+)
 from paper_agent.techscout.sandbox.recipes import RecipeRegistry
+from paper_agent.techscout.sandbox.service import RealPocService
+from paper_agent.techscout.sandbox.types import PocStage
 from paper_agent.techscout.state import ResearchStage, ResearchState, RunBudget
 from paper_agent.techscout.tools.contracts import SearchOutput, SmokeTestOutput
 from paper_agent.techscout.tools.runtime import PolicyToolRuntime, StdioMcpRuntime
@@ -161,6 +169,9 @@ def demo_mcp_environment(scenario: str) -> dict[str, str]:
 
 class DeterministicStageServices:
     """Deterministic frozen stages behind the real Harness and local MCP seams."""
+
+    synthetic = True
+    fixture_name_prefix = "wave2"
 
     def __init__(
         self,
@@ -427,6 +438,7 @@ class DeterministicStageServices:
         }
         explicit_limited = self.scenario in {
             "cached_degradation", "verified_limited", "research_only",
+            "docker_unavailable", "research_unavailable",
         }
         limited = explicit_limited or not passed
         report = DecisionReport(
@@ -441,6 +453,10 @@ class DeterministicStageServices:
                 if self.scenario == "verified_limited"
                 else "No safe winner is claimed because the candidate has no reviewed local PoC recipe."
                 if self.scenario == "research_only"
+                else "No safe winner is claimed because the reviewed Docker PoC is unavailable."
+                if self.scenario == "docker_unavailable"
+                else "No safe winner is claimed because neither live nor cached evidence is available."
+                if self.scenario == "research_unavailable"
                 else "All supported candidates passed frozen evidence and deterministic local PoC validation; the first equally qualified item in the user-provided shortlist is the deterministic tie-break."
                 if passed
                 else "The first deterministic PoC attempt requires one bounded recovery."
@@ -466,6 +482,10 @@ class DeterministicStageServices:
                         if self.scenario == "verified_limited"
                         else "No reviewed local PoC recipe is available."
                         if self.scenario == "research_only"
+                        else "The reviewed Docker PoC is unavailable."
+                        if self.scenario == "docker_unavailable"
+                        else "Live and cached evidence are unavailable."
+                        if self.scenario == "research_unavailable"
                         else "The PoC requires bounded recovery."
                         if limited
                         else None
@@ -481,6 +501,10 @@ class DeterministicStageServices:
                 if self.scenario == "verified_limited"
                 else ("research_only_candidate",)
                 if self.scenario == "research_only"
+                else ("docker_unavailable",)
+                if self.scenario == "docker_unavailable"
+                else ("live_evidence_unavailable",)
+                if self.scenario == "research_unavailable"
                 else ()
             ),
         )
@@ -496,7 +520,17 @@ class DeterministicStageServices:
         validation = self.gate.evaluate(
             ValidationInput(
                 gate_id=f"gate:{state.run_id.split(':', 1)[1]}-{state.recovery_count}",
-                request=state.request,
+                request=state.request.model_copy(update={
+                    "candidates": tuple(
+                        item.model_copy(update={
+                            "resolved_version": next(
+                                (poc.resolved_version for poc in self.poc_results if poc.candidate_id == item.candidate_id and poc.resolved_version is not None),
+                                item.resolved_version,
+                            )
+                        })
+                        for item in state.request.candidates
+                    )
+                }),
                 report=report,
                 sources=tuple(self.sources),
                 chunks=tuple(self.chunks),
@@ -559,6 +593,14 @@ class DeterministicStageServices:
             "poc_history": [item.model_dump(mode="json") for item in self.poc_history],
             "draft_report": self._draft_report.model_dump(mode="json") if self._draft_report else None,
             "draft_manifest": self._draft_manifest.model_dump(mode="json") if self._draft_manifest else None,
+            "acquisition_states": {
+                key: value.value
+                for key, value in getattr(self, "acquisition_states", {}).items()
+            },
+            "failed_poc_stage": {
+                key: value.value
+                for key, value in getattr(self, "_failed_poc_stage", {}).items()
+            },
         }
         path = self._workspace_path()
         temporary = path.with_suffix(".tmp")
@@ -595,14 +637,275 @@ class DeterministicStageServices:
             self._draft_report = DecisionReport.model_validate(payload["draft_report"])
         if payload["draft_manifest"]:
             self._draft_manifest = RunManifest.model_validate(payload["draft_manifest"])
+        if hasattr(self, "acquisition_states"):
+            self.acquisition_states = {
+                key: AcquisitionState(value)
+                for key, value in payload.get("acquisition_states", {}).items()
+            }
+            self._failed_poc_stage = {
+                key: PocStage(value)
+                for key, value in payload.get("failed_poc_stage", {}).items()
+            }
+
+
+class VerifiedStageServices(DeterministicStageServices):
+    """Verified Hero Case stages composed from the existing live and Docker services."""
+
+    synthetic = False
+    fixture_name_prefix = "verified"
+
+    def __init__(
+        self,
+        *,
+        research_service: LiveEvidenceResearchService,
+        context_engine: ContextEngine,
+        poc_service: RealPocService,
+        **kwargs,
+    ) -> None:
+        self.acquisition_states: dict[str, AcquisitionState] = {}
+        self._failed_poc_stage: dict[str, PocStage] = {}
+        super().__init__(scenario="verified", **kwargs)
+        self._research_service = research_service
+        self._context_engine = context_engine
+        self._poc_service = poc_service
+
+    def _research(self, state: ResearchState) -> StageResult:
+        self.sources, self.chunks, self.evidence = [], [], []
+        as_of = datetime.now(timezone.utc)
+        for candidate in state.request.candidates:
+            try:
+                policy = hero_case_policy(candidate)
+            except ValueError:
+                policy = None
+            if policy is None:
+                self.acquisition_states[candidate.candidate_id] = AcquisitionState.UNAVAILABLE
+                continue
+            delivery = self._research_service.research(
+                request=state.request,
+                policy=policy,
+                stage=ContextStage.RESEARCH,
+                as_of=as_of,
+            )
+            self.acquisition_states[candidate.candidate_id] = delivery.research.state
+            self.sources.extend(delivery.research.documents)
+            self.chunks.extend(delivery.research.chunks)
+            if delivery.context.chunks:
+                selected = delivery.context.chunks[0]
+                source = next(
+                    item for item in delivery.context.sources
+                    if item.source_id == selected.source_id
+                )
+                self.evidence.extend(
+                    CandidateEvidence(
+                        evidence_id=f"evidence:{_slug(candidate.name)}:{index:02d}",
+                        candidate_id=candidate.candidate_id,
+                        constraint=constraint,
+                        claim=selected.text,
+                        source_ids=(source.source_id,),
+                        chunk_ids=(selected.chunk_id,),
+                        kind=EvidenceKind.RETRIEVED_FACT,
+                    )
+                    for index, constraint in enumerate(
+                        state.request.hard_constraints, start=1
+                    )
+                )
+            self.trace_sink(
+                "tool",
+                "research",
+                delivery.research.state.value,
+                "live evidence acquired with bounded provider parameters and source hashes",
+            )
+        return StageResult(
+            state=state.model_copy(update={
+                "source_ids": tuple(item.source_id for item in self.sources),
+                "evidence_ids": tuple(item.evidence_id for item in self.evidence),
+            }),
+            tool_calls=len(state.request.candidates),
+        )
+
+    def _plan_poc(self, state: ResearchState) -> StageResult:
+        for candidate in state.request.candidates:
+            context = self._candidate_context(candidate.candidate_id)
+            if context.documents:
+                self._context_engine.build(
+                    packet_id=f"context:{state.run_id}:poc:{_slug(candidate.name)}",
+                    stage=ContextStage.POC_PLANNING,
+                    request=state.request,
+                    candidate_context=context,
+                    as_of=datetime.now(timezone.utc),
+                    candidate_version=candidate.resolved_version or candidate.requested_version,
+                    trusted_recipe_schema={"recipe_id": _recipe_for(candidate.name), "closed_registry": True},
+                )
+        self.poc_plans = [
+            PocPlan(
+                poc_plan_id=f"poc-plan:{_slug(candidate.name)}:verified",
+                candidate_id=candidate.candidate_id,
+                recipe_id=_recipe_for(candidate.name),
+                trusted=_recipe_for(candidate.name) is not None,
+                checks=("install", "import", "create", "upsert", "query", "filter", "persistence"),
+            )
+            for candidate in state.request.candidates
+        ]
+        return StageResult(state=state)
+
+    def _execute_poc(self, state: ResearchState) -> StageResult:
+        if self._failed_poc_stage:
+            return self._recover_poc(state)
+        results: list[PocResult] = []
+        failures = state.failures
+        by_id = {item.candidate_id: item for item in state.request.candidates}
+        for plan in self.poc_plans:
+            result = self._poc_service.execute(
+                plan,
+                by_id[plan.candidate_id],
+                run_workspace=self.run_dir,
+            )
+            results.append(result)
+            self.poc_history.append(result)
+            self.trace_sink(
+                "tool", "verify", result.status.value,
+                f"recipe_id={plan.recipe_id or 'none'} bounded_log_artifact={bool(result.artifacts)}",
+            )
+            if result.status in {PocStatus.FAILED, PocStatus.TIMED_OUT}:
+                stage = self._failed_stage(result)
+                self._failed_poc_stage[result.candidate_id] = stage
+                failures = (*failures, Failure(
+                    failure_id=f"failure:{state.run_id.split(':', 1)[1]}:{_slug(result.candidate_id)}",
+                    code=result.failure_code or FailureCode.POC_NONZERO_EXIT,
+                    stage=FailureStage.POC_EXECUTION,
+                    message="The reviewed Docker PoC stage failed.",
+                    recoverable=result.failure_code not in {FailureCode.TOOL_UNAVAILABLE, FailureCode.POC_RECIPE_UNSUPPORTED},
+                    recovery_action=(
+                        RecoveryAction.DIAGNOSE_AND_RERUN_POC
+                        if result.failure_code not in {FailureCode.TOOL_UNAVAILABLE, FailureCode.POC_RECIPE_UNSUPPORTED}
+                        else RecoveryAction.PUBLISH_LIMITED_RESULT
+                    ),
+                    attempt=1,
+                ))
+        self.poc_results = results
+        return StageResult(
+            state=state.model_copy(update={
+                "poc_result_ids": tuple(item.poc_result_id for item in results),
+                "failures": failures,
+            }),
+            tool_calls=sum(item.status is not PocStatus.RESEARCH_ONLY for item in results),
+        )
+
+    def _recover_poc(self, state: ResearchState) -> StageResult:
+        by_id = {item.candidate_id: item for item in state.request.candidates}
+        plan_by_id = {item.candidate_id: item for item in self.poc_plans}
+        recovered: list[PocResult] = []
+        for result in self.poc_results:
+            stage = self._failed_poc_stage.get(result.candidate_id)
+            if stage is None:
+                recovered.append(result)
+                continue
+            attempt = self._poc_service.rerun_stage(
+                plan_by_id[result.candidate_id],
+                by_id[result.candidate_id],
+                run_workspace=self.run_dir,
+                stage=stage,
+            )
+            artifacts = result.artifacts + ((attempt.artifact,) if attempt.artifact else ())
+            merged = result.model_copy(update={
+                "status": attempt.status,
+                "exit_code": attempt.exit_code,
+                "timed_out": attempt.timed_out,
+                "duration_ms": result.duration_ms + attempt.duration_ms,
+                "artifacts": artifacts,
+                "failure_code": attempt.failure_code,
+            })
+            recovered.append(merged)
+            self.poc_history.append(merged)
+            checkpoint = state.checkpoint.checkpoint_id if state.checkpoint else "checkpoint:unavailable"
+            self.trace_sink(
+                "recovery", "verify", attempt.status.value,
+                f"checkpoint={checkpoint} repeated_stage={stage.value} recipe_id={plan_by_id[result.candidate_id].recipe_id}",
+            )
+        self.poc_results = recovered
+        return StageResult(
+            state=state.model_copy(update={
+                "poc_result_ids": tuple(item.poc_result_id for item in recovered),
+            }),
+            tool_calls=1,
+        )
+
+    def _failed_stage(self, result: PocResult) -> PocStage:
+        if not result.artifacts:
+            return PocStage.INSTALL
+        path = self.run_dir / "poc-artifacts" / f"{result.artifacts[0].sha256}.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return PocStage(payload["stages"][-1]["stage"])
+        except (OSError, KeyError, IndexError, ValueError, json.JSONDecodeError):
+            return PocStage.TEST
+
+    def _validate(self, state: ResearchState) -> StageResult:
+        poc_by_candidate = {item.candidate_id: item for item in self.poc_results}
+        for candidate in state.request.candidates:
+            context = self._candidate_context(candidate.candidate_id)
+            if not context.documents:
+                continue
+            for stage in (ContextStage.VALIDATION, ContextStage.REPORTING):
+                self._context_engine.build(
+                    packet_id=f"context:{state.run_id}:{stage.value}:{_slug(candidate.name)}",
+                    stage=stage,
+                    request=state.request,
+                    candidate_context=context,
+                    as_of=datetime.now(timezone.utc),
+                    candidate_version=candidate.resolved_version or candidate.requested_version,
+                    poc_result=poc_by_candidate.get(candidate.candidate_id),
+                    gate_rules=("cover every hard constraint",) if stage is ContextStage.VALIDATION else (),
+                )
+        states = set(self.acquisition_states.values())
+        if AcquisitionState.UNAVAILABLE in states and not self.sources:
+            self.scenario = "research_unavailable"
+        elif AcquisitionState.CACHE in states:
+            self.scenario = "cached_degradation"
+        elif not any(item.status is PocStatus.PASSED for item in self.poc_results):
+            self.scenario = (
+                "research_only"
+                if self.poc_results and all(item.status is PocStatus.RESEARCH_ONLY for item in self.poc_results)
+                else "docker_unavailable"
+            )
+        else:
+            self.scenario = "verified"
+        return super()._validate(state)
+
+    def _candidate_context(self, candidate_id: str) -> CandidateContextData:
+        source_ids = {item.source_id for item in self.sources if item.candidate_id == candidate_id}
+        return CandidateContextData(
+            candidate_id=candidate_id,
+            documents=tuple(item for item in self.sources if item.candidate_id == candidate_id),
+            chunks=tuple(item for item in self.chunks if item.source_id in source_ids),
+            evidence=tuple(item for item in self.evidence if item.candidate_id == candidate_id),
+        )
+
+
+class StageServicesFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        run_dir: Path,
+        progress_sink: Callable[[ResearchStage, str | None, str | None, str], None],
+        trace_sink: Callable[[str, str, str, str], None] | None = None,
+        trace: TechScoutTraceRecorder | None = None,
+    ) -> DeterministicStageServices: ...
 
 
 class TechScoutRunEngine:
     """Run one request through Harness and publish durable projections/artifacts."""
 
-    def __init__(self, output_root: Path, registry: RunRegistry) -> None:
+    def __init__(
+        self,
+        output_root: Path,
+        registry: RunRegistry,
+        *,
+        verified_services_factory: StageServicesFactory | None = None,
+    ) -> None:
         self.output_root = output_root
         self.registry = registry
+        self.verified_services_factory = verified_services_factory
 
     def run(self, row: TechScoutRegistryRun) -> tuple[TechScoutProjectionBundle, str]:
         run_dir = self.output_root / "techscout" / row.id
@@ -633,15 +936,18 @@ class TechScoutRunEngine:
                 skill=skill, tool=tool,
             )
 
-        services = DeterministicStageServices(
-            run_dir=run_dir,
-            scenario=scenario,
-            progress_sink=progress,
-            trace_sink=lambda event_type, stage, status, label: self.registry.append_event(
+        service_kwargs = {
+            "run_dir": run_dir,
+            "progress_sink": progress,
+            "trace_sink": lambda event_type, stage, status, label: self.registry.append_event(
                 row.id, event_type=event_type, stage=stage, status=status, label=label,
             ),
-            trace=trace,
-        )
+            "trace": trace,
+        }
+        if row.request.mode == "verified" and self.verified_services_factory is not None:
+            services = self.verified_services_factory(**service_kwargs)
+        else:
+            services = DeterministicStageServices(scenario=scenario, **service_kwargs)
         state = self._initial_state(core_id, row.request)
         checkpoint_path = run_dir / "harness-checkpoints.sqlite3"
         with SQLiteCheckpointAdapter(checkpoint_path) as checkpoints:
@@ -679,8 +985,8 @@ class TechScoutRunEngine:
             detail=TechScoutRunDetail(
                 id=row.id,
                 status="failed",
-                synthetic=True,
-                fixture_name="wave2_failed_safe",
+                synthetic=row.request.mode == "fast",
+                fixture_name=("wave2_failed_safe" if row.request.mode == "fast" else None),
                 question=row.request.question,
                 mode=row.request.mode,
                 progress=progress,
@@ -787,7 +1093,10 @@ class TechScoutRunEngine:
         return ResearchState(
             run_id=core_id,
             request=research_request,
-            budget=RunBudget(deadline_at=utc_now() + timedelta(seconds=120)),
+            budget=RunBudget(
+                deadline_at=utc_now()
+                + timedelta(seconds=300 if request.mode == "verified" else 120)
+            ),
             stage=ResearchStage.NORMALIZE_REQUEST,
             step_count=0,
             tool_call_count=0,
@@ -854,8 +1163,12 @@ class TechScoutRunEngine:
         detail = TechScoutRunDetail(
             id=row.id,
             status=status,
-            synthetic=True,
-            fixture_name=f"wave2_{scenario}",
+            synthetic=services.synthetic,
+            fixture_name=(
+                f"{services.fixture_name_prefix}_{scenario}"
+                if services.synthetic
+                else None
+            ),
             question=row.request.question,
             mode=row.request.mode,
             progress=progress,
@@ -876,9 +1189,25 @@ class TechScoutRunEngine:
                 kind=item.kind.value,
                 claim=item.claim,
                 source_title=next(source.title for source in services.sources if source.source_id == item.source_ids[0]),
-                source_type="official_documentation",
-                source_url=None,
+                source_type=next(source.source_type.value for source in services.sources if source.source_id == item.source_ids[0]),
+                source_url=(
+                    None
+                    if services.synthetic
+                    else next(source.url for source in services.sources if source.source_id == item.source_ids[0])
+                ),
                 as_of=next(source.as_of for source in services.sources if source.source_id == item.source_ids[0]),
+                acquisition_state=(
+                    "synthetic"
+                    if services.synthetic
+                    else getattr(services, "acquisition_states", {}).get(
+                        item.candidate_id, AcquisitionState.UNAVAILABLE
+                    ).value
+                ),
+                snapshot_sha256=next(
+                    source.content_sha256
+                    for source in services.sources
+                    if source.source_id == item.source_ids[0]
+                ),
             )
             for item in services.evidence
         ]
@@ -906,16 +1235,21 @@ class TechScoutRunEngine:
                         status=item.status.value,
                         checks=list(next((plan.checks for plan in services.poc_plans if plan.poc_plan_id == item.poc_plan_id), ())),
                         duration_ms=item.duration_ms,
-                        synthetic=True,
+                        synthetic=services.synthetic,
+                        verified=(not services.synthetic and item.status is PocStatus.PASSED),
                     )
                     for item in services.poc_results
                 ],
                 limitations=[
-                    "Synthetic frozen evidence served through a real local MCP transport; not live provider evidence.",
+                    *(
+                        ["Synthetic frozen evidence served through a real local MCP transport; not live provider evidence."]
+                        if services.synthetic
+                        else []
+                    ),
                     *report.limitations,
                 ],
                 evidence_ids=[item.evidence_id for item in services.evidence],
-                synthetic=True,
+                synthetic=services.synthetic,
             )
         return TechScoutProjectionBundle(detail=detail, report=report_projection, evidence=evidence)
 
@@ -937,9 +1271,19 @@ class TechScoutRunEngine:
             (run_dir / name).write_text(content, encoding="utf-8")
 
 class TechScoutSingleRunExecutor:
-    def __init__(self, registry: RunRegistry, output_root: Path) -> None:
+    def __init__(
+        self,
+        registry: RunRegistry,
+        output_root: Path,
+        *,
+        verified_services_factory: StageServicesFactory | None = None,
+    ) -> None:
         self.registry = registry
-        self.engine = TechScoutRunEngine(output_root, registry)
+        self.engine = TechScoutRunEngine(
+            output_root,
+            registry,
+            verified_services_factory=verified_services_factory,
+        )
         self.available = False
         self._stop = False
         self._condition = threading.Condition()
