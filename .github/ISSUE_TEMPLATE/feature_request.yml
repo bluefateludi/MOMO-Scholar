@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a scoped product, documentation, or developer-experience improvement.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or developer problem should be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe observable inputs, outputs, and success criteria.
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Boundary affected
+      options:
+        - Fast Demo (synthetic)
+        - Verified Hero Case
+        - Candidate family or recipe
+        - Provider, MCP, or network policy
+        - Docker sandbox
+        - Web/API
+        - Packaging or developer experience
+        - Documentation or community
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Authority and safety impact
+      description: Explain changes to evidence provenance, recipes, network, secrets, permissions, gates, or research-only behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What simpler or safer approaches did you evaluate?

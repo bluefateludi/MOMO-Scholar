@@ -1,30 +1,29 @@
-# MOMO Scholar Web
+# MOMO TechScout Web
 
-Stage 4 local-only React frontend. It follows
-`docs/superpowers/specs/2026-08-02-web-mvp-scope-api-ui-contract.md` and does not
-import Python modules or inspect pipeline outputs.
+Local-only React frontend for MOMO TechScout. It does not import Python modules
+or inspect pipeline outputs directly; all product data crosses the versioned API.
 
 ## Run the integrated local UI
 
 ```sh
-npm ci
+npm ci --ignore-scripts
 npm run contracts:check
 npm run build
 cd ..
-python -m paper_agent.web
+techscout serve
 ```
 
-Open `http://127.0.0.1:8000`. FastAPI serves the production build and `/api/v1`
-from the same origin. The packaged synthetic demo is available without provider
-configuration or network access. Creating a live run still uses the normal
-production pipeline and therefore needs its normal provider configuration.
+Open `http://127.0.0.1:8000`. FastAPI serves the production build and the v1/v2
+APIs from the same origin. Fast Demo uses frozen synthetic evidence and needs no
+provider or Docker. Verified is limited to the bounded Hero Case and depends on
+provider/cache, Docker, and the externally enforced installation network.
 
 ## Vite development proxy
 
 Start the API with the exact Vite browser origin and then start Vite:
 
 ```sh
-python -m paper_agent.web --dev-origin http://127.0.0.1:5173
+techscout serve --dev-origin http://127.0.0.1:5173
 cd web
 npm run dev
 ```

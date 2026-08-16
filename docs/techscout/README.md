@@ -1,14 +1,14 @@
 # MOMO TechScout delivery documentation
 
-This directory is the candidate-facing and interview-facing delivery layer for MOMO TechScout. Its final repository authority is `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`, including PR #92 browser acceptance and PR #93 final synthetic-evaluation audit, without rewriting historical MOMO Scholar claims.
+This directory is the candidate-facing and interview-facing delivery layer for MOMO TechScout. The sealed evaluation authority remains `ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab` (PR #93), including PR #92 browser acceptance; later product changes, including the bounded Verified Web wiring in PR #98, do not retroactively expand that evaluation authority or rewrite historical MOMO Scholar claims.
 
 ## Status vocabulary
 
 Every capability is labeled with one of these meanings:
 
 - **Implemented** — present in the current code path and supported by repository contracts/tests.
-- **Explicitly limited** — callable or visible, but designed to return a limitation instead of pretending the missing boundary worked.
-- **Future integration** — a module, interface, or plan exists, but it is not connected to the default product path.
+- **Environment-dependent** — connected for the bounded product path, but external provider/cache, Docker, or network capacity may produce an honest limitation.
+- **Research-only** — evidence may be collected, but no reviewed recipe authorizes a recommendation.
 - **Synthetic diagnostic** — useful for checking evaluation infrastructure, but forbidden as a model/product-effect or resume result.
 
 ## Reading order
@@ -26,3 +26,7 @@ The current coherent vertical slice includes strict domain/state contracts, a bo
 The default Fast Demo still substitutes frozen synthetic evidence and deterministic synthetic PoC responses behind the real orchestration seams. The `verified` Web path is now separately composed from bounded live/cache research, candidate-scoped context, and the reviewed real Docker PoC service. Chroma and Qdrant Local may complete under real authority; provider/cache/Docker gaps produce explicit limitations, while pgvector and unknown candidates remain research-only. This distinction is a product fact, not an evaluation result.
 
 Historical Scholar closeout documents under `docs/` remain Scholar authority. Their retrieval, citation, and browser numbers must never be copied into TechScout results.
+
+## Demo media policy
+
+No screenshot or GIF is currently committed as v0.1.0 execution authority. A future capture must be reproducible from a recorded commit, keep the Fast synthetic or Verified authority label visible in-frame, document its capture steps, and avoid provider secrets or local artifacts. Until then, use the running Fast UI rather than a mock or fabricated image.

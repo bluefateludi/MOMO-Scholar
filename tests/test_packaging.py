@@ -36,10 +36,15 @@ def test_pyproject_uses_explicit_setuptools_package_discovery() -> None:
 
 
 def test_pyproject_exposes_techscout_and_preserves_paper_agent_commands() -> None:
-    scripts = _load_pyproject()["project"]["scripts"]
+    project = _load_pyproject()["project"]
+    scripts = project["scripts"]
 
     assert scripts["techscout"] == "paper_agent.techscout.cli:app"
     assert scripts["paper-agent"] == "paper_agent.cli:app"
+    assert project["name"] == "paper-agent"
+    assert project["description"].startswith("MOMO TechScout:")
+    assert project["readme"] == "README.md"
+    assert project["urls"]["Homepage"] == "https://github.com/bluefateludi/MOMO-TechScout"
 
 
 def test_pdf_runtime_and_agpl_metadata_are_declared() -> None:

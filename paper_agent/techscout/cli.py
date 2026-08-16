@@ -11,7 +11,8 @@ from paper_agent.web_server import run_web_server, validate_server_binding
 app = typer.Typer(
     help=(
         "MOMO TechScout local product. Fast Demo uses frozen synthetic evidence; "
-        "Verified accepts live intent but live execution is not connected."
+        "Verified is implemented only for the bounded Hero Case and remains "
+        "environment-dependent."
     ),
     no_args_is_help=True,
 )
@@ -54,8 +55,8 @@ def serve(
 
     typer.echo("Fast Demo: frozen synthetic evidence; no live provider or Docker execution.")
     typer.echo(
-        "Verified: completed_with_limitations (live_execution_unavailable); "
-        "live verification is not connected."
+        "Verified: bounded Hero Case only; success requires provider/cache, Docker, "
+        "and an enforced install network."
     )
     run_web_server(
         host=host,

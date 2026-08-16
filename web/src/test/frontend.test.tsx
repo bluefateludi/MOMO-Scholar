@@ -27,6 +27,8 @@ describe("TechScout task input", () => {
     expect(screen.getByRole("textbox", { name: /hard constraints/i })).toHaveValue("local persistence\nmetadata equality filtering");
     expect(screen.getByRole("textbox", { name: /candidate shortlist/i })).toHaveValue("Chroma, Qdrant Local, pgvector");
     expect(screen.getByRole("radio", { name: "Fast Demo" })).toBeChecked();
+    expect(screen.getByText(/Verified covers only the bounded Hero Case/i)).toBeInTheDocument();
+    expect(screen.queryByText(/until live providers and real Docker are connected/i)).not.toBeInTheDocument();
     expect(await screen.findByText(/Synthetic offline fixture/i)).toBeInTheDocument();
   });
 

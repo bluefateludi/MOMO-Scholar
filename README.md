@@ -1,83 +1,107 @@
 # MOMO TechScout
 
-MOMO TechScout is an evidence-grounded research and verification agent for Python AI developers choosing open-source components. A task supplies the project environment, hard constraints, and candidate components; TechScout runs a bounded, checkpointed investigation and returns either a traceable recommendation, an explicit `no_safe_winner`, or a limited/failed result.
+[![CI](https://github.com/bluefateludi/MOMO-TechScout/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/bluefateludi/MOMO-TechScout/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
+[![Node 20](https://img.shields.io/badge/node-20-339933)](https://nodejs.org/)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-The current V1 family is deliberately narrow: local-RAG Python vector stores. Chroma and Qdrant Local have reviewed PoC recipes. pgvector and unknown candidates remain research-only unless a later decision adds a trusted fixture. The PoCs check small compatibility contracts; they do not certify production performance.
+MOMO TechScout is an evidence-grounded research and verification agent for Python AI developers choosing open-source components. Give it a project environment, hard constraints, and candidate components; it returns a traceable recommendation, an explicit `no_safe_winner`, or an honest limited/failed result.
 
-**Hero Demo 已验收：** 以 `origin/master@b7516a7b478834614f6ce2ccf1ae63a5c73c3140` 为实际运行基线的 Chromium 验收中，连续三次 Fast Demo 均在 120 秒预算内终态化，浏览器 wall-clock 分别为 **45.081 s、15.360 s、12.879 s**；验收记录与稳定性修复随后合入 PR #92（`7c6a9ed25b50f790d3a0b39a541e46258da71f5a`）。这是冻结 synthetic Fast Demo 的产品验收，不是 Live 模型质量或组件性能基准。
+The v0.1.0 scope is deliberately narrow: local-RAG Python vector stores. Chroma and Qdrant Local have reviewed compatibility recipes. pgvector and unknown candidates remain research-only. A recipe checks a small contract; it is not production performance, security, operations, or cost certification.
 
-Final documentation authority includes PR #93 at `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`. Its sealed audit authorizes the synthetic runner only as evaluation-infrastructure acceptance; all real-model/product Task Success, Recall, Recovery-rate, Token, latency, and Cost resume metrics are **N/A**.
+## Choose the right mode
 
-## What works today
-
-| Surface | Current status | Honest interpretation |
+| Path | Authority | What a successful result means |
 |---|---|---|
-| Fast Demo (`mode=fast`) | Implemented | Runs the real bounded LangGraph Harness, fixed Skill router, local stdio MCP transport, checkpoints, deterministic gate, artifacts, and sealed Trace over frozen synthetic evidence and deterministic synthetic PoC responses. It makes no live provider, research-network, or Docker call. |
-| Verified request (`mode=verified`) | Implemented for the bounded Hero Case | Uses bounded live research with explicit cache/unavailable provenance, candidate-scoped hybrid context, and reviewed Docker recipes for Chroma/Qdrant Local. Missing cache/provider/Docker capacity ends honestly as limited/no-safe-winner. |
-| Offline fixture | Implemented | Immutable/simulated UI and API fixture for reviewing screens and contracts. It is not research output, a benchmark, or proof of Docker execution. |
-| Live execution | Web-wired for the Hero Case | Chroma and Qdrant Local use reviewed recipes; pgvector and unknown candidates remain research-only. Real provider/Docker success still depends on local credentials and the explicitly enforced install network. |
-| Evaluation | Infrastructure accepted; product-effect metrics N/A | PR #93 sealed the original failed precheck, one data-only amended synthetic run, its authority index, and the final audit. The recorded `12/40/8` values are diagnostics only—not resume or model/product-effect evidence. |
+| Fast Demo (`mode=fast`) | Frozen synthetic evidence and deterministic synthetic PoC responses through the real bounded Harness, Skills, local stdio MCP, checkpoints, gate, artifacts, and sealed Trace | The synthetic vertical slice passed. It is not live research or Docker verification. |
+| Verified (`mode=verified`) | Bounded live/cache research and reviewed Docker recipes for the fixed Python 3.11 Chroma/Qdrant Local Hero Case | The available non-synthetic evidence and required PoCs passed. Provider/cache, Docker, and an externally enforced install network are still required. |
+| Offline fixture | Bundled immutable or simulated UI/API data | Screens and contracts can be reviewed. It is not research output or execution proof. |
 
-## Quick start: current Fast Demo
+Missing provider/cache or Docker capacity never borrows Fast fixtures: Verified ends as limited, `no_safe_winner`, or failed. pgvector and unknown candidates cannot cross the PoC recommendation boundary.
 
-Prerequisites: Python 3.10+, Node.js/npm, and a local checkout. No provider key or Docker daemon is required for this path.
+## Five-minute Fast Demo
+
+With the supported tools already installed and normal package-registry access, the first Fast Demo should be ready in about five minutes. Dependency installation uses PyPI and npm; the demo itself makes no provider, research-network, or Docker call.
+
+| Tool | Supported baseline |
+|---|---|
+| Python | 3.10 or newer; CI and the Web container use 3.12 |
+| Node.js/npm | Node 20 LTS; dependencies are locked by `web/package-lock.json` |
+| Docker | Optional for Fast Demo. Docker Engine with BuildKit and Compose v2 is the supported interface; no engine minor-version matrix is claimed. |
+
+From the repository root:
 
 ```console
 python -m pip install -e .
 cd web
-npm ci
+npm ci --ignore-scripts
 npm run build
 cd ..
 techscout serve
 ```
 
-Open `http://127.0.0.1:8000`, submit a Fast Demo task, or open the synthetic offline fixture. Keep its synthetic labeling visible when presenting it. The server binds to loopback by default because the local product has no authentication.
+Open `http://127.0.0.1:8000`, keep **Fast Demo** selected, enter a decision question (for example, “Which local vector store fits this service?”), and start the task. Confirm that the terminal result keeps its synthetic label visible and shows a report, evidence, PoC records, and Trace. A `completed` Fast result proves only the frozen fixture path.
 
-For a Docker-based local start, use:
+The server binds to loopback because it has no authentication. `python -m paper_agent.web` remains a compatibility entry point; `paper-agent` and `paper_agent` remain the historical Scholar command/import names and are not TechScout evaluation authority.
+
+### Docker Compose alternative
 
 ```console
 docker compose up --build
 ```
 
-Compose publishes only `127.0.0.1:8000`, persists local run data in a named volume, and does not mount the Docker socket. This starts the same synthetic Fast Demo Web path; it does not enable Live providers or sandbox-backed Verified execution.
+Compose publishes only `127.0.0.1:8000`, uses a named volume for run data, and does not mount the Docker socket. It starts the same synthetic Fast path. A Verified request in this container normally reports Docker unavailable unless an operator supplies a separate secured runner boundary.
 
-`python -m paper_agent.web` remains a compatible Web entry point. The historical `paper-agent` command and `paper_agent` imports are also preserved for the Scholar workflow; they are not presented as a TechScout evaluation baseline.
+## Verified prerequisites
+
+Verified is implemented only for the bounded Hero Case. Configure `TAVILY_API_KEY` for live search, optionally `GITHUB_TOKEN` for higher read-only GitHub limits, a reachable Docker daemon, `TECHSCOUT_DOCKER_INSTALL_NETWORK`, and `TECHSCOUT_DOCKER_EGRESS_ALLOWLIST_ENFORCED=true` in `.env` or the environment.
+
+The install network must be enforced outside TechScout and restricted to the approved package hosts. The repository does not create or certify that boundary. Runtime tests are networkless, secrets are not forwarded to the sandbox, and absent infrastructure becomes a typed limitation instead of a compatibility claim. See the [operator guide](docs/techscout/running.md) and [security boundary](docs/techscout/support-and-safety.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     UI["React UI"] --> API["FastAPI v2 run API"]
-    API --> Q["SQLite run queue and events"]
-    API --> H["Bounded LangGraph Harness"]
-    H --> SK["Fixed runtime Skills"]
-    SK --> MCP["Local stdio MCP gateway"]
-    MCP --> FE["Frozen evidence adapter\ncurrent Fast Demo"]
-    MCP --> FP["Deterministic PoC adapter\ncurrent Fast Demo"]
-    H --> CP["Separate SQLite checkpoints"]
-    H --> VG["Deterministic Validation Gate"]
-    VG --> AR["Immutable report, manifest, artifacts"]
-    H --> TR["Sanitized sealed Trace"]
-    LIVE["Verified: Live/cache research\n+ candidate context + reviewed Docker"] --> H
+    API --> H["Bounded decision system"]
+    H --> SK["Fixed Skills and policy"]
+    SK --> FAST["Fast: frozen evidence + synthetic PoC"]
+    H --> VERIFIED["Verified Hero Case"]
+    VERIFIED --> LIVE["Bounded live/cache research"]
+    VERIFIED --> DOCKER["Reviewed Chroma/Qdrant Docker recipes"]
+    H --> CP["SQLite checkpoints"]
+    H --> GATE["Deterministic publish gate"]
+    GATE --> ART["Immutable artifacts + sealed Trace"]
 ```
 
-The deterministic gate—not model prose—controls publishability. Unknown recipes cannot cross the PoC boundary, unsupported critical recommendations are rejected, and recovery may repeat only the failed stage within the policy bound.
+Code—not model prose—owns state transitions, budgets, tool permissions, recipe compilation, recovery bounds, terminal status, and publishability.
 
-## Result semantics
+## Troubleshooting
 
-- `completed`: the active execution boundary passed its required gates. For the current synthetic Fast Demo, this is fixture acceptance only—not a live component claim.
-- `completed_with_limitations`: a useful report exists but evidence, provider, Docker, or verification coverage is incomplete.
-- `failed`: no safe schema-valid report could be published.
-- `no_safe_winner`: evidence or trusted verification did not cover the hard constraints; TechScout refuses to fabricate a recommendation.
+| Symptom | Check |
+|---|---|
+| `techscout` is not found | Activate the environment where `pip install -e .` ran, or use `python -m paper_agent.techscout.cli serve`. |
+| `/` returns 404 or no UI appears | Run `npm ci --ignore-scripts && npm run build` in `web/`; the server expects `web/dist/index.html`. |
+| Port 8000 is busy | Start with `techscout serve --port 8001` and open the matching loopback URL. |
+| Verified ends limited or `no_safe_winner` | Check the visible provenance and limitations, then verify provider/cache, Docker daemon, and enforced install-network settings. This is expected fail-closed behavior. |
+| Verified under Compose reports Docker unavailable | The Web container intentionally has no Docker socket. Use Fast there or provide a separately secured runner boundary. |
+| A candidate is `research_only` | Only Chroma and Qdrant Local have reviewed v0.1.0 recipes; missing infrastructure is not proof of incompatibility. |
 
-## Documentation
+Do not delete `outputs/` or run `docker compose down --volumes` unless you intend to remove local run history.
 
-- [Delivery status and documentation map](docs/techscout/README.md)
+## Evidence and release claims
+
+The recorded headed-browser acceptance covers the frozen synthetic Fast Hero Demo: three consecutive runs terminalized inside its 120-second budget. It does not authorize live-model quality, retrieval, recovery-rate, token, latency, cost, or component-performance claims. The sealed synthetic evaluation runner is infrastructure evidence only; product-effect and resume metrics remain **N/A**. Full provenance is in the [final delivery authority](docs/techscout/final-delivery.md).
+
+No screenshot or GIF is committed as v0.1.0 authority. Until a stable capture is reproducible, demos should use the running Fast UI with its synthetic label visible and record the source commit; never substitute a mock or fabricated run image.
+
+## Documentation and community
+
+- [TechScout documentation map](docs/techscout/README.md)
 - [Architecture and artifact authority](docs/techscout/architecture.md)
 - [Run modes and operator guide](docs/techscout/running.md)
 - [V1 support matrix and security boundary](docs/techscout/support-and-safety.md)
-- [Final evaluation and browser acceptance authority](docs/techscout/final-delivery.md)
-- [Interview story and four STAR resume drafts](docs/techscout/interview-and-resume.md)
-- [Product-scope ADR](docs/decisions/0001-techscout-product-scope-and-support.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
-MOMO TechScout is licensed under AGPL-3.0; see `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+MOMO TechScout is licensed under [AGPL-3.0](LICENSE). Third-party notices are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

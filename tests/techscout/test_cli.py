@@ -11,7 +11,7 @@ def test_help_states_fast_demo_and_verified_boundaries() -> None:
     assert "Fast Demo" in result.output
     assert "frozen synthetic evidence" in result.output
     assert "Verified" in result.output
-    assert "live execution is not connected" in result.output
+    assert "bounded Hero Case" in result.output
     assert "serve" in result.output
 
 
@@ -35,8 +35,8 @@ def test_serve_uses_loopback_defaults_and_explains_status(monkeypatch) -> None:
         "allow_network": False,
     }]
     assert "Fast Demo: frozen synthetic evidence" in result.output
-    assert "Verified: completed_with_limitations" in result.output
-    assert "live_execution_unavailable" in result.output
+    assert "Verified: bounded Hero Case" in result.output
+    assert "provider/cache, Docker, and an enforced install network" in result.output
 
 
 def test_serve_rejects_non_loopback_without_explicit_opt_in(monkeypatch) -> None:

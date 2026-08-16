@@ -22,8 +22,9 @@ flowchart TB
     subgraph Tools["Tool boundary"]
         MCP["Local stdio MCP client/server"]
         FAST["Frozen search and synthetic PoC\nFast Demo implementation"]
-        LIVE["Tavily, HTTPS fetch, GitHub read-only, cache\nimplemented adapters; not Web-wired"]
-        DOCKER["Reviewed Docker recipe compiler/runner\nimplemented module; not Fast-Demo-wired"]
+        LIVE["Tavily, HTTPS fetch, GitHub read-only, cache\nVerified Hero Case"]
+        CONTEXT["Candidate-scoped hybrid context\nVerified Hero Case"]
+        DOCKER["Reviewed Docker recipe compiler/runner\nChroma and Qdrant Local only"]
     end
 
     subgraph Authority["Durable outputs"]
@@ -36,8 +37,8 @@ flowchart TB
     API --> HAR
     HAR <--> STATE
     HAR --> SKILL --> MCP --> FAST
-    MCP -. future Web integration .-> LIVE
-    MCP -. future Web integration .-> DOCKER
+    HAR --> LIVE --> CONTEXT
+    HAR --> DOCKER
     HAR <--> CHECK
     HAR --> GATE
     GATE -->|"recoverable within bound"| REC --> HAR
@@ -46,6 +47,8 @@ flowchart TB
 ```
 
 The graph is intentionally bounded rather than an open-ended ReAct loop. Code owns state transitions, tool permissions, budgets, recipe compilation, gate decisions, and terminal status. Stage services own research/planning behavior. Model output, when connected, cannot override these controls.
+
+Fast and Verified use separate authority compositions. Fast reaches only the frozen MCP adapters. Verified is Web-wired for the fixed Python 3.11 Chroma/Qdrant Local Hero Case and may reach bounded live/cache research, candidate-scoped context, and the reviewed Docker service. Provider/cache, Docker, or enforced install-network gaps terminate visibly; they do not fall back to Fast fixtures.
 
 ## Stage and context boundaries
 

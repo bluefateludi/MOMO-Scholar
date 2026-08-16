@@ -13,16 +13,18 @@ The words Fast, Live, and Offline describe evidence/execution authority, not jus
 
 ## Start with the TechScout CLI
 
+Supported baselines are Python 3.10+ (CI and the Web image use 3.12) and Node 20 LTS. The first install needs normal PyPI and npm registry access; running Fast afterward does not call a provider, research network, or Docker.
+
 ```console
 python -m pip install -e .
 cd web
-npm ci
+npm ci --ignore-scripts
 npm run build
 cd ..
 techscout serve
 ```
 
-Then open `http://127.0.0.1:8000`. The v2 API is under `/api/v2/runs`; the UI submits `fast` or `verified`. The default server is single-process and loopback-only. Binding beyond loopback requires the explicit CLI flag and is not recommended because authentication is not implemented.
+Then open `http://127.0.0.1:8000`. Keep Fast selected, submit the prefilled Hero task, and confirm that the terminal view retains its synthetic label and exposes report, evidence, PoC, and Trace views. The v2 API is under `/api/v2/runs`; the UI submits `fast` or `verified`. The default server is single-process and loopback-only. Binding beyond loopback requires the explicit CLI flag and is not recommended because authentication is not implemented.
 
 `techscout --help` and `techscout serve --help` show the current mode boundary. A non-loopback bind is rejected unless the operator explicitly adds `--allow-network`:
 
@@ -34,7 +36,7 @@ That opt-in exposes an unauthenticated local product and must be protected by th
 
 ## Start with Docker Compose
 
-Prerequisites: Docker Engine with Docker Compose v2 and a local checkout.
+Prerequisites: Docker Engine with BuildKit, Docker Compose v2, and a local checkout. The project does not claim a tested engine minor-version matrix.
 
 ```console
 docker compose up --build
@@ -75,3 +77,16 @@ Check these fields before discussing the result:
 Safe wording: “This Fast Demo exercises the actual orchestration, policy, MCP, checkpoint, validation, artifact, and Trace seams with frozen synthetic inputs.”
 
 Unsafe wording: “This is a live comparison,” “Docker verified these candidates,” or “the final benchmark passed” unless the corresponding external authority is later supplied and verified.
+
+## Troubleshooting
+
+| Symptom | Resolution |
+|---|---|
+| `techscout` is not found | Activate the Python environment used for installation, or run `python -m paper_agent.techscout.cli serve`. |
+| The root URL returns 404 | Build the frontend in `web/`; `web/dist/index.html` must exist before the server starts. |
+| Port 8000 is occupied | Use `techscout serve --port 8001` and open the corresponding loopback URL. |
+| Verified returns limited or `no_safe_winner` | Inspect evidence provenance and limitations, then check `TAVILY_API_KEY`, optional `GITHUB_TOKEN`, Docker, `TECHSCOUT_DOCKER_INSTALL_NETWORK`, and `TECHSCOUT_DOCKER_EGRESS_ALLOWLIST_ENFORCED=true`. |
+| Compose cannot run a Verified PoC | This is expected: the Web container has no Docker socket. Supply a separately secured runner boundary or use Fast. |
+| A candidate is research-only | v0.1.0 has reviewed recipes only for Chroma and Qdrant Local. Do not interpret missing coverage as incompatibility. |
+
+Run history lives under local output/state paths or the Compose named volume. Remove it only intentionally; `docker compose down --volumes` deletes the Compose run data.

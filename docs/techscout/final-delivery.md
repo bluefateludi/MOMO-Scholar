@@ -1,6 +1,6 @@
 # Final delivery authority
 
-This record separates browser product acceptance, automated verification, and synthetic evaluation-runner diagnostics. The final repository authority is `origin/master@ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`, which includes PR #92 browser acceptance and PR #93 final bounded-evaluation audit.
+This record separates browser product acceptance, automated verification, and synthetic evaluation-runner diagnostics. The final bounded-evaluation audit authority is `ca7e65a3c1bcaa8e5da2e9b2776c615bceb74aab`, which includes PR #92 browser acceptance and PR #93. Later implementation commits do not retroactively authorize broader evaluation claims.
 
 Planning targets, historical MOMO Scholar metrics, synthetic runner outputs, and unit-test observations are not interchangeable with real-model TechScout results.
 

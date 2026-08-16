@@ -5,9 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "paper-agent"
 version = "0.1.0"
-description = "CLI-first paper research agent with citation-traceable reports"
+description = "MOMO TechScout: evidence-grounded research and verification for Python AI component selection"
+readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
+keywords = ["ai-agent", "component-selection", "research", "rag", "verification"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
 dependencies = [
   "fastapi>=0.115,<1",
   "typer>=0.12",
@@ -38,6 +48,12 @@ observability = [
 [project.scripts]
 paper-agent = "paper_agent.cli:app"
 techscout = "paper_agent.techscout.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/bluefateludi/MOMO-TechScout"
+Documentation = "https://github.com/bluefateludi/MOMO-TechScout/tree/master/docs/techscout"
+Issues = "https://github.com/bluefateludi/MOMO-TechScout/issues"
+Security = "https://github.com/bluefateludi/MOMO-TechScout/security/policy"
 
 [tool.setuptools.packages.find]
 include = ["paper_agent", "paper_agent.*"]

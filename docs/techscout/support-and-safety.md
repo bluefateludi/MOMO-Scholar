@@ -33,7 +33,7 @@ An absent Docker daemon, missing enforced install network, unsupported recipe, t
 
 ## Tool and network boundary
 
-MCP calls must pass both the active Skill allowlist and the local policy allowlist, and inputs/outputs are schema-validated. The planned live boundary is limited to search, safe HTTPS fetch, read-only GitHub inspection, and reviewed smoke execution. URL policy rejects unsafe schemes, credentials, non-approved domains where constrained, and private/loopback/link-local destinations after resolution. Response sizes and timeouts are bounded, and cache fallback remains visible in provenance.
+MCP calls must pass both the active Skill allowlist and the local policy allowlist, and inputs/outputs are schema-validated. The Verified live boundary is limited to search, safe HTTPS fetch, read-only GitHub inspection, and reviewed smoke execution for the bounded Hero Case. URL policy rejects unsafe schemes, credentials, non-approved domains where constrained, and private/loopback/link-local destinations after resolution. Response sizes and timeouts are bounded, and cache fallback remains visible in provenance.
 
 The local MCP server is the tool boundary; MCP annotations are not treated as authorization. Arbitrary remote MCP servers, unrestricted browser/shell access, and dynamically generated Skills are outside V1.
 
@@ -43,7 +43,7 @@ Normal read-only research and reviewed sandbox checks do not interrupt. Writes o
 
 The Web server is intended for a single local user. It enforces same-origin requests, bounded JSON request bodies, no-store API responses, content-type checks, CSP, frame denial, artifact allowlists, and sanitized cursor-bounded Trace projections. It has no authentication or multi-tenant isolation, so loopback is the safe default.
 
-The local Compose quick start publishes the Web service only on `127.0.0.1`, uses a read-only container filesystem with dropped capabilities, and does not mount the Docker socket. Its application container is not a sandbox runner and cannot make `verified` a Live execution path. Real sandbox execution remains separate and explicitly opt-in.
+The local Compose quick start publishes the Web service only on `127.0.0.1`, uses a read-only container filesystem with dropped capabilities, and does not mount the Docker socket. Its application container is not a sandbox runner and cannot complete the Docker-backed Verified path by itself. Real sandbox execution remains separate and explicitly opt-in.
 
 ## Explicit limitations and future work
 

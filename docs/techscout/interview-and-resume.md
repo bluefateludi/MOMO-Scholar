@@ -8,7 +8,7 @@ MOMO Scholar 已有检索、Evidence、Trace、评测、API 和 Web 基础设施
 
 核心取舍是把“模型判断”和“系统权限”分开。模型或确定性 stage service 可以规划、诊断和审阅；代码负责状态转换、预算、工具权限、受信 PoC recipe、Docker argv 编译、终态和发布门。Chroma 与 Qdrant Local 拥有受审 recipe，pgvector 和未知候选在缺少可信 fixture 时只能 research-only。失败恢复只重跑失败 stage，并保留 checkpoint 与原始 Trace。
 
-交付时我没有把 synthetic 结果包装成真实效果：Fast Demo 使用真实 Harness、Skill、stdio MCP、checkpoint、Gate、artifact 和 sealed Trace，但 evidence/PoC 是冻结 synthetic 数据；Verified/Live 未接通时明确返回 limited。最终 Chromium 验收中，连续三次 Hero Fast Demo 都在预算内终态化，并覆盖 cache 降级、单次恢复、未知候选、刷新恢复、失败安全和窄屏路径。
+交付时我没有把 synthetic 结果包装成真实效果：Fast Demo 使用真实 Harness、Skill、stdio MCP、checkpoint、Gate、artifact 和 sealed Trace，但 evidence/PoC 是冻结 synthetic 数据；后续接通的 Verified 也仅覆盖有界 Hero Case，provider/cache、Docker 或受控安装网络缺失时明确返回 limited/no-safe-winner。最终 Chromium 验收中，连续三次 Hero Fast Demo 都在预算内终态化，并覆盖 cache 降级、单次恢复、未知候选、刷新恢复、失败安全和窄屏路径。
 
 ## 高频追问
 

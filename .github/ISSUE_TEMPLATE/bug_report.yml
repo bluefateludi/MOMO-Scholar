@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible MOMO TechScout defect (not a vulnerability).
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not disclose vulnerabilities, secrets, provider bodies, or private run
+        artifacts here. Use the repository Security policy instead.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This report contains no secret or private vulnerability detail.
+          required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Affected path
+      options:
+        - Fast Demo (synthetic)
+        - Verified (bounded Hero Case)
+        - Offline fixture
+        - CLI or packaging
+        - Web/API
+        - Docker sandbox
+        - Documentation
+        - Historical Scholar workflow
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include expected and actual behavior. Redact sensitive data.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide the smallest deterministic steps, request shape, and terminal status.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or git rev-parse HEAD
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, Node/npm, Docker/Compose (if relevant), and browser.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Safe error codes, limitations, or Trace labels only. Do not paste secrets or raw provider bodies.
