@@ -424,6 +424,22 @@ def test_stage_specific_top_k_is_applied_before_context_delivery() -> None:
     assert all(source.version == "1.0" for source in poc.context.sources)
 
 
+def test_large_live_source_is_bounded_before_context_delivery() -> None:
+    content = "\n\n".join(
+        f"metadata filtering persistence section {index}" for index in range(60)
+    )
+
+    delivery = _service(fetch=_Fetch(content=content)).research(
+        request=_request(),
+        policy=_policy(),
+        stage=ContextStage.RESEARCH,
+        as_of=NOW,
+    )
+
+    assert len(delivery.research.evidence) > 50
+    assert 1 <= len(delivery.context.chunks) <= 8
+
+
 def test_hero_case_keeps_pgvector_research_only() -> None:
     assert hero_case_policy(
         Candidate(candidate_id="candidate:chroma", name="Chroma")
