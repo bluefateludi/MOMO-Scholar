@@ -4,7 +4,7 @@
 
 | Family/candidate | Research | Reviewed PoC recipe | Recommendation eligibility | Status |
 |---|---|---|---|---|
-| Python vector stores for local RAG | Frozen evidence today; bounded live adapters exist but are not Web-wired | Only the closed registry | Yes, when every hard constraint and deterministic gate passes under a non-synthetic authority | V1 family |
+| Python vector stores for local RAG | Frozen Fast evidence or bounded Verified live/cache evidence | Only the closed registry | Yes, when every hard constraint and deterministic gate passes under a non-synthetic authority | V1 family |
 | Chroma | Yes | `recipe:chroma-local@1` | Yes | Supported |
 | Qdrant Local | Yes | `recipe:qdrant-local@1` | Yes | Supported |
 | pgvector without a trusted PostgreSQL fixture | Yes | None | No | Research-only |
@@ -48,8 +48,8 @@ The local Compose quick start publishes the Web service only on `127.0.0.1`, use
 ## Explicit limitations and future work
 
 - The current Web Fast Demo is synthetic even though it uses real orchestration seams.
-- Live provider and real Docker execution are not connected to the Web executor.
-- The `verified` mode is deliberately limited rather than falsely green.
+- Verified external success requires a Tavily credential, reachable approved sources, Docker, and a dedicated externally enforced PyPI install network.
+- When any of those are unavailable, `verified` is deliberately limited rather than falsely green.
 - pgvector has no trusted PostgreSQL fixture.
 - No general arbitrary-component installer, remote MCP marketplace, cloud deployment, login, multi-user authorization, or production-scale benchmark exists.
 - Browser product acceptance is recorded, but no real-model Task Success, retrieval, recovery-rate, token, or cost result is authorized. Synthetic runner diagnostics remain infrastructure evidence only.

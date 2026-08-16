@@ -13,9 +13,9 @@ Final documentation authority includes PR #93 at `origin/master@ca7e65a3c1bcaa8e
 | Surface | Current status | Honest interpretation |
 |---|---|---|
 | Fast Demo (`mode=fast`) | Implemented | Runs the real bounded LangGraph Harness, fixed Skill router, local stdio MCP transport, checkpoints, deterministic gate, artifacts, and sealed Trace over frozen synthetic evidence and deterministic synthetic PoC responses. It makes no live provider, research-network, or Docker call. |
-| Verified request (`mode=verified`) | Explicitly limited | The API accepts the request, but the current Web executor returns `completed_with_limitations` with `live_execution_unavailable`; it is not a successful Live verification run. |
+| Verified request (`mode=verified`) | Implemented for the bounded Hero Case | Uses bounded live research with explicit cache/unavailable provenance, candidate-scoped hybrid context, and reviewed Docker recipes for Chroma/Qdrant Local. Missing cache/provider/Docker capacity ends honestly as limited/no-safe-winner. |
 | Offline fixture | Implemented | Immutable/simulated UI and API fixture for reviewing screens and contracts. It is not research output, a benchmark, or proof of Docker execution. |
-| Live execution | Future integration | Bounded Tavily, HTTPS fetch, read-only GitHub, cache, and Docker sandbox modules exist, but they are not connected to the default Web run path at this authority. |
+| Live execution | Web-wired for the Hero Case | Chroma and Qdrant Local use reviewed recipes; pgvector and unknown candidates remain research-only. Real provider/Docker success still depends on local credentials and the explicitly enforced install network. |
 | Evaluation | Infrastructure accepted; product-effect metrics N/A | PR #93 sealed the original failed precheck, one data-only amended synthetic run, its authority index, and the final audit. The recorded `12/40/8` values are diagnostics only—not resume or model/product-effect evidence. |
 
 ## Quick start: current Fast Demo
@@ -58,7 +58,7 @@ flowchart LR
     H --> VG["Deterministic Validation Gate"]
     VG --> AR["Immutable report, manifest, artifacts"]
     H --> TR["Sanitized sealed Trace"]
-    LIVE["Live search, GitHub, Docker adapters\nimplemented modules; not Web-wired"] -. future integration .-> MCP
+    LIVE["Verified: Live/cache research\n+ candidate context + reviewed Docker"] --> H
 ```
 
 The deterministic gate—not model prose—controls publishability. Unknown recipes cannot cross the PoC boundary, unsupported critical recommendations are rejected, and recovery may repeat only the failed stage within the policy bound.

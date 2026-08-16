@@ -1781,6 +1781,16 @@
       "TechScoutEvidenceProjection": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_state": {
+            "enum": [
+              "live",
+              "cache",
+              "unavailable",
+              "synthetic"
+            ],
+            "title": "Acquisition State",
+            "type": "string"
+          },
           "as_of": {
             "format": "date-time",
             "title": "As Of",
@@ -1805,6 +1815,10 @@
               "model_inference"
             ],
             "title": "Kind",
+            "type": "string"
+          },
+          "snapshot_sha256": {
+            "title": "Snapshot Sha256",
             "type": "string"
           },
           "source_title": {
@@ -1840,7 +1854,9 @@
           "claim",
           "source_title",
           "source_type",
-          "as_of"
+          "as_of",
+          "acquisition_state",
+          "snapshot_sha256"
         ],
         "title": "TechScoutEvidenceProjection",
         "type": "object"
@@ -1918,6 +1934,10 @@
           "synthetic": {
             "title": "Synthetic",
             "type": "boolean"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1925,7 +1945,8 @@
           "status",
           "checks",
           "duration_ms",
-          "synthetic"
+          "synthetic",
+          "verified"
         ],
         "title": "TechScoutPocProjection",
         "type": "object"

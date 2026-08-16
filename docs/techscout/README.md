@@ -23,6 +23,6 @@ Every capability is labeled with one of these meanings:
 
 The current coherent vertical slice includes strict domain/state contracts, a bounded LangGraph graph, fixed runtime Skills, a fail-closed local MCP policy, frozen evidence/context flow, reviewed recipe contracts, deterministic validation, typed single-stage recovery, SQLite projections/checkpoints, a React/FastAPI surface, sanitized sealed tracing, and evaluation-package infrastructure.
 
-The default Fast Demo still substitutes frozen synthetic evidence and deterministic synthetic PoC responses behind the real orchestration seams. The Live adapters and real Docker runner are implemented modules but are not connected to that Web executor. The `verified` request therefore returns an explicit limitation. This distinction is a product fact, not an evaluation result.
+The default Fast Demo still substitutes frozen synthetic evidence and deterministic synthetic PoC responses behind the real orchestration seams. The `verified` Web path is now separately composed from bounded live/cache research, candidate-scoped context, and the reviewed real Docker PoC service. Chroma and Qdrant Local may complete under real authority; provider/cache/Docker gaps produce explicit limitations, while pgvector and unknown candidates remain research-only. This distinction is a product fact, not an evaluation result.
 
 Historical Scholar closeout documents under `docs/` remain Scholar authority. Their retrieval, citation, and browser numbers must never be copied into TechScout results.

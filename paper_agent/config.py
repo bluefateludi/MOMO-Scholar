@@ -28,6 +28,10 @@ class Settings:
     semantic_scholar_api_key: str | None = field(default=None, repr=False)
     openalex_mail_address: str | None = None
     dashscope_api_key: str | None = field(default=None, repr=False)
+    tavily_api_key: str | None = field(default=None, repr=False)
+    github_token: str | None = field(default=None, repr=False)
+    techscout_docker_install_network: str | None = None
+    techscout_docker_egress_allowlist_enforced: bool = False
     bailian_region: str = "beijing"
     bailian_embedding_model: str = "text-embedding-v4"
     dashscope_generation_model: str = "qwen3.7-plus"
@@ -189,6 +193,16 @@ def load_settings() -> Settings:
             _setting("OPENALEX_MAIL_ADDRESS", dotenv)
         ),
         dashscope_api_key=_optional_string(_setting("DASHSCOPE_API_KEY", dotenv)),
+        tavily_api_key=_optional_string(_setting("TAVILY_API_KEY", dotenv)),
+        github_token=_optional_string(_setting("GITHUB_TOKEN", dotenv)),
+        techscout_docker_install_network=_optional_string(
+            _setting("TECHSCOUT_DOCKER_INSTALL_NETWORK", dotenv)
+        ),
+        techscout_docker_egress_allowlist_enforced=_strict_bool(
+            "TECHSCOUT_DOCKER_EGRESS_ALLOWLIST_ENFORCED",
+            _setting("TECHSCOUT_DOCKER_EGRESS_ALLOWLIST_ENFORCED", dotenv),
+            False,
+        ),
         bailian_region=_string_with_default(
             _setting("BAILIAN_REGION", dotenv), "beijing"
         ),

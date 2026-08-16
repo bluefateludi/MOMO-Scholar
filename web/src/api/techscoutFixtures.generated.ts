@@ -94,7 +94,9 @@ export const generatedTechScoutFixture = {
       "source_title": "Synthetic Chroma persistence snapshot",
       "source_type": "official_documentation",
       "source_url": null,
-      "as_of": "2026-08-09T04:00:00Z"
+      "as_of": "2026-08-09T04:00:00Z",
+      "acquisition_state": "synthetic",
+      "snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     {
       "evidence_id": "ev-chroma-poc",
@@ -104,7 +106,9 @@ export const generatedTechScoutFixture = {
       "source_title": "Synthetic allowlisted PoC result",
       "source_type": "poc",
       "source_url": null,
-      "as_of": "2026-08-09T04:00:00Z"
+      "as_of": "2026-08-09T04:00:00Z",
+      "acquisition_state": "synthetic",
+      "snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     {
       "evidence_id": "ev-qdrant-local",
@@ -114,7 +118,9 @@ export const generatedTechScoutFixture = {
       "source_title": "Synthetic Qdrant Local snapshot",
       "source_type": "official_documentation",
       "source_url": null,
-      "as_of": "2026-08-09T04:00:00Z"
+      "as_of": "2026-08-09T04:00:00Z",
+      "acquisition_state": "synthetic",
+      "snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     {
       "evidence_id": "ev-pgvector-research-only",
@@ -124,7 +130,9 @@ export const generatedTechScoutFixture = {
       "source_title": "Synthetic pgvector package snapshot",
       "source_type": "package_metadata",
       "source_url": null,
-      "as_of": "2026-08-09T04:00:00Z"
+      "as_of": "2026-08-09T04:00:00Z",
+      "acquisition_state": "synthetic",
+      "snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     }
   ],
   "report": {
@@ -177,7 +185,8 @@ export const generatedTechScoutFixture = {
           "filter"
         ],
         "duration_ms": 640,
-        "synthetic": true
+        "synthetic": true,
+        "verified": false
       },
       {
         "candidate_id": "qdrant-local",
@@ -191,7 +200,8 @@ export const generatedTechScoutFixture = {
           "filter"
         ],
         "duration_ms": 710,
-        "synthetic": true
+        "synthetic": true,
+        "verified": false
       },
       {
         "candidate_id": "pgvector",
@@ -199,7 +209,8 @@ export const generatedTechScoutFixture = {
         "status": "research_only",
         "checks": [],
         "duration_ms": 0,
-        "synthetic": true
+        "synthetic": true,
+        "verified": false
       }
     ],
     "limitations": [

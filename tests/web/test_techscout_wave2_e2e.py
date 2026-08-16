@@ -178,25 +178,34 @@ def test_refresh_requeues_and_resumes_from_harness_checkpoint(tmp_path: Path) ->
         executor.close()
 
 
-def test_verified_mode_is_explicitly_limited_without_live_provider_or_real_docker(
-    tmp_path: Path,
-) -> None:
+def test_fast_and_verified_use_disjoint_stage_service_factories(tmp_path: Path) -> None:
     body, _ = _body("happy-path.json")
-    body["mode"] = "verified"
+    calls: list[str] = []
+
+    class FakeVerifiedServices(DeterministicStageServices):
+        synthetic = False
+
+    def verified_factory(**kwargs):
+        calls.append("verified")
+        return FakeVerifiedServices(scenario="happy", **kwargs)
+
     app = create_app(
         state_root=tmp_path / "state",
         output_root=tmp_path / "outputs",
         demo_root=None,
         web_dist=tmp_path / "missing-web",
+        verified_services_factory=verified_factory,
     )
     with TestClient(app) as client:
-        created = client.post("/api/v2/runs", json=body)
-        detail = _wait_terminal(client, created.json()["id"])
-        assert detail["status"] == "completed_with_limitations"
-        assert {item["code"] for item in detail["issues"]} == {"tool_unavailable"}
-        report = client.get(f"/api/v2/runs/{created.json()['id']}/report").json()
-        assert report["verdict"] == "no_safe_winner"
-        assert "live_execution_unavailable" in report["limitations"]
+        fast = client.post("/api/v2/runs", json=body)
+        assert _wait_terminal(client, fast.json()["id"])["synthetic"] is True
+        assert calls == []
+
+        body["mode"] = "verified"
+        verified = client.post("/api/v2/runs", json=body)
+        detail = _wait_terminal(client, verified.json()["id"])
+        assert calls == ["verified"]
+        assert detail["synthetic"] is False
 
 
 def test_unsupported_candidate_remains_research_only_without_borrowed_recipe(

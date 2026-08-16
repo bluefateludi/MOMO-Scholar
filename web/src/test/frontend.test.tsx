@@ -86,6 +86,32 @@ describe("fixture-backed TechScout views", () => {
     render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/evidence/ev-chroma-persistence`]}>{routes}</MemoryRouter>);
     expect(await screen.findByRole("note")).toHaveTextContent(syntheticNotice); expect(screen.getByText(/no external URL/i)).toBeInTheDocument();
   });
+
+  it("renders live, cached, PoC verified, research-only, and limited authority explicitly", async () => {
+    vi.mocked(techScoutApi.getReport).mockResolvedValue({ data: {
+      ...techScoutReport,
+      synthetic: false,
+      limitations: ["docker_unavailable"],
+      poc_results: techScoutReport.poc_results.map((item, index) => ({
+        ...item,
+        synthetic: false,
+        verified: index === 0,
+        status: index === 2 ? "research_only" as const : item.status,
+      })),
+    } });
+    const report = render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/report`]}><Routes><Route path="/runs/:id/report" element={<ReportPage/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByText("PoC verified")).toBeInTheDocument();
+    expect(screen.getByText(/research-only/)).toBeInTheDocument();
+    expect(screen.getByText("docker_unavailable")).toBeInTheDocument();
+    report.unmount();
+
+    vi.mocked(techScoutApi.getEvidenceItem).mockResolvedValue({ data: {
+      ...techScoutEvidence[0], acquisition_state: "cache",
+    } });
+    render(<MemoryRouter initialEntries={[`/runs/${TECHSCOUT_FIXTURE_ID}/evidence/${techScoutEvidence[0].evidence_id}`]}><Routes><Route path="/runs/:id/evidence/:evidenceId" element={<EvidencePage/>}/></Routes></MemoryRouter>);
+    expect(await screen.findByRole("note")).toHaveTextContent("Cached evidence");
+    expect(screen.getByText("Cached")).toBeInTheDocument();
+  });
 });
 
 function LocationProbe() { return <span>{useLocation().pathname}</span>; }
