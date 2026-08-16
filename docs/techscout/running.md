@@ -13,6 +13,14 @@ The words Fast, Live, and Offline describe evidence/execution authority, not jus
 
 ## Start with the TechScout CLI
 
+Prerequisites are Python 3.10+, Node.js `^20.19.0` or `>=22.12.0`, npm, and a local checkout. Create a virtual environment, then activate it in the shell that will run both npm and TechScout:
+
+```console
+python -m venv .venv
+```
+
+Use `source .venv/bin/activate` on macOS/Linux or `.\.venv\Scripts\Activate.ps1` in Windows PowerShell. Then run:
+
 ```console
 python -m pip install -e .
 cd web

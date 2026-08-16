@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,15 @@ def test_pyproject_exposes_techscout_and_preserves_paper_agent_commands() -> Non
 
     assert scripts["techscout"] == "paper_agent.techscout.cli:app"
     assert scripts["paper-agent"] == "paper_agent.cli:app"
+
+
+def test_web_package_declares_the_supported_node_runtime() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    package = json.loads(
+        (repository_root / "web" / "package.json").read_text(encoding="utf-8")
+    )
+
+    assert package["engines"]["node"] == "^20.19.0 || >=22.12.0"
 
 
 def test_pdf_runtime_and_agpl_metadata_are_declared() -> None:
