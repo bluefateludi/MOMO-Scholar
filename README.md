@@ -20,7 +20,27 @@ Final documentation authority includes PR #93 at `origin/master@ca7e65a3c1bcaa8e
 
 ## Quick start: current Fast Demo
 
-Prerequisites: Python 3.10+, Node.js/npm, and a local checkout. No provider key or Docker daemon is required for this path.
+Prerequisites: Python 3.10+, Node.js `^20.19.0` or `>=22.12.0`, npm, and a local checkout. No provider key or Docker daemon is required for this path. Use a virtual environment so the `techscout` command and the Python used by repository scripts resolve the same installation.
+
+Create and activate the environment:
+
+```console
+python -m venv .venv
+```
+
+On macOS or Linux:
+
+```console
+source .venv/bin/activate
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Then install, build, and serve:
 
 ```console
 python -m pip install -e .
@@ -40,6 +60,8 @@ docker compose up --build
 ```
 
 Compose publishes only `127.0.0.1:8000`, persists local run data in a named volume, and does not mount the Docker socket. This starts the same synthetic Fast Demo Web path; it does not enable Live providers or sandbox-backed Verified execution.
+
+If `techscout` is not found or a repository script reports a missing Python module after installation, reactivate the same `.venv` in the current shell. If Vite rejects the Node runtime, upgrade to one of the versions listed above. If Compose cannot connect to the Docker daemon, start Docker Engine or Docker Desktop and confirm both client and server versions appear in `docker version` before retrying.
 
 `python -m paper_agent.web` remains a compatible Web entry point. The historical `paper-agent` command and `paper_agent` imports are also preserved for the Scholar workflow; they are not presented as a TechScout evaluation baseline.
 
