@@ -124,7 +124,7 @@ class LiveEvidenceResearchService:
             candidate_id=result.candidate_id,
             documents=result.documents,
             chunks=result.chunks,
-            evidence=result.evidence,
+            evidence=result.evidence[:50],
         )
         packet = self._context_engine.build(
             packet_id=f"context:{request.run_id}:{stage.value}:{candidate.candidate_id}",
