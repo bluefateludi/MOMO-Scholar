@@ -88,3 +88,56 @@ Safe external wording is: “a bounded 12-case Live Eval pilot covering the
 current Chroma/Qdrant Local scope and safety behavior for research-only or
 unknown candidates.” Do not call it a general component benchmark, production
 reliability proof, or evidence that one vector store is universally better.
+
+## Phase 1 execution boundary
+
+Phase 1 is implemented as a separate control plane in
+`paper_agent.techscout.eval.live_phase1`; it does not import, amend, or publish
+into the sealed synthetic `12/40/8` directories. A run is keyed by
+`(case_id, repetition)`. Product failures are recorded and later keys continue;
+only evaluator infrastructure failure, the signed total cost budget, or the
+signed total timeout stops the remaining keys. Every created authority ends
+with a hash manifest, including partial authorities, and an existing output
+directory is never overwritten.
+
+The authorization file is local-only under ignored `evaluations/` storage. It
+must freeze the registration hash and clean baseline commit, the
+`verified_stage_services:techscout_decision_report:v1` wiring, exact provider
+model revision, provider-token requirement, pricing snapshot, positive maximum
+cost, and an explicit attestation that the provider revision is immutable. The
+provider response must echo that exact revision; an unversioned alias is not
+acceptable authority. The file also freezes
+per-run and total timeouts, output directory, reviewed Docker image tag,
+its exact local `sha256` image identity, execution scope (`smoke` or `formal`),
+and per-run prompt/completion token ceilings. Preflight rejects a cost ceiling
+that cannot cover the frozen worst-case token ceiling for the authorized run
+count. Secrets are supplied only through
+the existing settings boundary; they never belong in this file.
+
+Run a no-cost preflight with explicit paths:
+
+```console
+python -m scripts.run_techscout_live_eval \
+  --registration evaluations/techscout-live-v1/registration.json \
+  --authorization evaluations/techscout-live-v1/authorization.json \
+  --output-dir evaluations/techscout-live-v1/authorities/<new-authority-id>
+```
+
+Preflight checks all authorities before it creates the output directory, Trace,
+workers, or evaluation calls: cold-live research and model credentials, exact
+configured model revision, model wiring, frozen pricing and positive budget,
+clean baseline commit, real Docker daemon, dedicated allowlisted install
+network, exact reviewed image ID, bounded timeouts, and a new output path that
+cannot overlap the synthetic authority. `--execute-smoke` is the only option
+that proceeds to the real first-case/first-repetition smoke after preflight. It
+then requires the provider response to report the exact model revision and
+non-zero token usage, recomputes cost from the frozen pricing snapshot, applies
+the existing typed report and deterministic Validation Gate, and seals a
+distinct `bounded_live_smoke` authority.
+
+The full 24-run executor supports evaluator-controlled condition injection
+through its `LiveCaseRunner` seam. The Web adapter intentionally exposes only
+the normal first-case smoke: it refuses to reinterpret forced-unavailable or
+controlled-fault cases as natural failures. A formal 12×2 run therefore needs
+an evaluator-owned runner that implements those preregistered conditions; the
+generic executor rejects a runner that lacks that authority.
