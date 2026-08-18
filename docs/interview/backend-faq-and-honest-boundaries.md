@@ -4,19 +4,19 @@
 
 ### Q：现在到底有没有 Worker？
 
-有一个**进程内 daemon worker thread**，类名是 `TechScoutSingleRunExecutor`；它不是独立服务，也不是 Redis/Celery Worker。当前一次最多执行一个 TechScout run。
+已合并基线有进程内 daemon worker thread。Draft PR #102 精确 head `595b506` 已实现 `TechScoutWorker`/`RunQueue` 并通过离线/确定性独立复审，0 阻断；PR 未合并，真实 Redis server 未集成运行。
 
 ### Q：为什么不用 Celery/Redis？
 
-当前目标是本地单用户垂直切片，SQLite WAL 能用较低复杂度验证准入、状态、恢复和发布合同。Redis Worker 正在本轮主实现中推进，但尚未进入当前事实基线或完成验证；先定义 lease/fencing 不变量，再引入分布式运行时，避免只有队列没有正确 ownership。
+当前仍不用 Celery。PR #102 实现了项目内 RunQueue/Worker 和可选 Redis adapter，让 SQLite Registry 继续拥有权威状态，Redis 只做 dispatch/lease。这样可以把任务语义留在本项目中；代价是真实 Redis、多进程竞争和运维生态还需继续验证。
 
 ### Q：SQLite claim 会不会并发重复？
 
-在同一 registry 内，`BEGIN IMMEDIATE`、是否已有 running 的检查和 `WHERE status='queued'` 条件更新把 claim 放在一个事务里。可以说它覆盖本地并发，不能说覆盖多个独立数据库或任意多进程部署。
+Registry 使用 worker/lease/fencing tuple CAS 和 absolute lease expiry。确定性复审覆盖 healthy duplicate ack、expired takeover、旧 owner 拒绝；真实 Redis/多进程竞争仍未验证。
 
 ### Q：是否 exactly once？
 
-不是。当前更接近有 checkpoint 的 at-least-once 恢复；文件产物和 SQLite 终态之间没有跨资源事务。未来计划用 fencing token 限制单 owner 提交，但仍不会宣称 exactly-once execution。
+不是。PR #102 明确是 at-least-once delivery。Redis lease token 保护队列 mutation，Registry owner tuple CAS 抑制重复投递和旧 owner 写入；但文件产物和 SQLite 终态没有跨资源事务，仍不能宣称 exactly-once execution。
 
 ## 恢复与一致性
 
@@ -34,7 +34,7 @@ stage workspace 有 tmp + fsync + replace 和一个 backup；Harness checkpoint 
 
 ### Q：如何避免无限重试？
 
-Harness 的业务阶段恢复是类型化且有界的，当前 projection 里 attempts 最大为一次。Redis 层的 retry/backoff/DLQ 正在本轮实现中但尚未验证；实现合同要求总 attempt 上限和 full jitter。
+Harness 的业务阶段恢复类型化且有界。PR #102 又实现 Worker 层最多一次 transient retry，永久/超预算错误进入 `dead_letter`。延迟指数退避/full jitter 和真实 Redis retry 集成尚未实现。
 
 ## API 与错误
 
@@ -44,25 +44,25 @@ Harness 的业务阶段恢复是类型化且有界的，当前 projection 里 at
 
 ### Q：协议有什么已知问题？
 
-`executor_unavailable` 在服务层被抛出，但基线固定 message 表没有对应项，可能降级为 internal error。我会把它当作待修合同缺口，而不是掩盖成稳定能力。
+基线的 `executor_unavailable` 消息表缺口已在 PR #102 修复；未知 code 也安全 fallback 到 `internal_error`。PR 尚未合并，所以谈当前 `master` 时仍要区分这个差异。
 
 ### Q：客户端什么时候可以重试？
 
-当前只有部分路径有 `Retry-After`，v2 还未统一 retryable 合同。计划会为每个 code 登记 retryable 与有界等待时间；客户端不能对所有 500/503 无限重放 POST。
+Worker 按错误类型和 attempt/deadline 有界 retry；取消/超时优先、DLQ 和 duplicate delivery 已通过确定性复审。真实网络不确定性仍需集成验证。
 
-## Redis 与 lease（本轮实现中，不是基线已实现）
+## Redis 与 lease（PR #102 已通过离线/确定性复审）
 
 ### Q：为什么 lease 还要 fencing token？
 
-lease 只能说明 ownership 可能过期，不能让旧 Worker 忘记自己。网络分区或暂停后，旧 Worker 可能恢复并迟到写结果；递增 fencing token 让持久层拒绝旧 owner 的写入。
+lease 只能说明 ownership 可能过期，不能让旧 Worker 忘记自己。PR #102 同时用 Redis lease token 约束队列 mutation，并用 Registry worker/lease/fencing tuple CAS 拒绝旧 owner 的 heartbeat、progress、failure 与 terminal；真实 Redis 和多进程竞态仍未集成验证。
 
 ### Q：heartbeat 超时怎么办？
 
-Worker 不能假设 lease 仍有效。本轮实现合同是在安全点停止新阶段，查询 owner/token；无法确认时 fail closed。外部调用 timeout 也必须小于 lease 安全窗口。当前基线尚未验证该行为。
+lease lost 后 Registry owner tuple CAS 阻止旧线程发布；该语义已通过确定性复审。但 Python 仍不能安全硬杀阻塞的外部 I/O 线程，shutdown 只能在 grace 超时后 handoff 并暴露 limitation。
 
 ### Q：Redis 挂了，任务会不会丢？
 
-设计目标是不丢业务事实：Redis 只存调度态，run 投影、manifest、Trace 和产物在持久事实源。Redis 恢复后由 reconciliation 重建非终态调度项。这套机制正在本轮实现中，但当前基线尚未包含，也未完成演练。
+SQLite Registry、manifest、Trace 和产物仍是事实源，Redis 只存调度态。但 PR #102 没有实现从 Registry 自动重建 Redis 队列的 reconciliation，也未做 Redis 重启演练，因此不能承诺 Redis 故障后自动无损恢复。
 
 ### Q：为什么不把报告也放 Redis？
 
@@ -80,7 +80,7 @@ Worker 不能假设 lease 仍有效。本轮实现合同是在安全点停止新
 
 ### Q：扩容瓶颈在哪里？
 
-最直接的是单 TechScout worker thread、SQLite 单写协调，以及本地产物/checkpoint。扩容前需要共享持久存储、Redis lease/fencing、幂等准入和对账，而不只是把 Uvicorn worker 数调大。
+PR #102 支持 API/Worker 进程拆分，但 SQLite 单写、本地 checkpoint/产物、缺少跨资源事务和真实 Redis 验证仍是瓶颈。多机扩容前需要共享持久存储和对账，而不只是增加 Worker 数。
 
 ### Q：三个 STAR 是真实事故吗？
 
@@ -93,6 +93,7 @@ Worker 不能假设 lease 仍有效。本轮实现合同是在安全点停止新
 | “SQLite 事务化准入和 claim 已实现” | “已经是分布式队列” |
 | “checkpoint 中断恢复有确定性测试” | “任务 exactly once” |
 | “sealed Trace 与 limitation 可见” | “有完整生产 observability/SLO” |
-| “Redis lease/fencing 正在本轮实现，当前基线未验证” | “Redis Worker 已上线” |
+| “PR #102 已通过离线/确定性独立复审，0 阻断” | “Redis Worker 已上线或完成真实 Redis 集成” |
+| “Registry owner tuple fencing 已通过确定性复审” | “真实 Redis/多进程/文件产物跨资源一致性已验证” |
 | “Fast Demo 走真实 orchestration seam” | “Fast Demo 是 live 或证明模型效果” |
 | “故障案例来自注入测试” | “这是线上事故复盘” |

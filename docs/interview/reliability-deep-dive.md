@@ -2,13 +2,13 @@
 
 ## 一句话主线
 
-我把可靠性拆成四个可验证的边界：**准入不超卖、执行可恢复、发布不撒谎、失败可追踪**；然后主动说明当前单进程边界，以及下一步如何用 lease + fencing 扩到多 Worker。
+我把可靠性拆成四个可验证的边界：**准入不超卖、执行可恢复、发布不撒谎、失败可追踪**；PR #102 又增加了 at-least-once Worker/lease 层，但我会区分确定性 owner fencing 与真实 Redis/多进程集成。
 
 ## 1. 准入不超卖（已实现）
 
 `RunRegistry` 在 `BEGIN IMMEDIATE` 事务里统计 `queued/running` 数量、插入 run、追加 accepted 事件。并发测试证明容量检查发生在同一写锁边界内。claim 同样使用事务和 `WHERE status='queued'` 条件更新；而且只要库里有一个 TechScout `running`，就不会 claim 第二个。
 
-面试边界：这保证的是**单 SQLite registry 内的有界并发**，不是分布式锁，也不是高吞吐队列。
+PR #102 让 idempotency、deadline、attempt、cancel intent 与完整 owner tuple 进入 Registry。最终 head `595b506` 已用确定性复审关闭 deadline、取消与旧 Worker 终态的原阻断反例；该结论不外推到真实 Redis 或多进程环境。
 
 ## 2. 执行可恢复（已实现但有限）
 
@@ -28,21 +28,20 @@ Harness 有确定性 gate 和有界恢复。外部搜索、缓存、Docker 或 r
 
 系统有两层可观测性：registry 中的游标分页事件用于 Web 进度，run 目录中的 sealed JSONL Trace 用于执行/provenance。事件文本写入前会做脱敏、控制字符清理和长度限制；未知 API 异常只返回 correlation ID。
 
-面试边界：这不是完整生产 observability。当前没有 Prometheus SLO、集中日志平台、告警路由或跨服务 request ID。
+PR #102 增加了校验/生成的 `X-Request-ID`、request/run/worker context 和结构化脱敏日志。面试边界：仍没有 Prometheus SLO、集中日志平台或告警路由。
 
-## 5. 为什么需要 lease + fencing（本轮实现中，尚未验证）
+## 5. Worker、lease 与 fencing 的真实状态
 
 单进程重启时，可以直接假设旧线程消失；多 Worker 下这个假设不成立。Worker 可能只是网络分区或长暂停，lease 到期后新 Worker 会接管，而旧 Worker 随后恢复。如果只有分布式锁/TTL，旧 Worker 仍可能迟到写终态。
 
-所以计划协议同时使用：
+PR #102 初版已落地：
 
-- lease：让崩溃任务最终可回收；
-- heartbeat：存活 Worker 延长 ownership；
-- fencing token：每次 claim 单调递增，所有进度/终态写都验证 token；
-- attempt 隔离产物：旧 attempt 不能覆盖当前 authority；
-- 有界 retry + DLQ：基础设施错误不会无限重放。
+- 默认 InMemory queue + embedded Worker，以及可选 Redis adapter + 独立 Worker CLI；
+- reserve/lease/heartbeat/ack/retry/reaper/DLQ 的 queue-level token 校验；
+- SQLite 条件 claim、一次有界 transient retry、deadline 与合作式取消；
+- readiness、request ID 和结构化脱敏日志。
 
-准确表述是“计划实现 at-least-once execution + fenced single-owner commit”，不是 exactly-once execution。
+最终验收结论：`595b506` 上六个原阻断均关闭，Standards/Spec Pass、0 阻断；ambiguous-success 原始重放 completed，旧 owner fenced。准确边界仍是离线/确定性复审：真实 Redis Lua/响应丢失、真实多进程竞争、OS SIGKILL 未验证，阻塞外部 I/O 线程只能 fencing/handoff、不能硬终止。
 
 ## 6. 可能被追问的取舍
 
@@ -56,4 +55,4 @@ Harness 有确定性 gate 和有界恢复。外部搜索、缓存、Docker 或 r
 
 ### 最大的当前技术债是什么？
 
-跨文件系统与 registry 的发布窗口，以及 executor unavailable 错误码映射不一致。前者需要 attempt/fencing + reconciliation/outbox 思路，后者需要统一 error registry 和合同测试。
+跨文件系统与 Registry 的发布窗口、真实 Redis/多进程集成缺失，以及阻塞外部 I/O 线程无法硬终止。owner tuple fencing 已通过确定性复审；`executor_unavailable` 消息映射由安全 fallback 兜底。

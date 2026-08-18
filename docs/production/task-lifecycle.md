@@ -1,81 +1,58 @@
 # 任务生命周期
 
-## 1. 已实现的公开状态
+## 1. 权威层次
 
-TechScout API 当前公开：
+`750b17a` 是已合并基线。Draft PR #102 精确 head `595b506` 已实现扩展生命周期，并通过离线/确定性独立复审；PR 尚未合并或上线。
+
+## 2. PR #102 已验收的公开状态
 
 ```text
 queued -> running -> completed
                   -> completed_with_limitations
+                  -> cancelled
                   -> failed
+                  -> dead_letter
+running -> queued       (一次有界 transient retry)
+running -> interrupted  (Worker 中断投影)
 ```
 
-阶段投影为 `plan -> research -> verify -> decide -> terminal`。Harness 内部阶段更细，API 通过映射暴露较稳定的五阶段视图。
+阶段投影仍为 `plan -> research -> verify -> decide -> terminal`。Redis/InMemory 队列只负责 dispatch；SQLite Registry 保存权威状态。
 
-## 2. 已实现的转移与提交点
+## 3. 转移合同与验收结果
 
-| 转移 | 谁执行 | 当前原子边界 |
+| 转移 | 初版意图 | 当前验收状态 |
 |---|---|---|
-| 请求 -> `queued` | API / registry | run 行与 accepted 事件同一 SQLite 事务 |
-| `queued` -> `running` | 单线程 executor | 条件更新与 started 事件同一 SQLite 事务 |
-| `running` 阶段推进 | RunEngine progress callback | stage/progress 与对应事件同一 SQLite 事务 |
-| `running` -> 终态 | executor / registry | status、projection path、finished time 与终态事件同一 SQLite 事务 |
-| 进程重启 -> `queued` | executor startup | 每个活跃 run 独立事务，附 recovery 事件 |
+| 请求 -> `queued` | API / Registry | capacity、idempotency、request hash、deadline、run 与 accepted event 同一 SQLite 事务 |
+| `queued` -> `running` | 条件 claim、worker/lease/fence、attempt +1 | duplicate ack 与 expired lease takeover 已通过确定性复审 |
+| queued/running 取消 | 立即/合作式取消 | cancel 优先于 success/failure 已通过回归 |
+| deadline | claim/完成前拒绝过期任务 | `timed_out` 优先级已通过回归 |
+| retry/DLQ | transient 有界重排，永久/耗尽进 DLQ | 取消/超时不误入 DLQ已通过回归 |
+| Worker 终态 | 当前 owner 提交成功/受限/失败 | owner tuple CAS 与旧 owner fencing 已通过复审 |
 
-终态发布顺序是：Harness 完成 → 生成 Web 投影和终态产物 → 记录并 seal Trace → registry 提交终态。文件系统与 SQLite 之间没有跨资源事务，因此这是一种可恢复发布顺序，不是严格 exactly-once 提交。
+成功发布仍是：Harness 完成 → 写投影/产物 → seal Trace → Registry 终态。文件系统与 SQLite 没有跨资源事务，因此不是 exactly-once 提交。
 
-## 3. 生命周期不变量
+## 4. 幂等、deadline、取消与重试的当前状态
 
-已实现或由当前 schema 强制的不变量：
+- `Idempotency-Key` 可选；相同 key + 相同规范化请求返回原 run，不重复入队。
+- 同一 key 对应不同 request hash 返回 `409 idempotency_conflict`。
+- Fast/Verified deadline、queued/running 取消、`max_attempts=2` 和错误分类代码均已落地。
+- deadline、取消与 DLQ 的原阻断反例已在 `595b506` 关闭并通过独立复审。
+- 原始异常消息不持久化到公开错误；保存归一化 `error_kind` / `error_code`。
 
-- 只有 `completed`、`completed_with_limitations`、`failed` 可写入 TechScout 终态。
-- 同一 SQLite registry 同时最多有一个 `running` TechScout run。
-- claim 使用 `WHERE status='queued'` 条件更新，避免同库内重复 claim。
-- 终态 run 有 `finished_at`；成功/受限终态应有可读取的 projection path。
-- Trace cursor 是基于单调自增 event sequence 的不透明 token。
+## 5. 队列 delivery 与 lease
 
-需要注意的限制：
+- PR #102 明确使用 at-least-once delivery。
+- InMemory/Redis adapter 都有 reserve、lease、heartbeat、ack、retry、reaper 和 dead-letter 合同。
+- Redis Lua 对队列操作校验 lease token；Registry 条件 claim 拒绝对非 queued run 的重复 claim。
+- Registry 额外持久化 lease expiry；ambiguous reaper success 可在 expiry 后原子 takeover，旧 owner 无法提交。
+- 未运行真实 Redis server，因此 Lua、API/Worker 多进程和网络故障行为尚无集成权威。
+- Registry progress/terminal 已受 owner tuple CAS 保护；文件产物与 SQLite 终态仍没有跨资源事务、attempt 隔离或 reconciliation。
 
-- 当前没有客户端 idempotency key；重复 POST 会创建不同 run。
-- 启动协调会重排所有 `queued/running` TechScout run，不校验 lease owner。
-- 当前没有 `cancelled`、`retry_wait`、`dead_lettered` 等公开状态。
-- 阶段进度不是 checkpoint 本身；真正恢复依据是 Harness checkpoint 与 stage workspace。
+## 6. 未实现或待验证
 
-## 4. 本轮计划：保持 API 稳定的内部状态机
-
-Redis 调度层计划使用独立内部状态，不直接扩大公开 API：
-
-```text
-ready -> leased -> succeeded
-               -> retry_wait -> ready
-               -> dead_lettered
-               -> cancelled
-leased --lease expired--> ready
-```
-
-映射建议：
-
-| 内部调度态 | 公开 run 状态 |
-|---|---|
-| `ready`、`retry_wait` | `queued` |
-| `leased` | `running` |
-| `succeeded` | `completed` 或 `completed_with_limitations` |
-| `dead_lettered` | `failed` |
-| `cancelled` | 先作为 `failed` + `cancelled` issue；是否新增公开状态需单独 API 决策 |
-
-计划不变量：
-
-- 创建请求携带 idempotency key；同一调用方、同一 key、同一请求摘要返回同一 run，不同摘要冲突。
-- 每次 claim 生成递增 fencing token；任何进度、续租、终态提交都必须匹配当前 owner 与 token。
-- Worker 先持久化产物并校验 manifest，再以 token 条件提交终态；旧 Worker 的迟到提交被拒绝。
-- retry 只对登记为可恢复的基础设施错误生效，采用有界指数退避和总尝试预算。
-- 业务结论为 `no_safe_winner` 或 `completed_with_limitations` 时是正常终态，不进入基础设施重试。
-- reaper 只回收过期 lease；它不直接宣称任务失败，也不删除 checkpoint 或产物。
-
-## 5. 未实现与待决策
-
-- 幂等准入、取消 API、公开 cancelled 状态。
-- retry 分类表、最大尝试数、退避参数和 DLQ 运维流程的代码实现。
-- 多 Worker 情况下 checkpoint 的共享存储与并发打开策略。
-- “产物已持久化但终态提交失败”的 outbox/对账器。
-- 任务保留周期、删除协议与合规要求。
+- 真实 Redis server Lua/网络响应丢失、真实多进程 lease/heartbeat 竞争。
+- OS SIGKILL 和阻塞外部 I/O 线程硬终止；只能 fencing/handoff。
+- 延迟指数退避、DLQ 查看/重放、任务优先级与公平调度。
+- attempt 隔离产物、outbox/reconciliation 和跨存储对账。
+- 多机共享 checkpoint/产物存储、任务保留/删除与合规协议。
+- 真实模型与 Live Eval 未验证。

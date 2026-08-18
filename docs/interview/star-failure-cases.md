@@ -22,11 +22,11 @@ TechScout 是异步长任务。即使是本地单进程，Web 刷新或进程退
 
 ### R — Result
 
-已实现的确定性测试证明该本地恢复路径可工作，Trace/事件能显示恢复。结果不能外推为多 Worker exactly-once；当前没有 lease owner，也没有生产故障次数或 MTTR 数据。
+基线确定性测试证明本地 checkpoint 恢复路径可工作。PR #102 最终 head `595b506` 又通过独立复审验证 owner tuple fencing、duplicate ack、expired takeover 和 ambiguous-success 恢复；原始重放最终 `completed`，旧 owner 被拒绝。
 
 ### 追问诚实边界
 
-如果进程死在 Trace seal 与 registry 终态之间，仍有跨存储不一致窗口。下一步要用 attempt 隔离、fencing token 和 reconciliation，而不是声称已完全解决。
+如果进程死在 Trace seal 与 Registry 终态之间，仍有跨存储不一致窗口。PR #102 已用 owner tuple CAS 拒绝旧 owner 的 Registry 写入，但文件产物与 SQLite 仍没有跨资源事务；仍需 attempt 隔离、条件提升和 reconciliation。
 
 ## STAR 2：PoC 首次失败，只恢复失败阶段
 
@@ -52,7 +52,7 @@ TechScout 是异步长任务。即使是本地单进程，Web 刷新或进程退
 
 ### 追问诚实边界
 
-当前事实基线的恢复预算主要在 Harness 内；分布式 Worker 的基础设施 retry、backoff 和 DLQ 正在本轮实现中但尚未验证，不能混为一谈。
+已合并基线的恢复预算主要在 Harness 内。PR #102 的 Worker retry/DLQ、取消/超时优先和 duplicate delivery 已通过离线/确定性独立复审；真实 Redis 与多进程仍未验证。
 
 ## STAR 3：外部验证能力缺失时 fail closed
 

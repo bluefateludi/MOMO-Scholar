@@ -1,83 +1,71 @@
 # 后端可靠性架构
 
-## 1. 范围与结论
+## 1. 权威与结论
 
-事实基线为 `750b17a`。当前 TechScout 是可恢复的本地单进程垂直切片，不是分布式任务平台。本轮文档计划保留现有 API 与 Harness 边界，在未来实现中用 Redis Worker/lease 替换进程内调度；本轮不修改生产代码。
+- 已合并事实基线：`750b17a`。
+- 未合并实现权威：Draft PR #102，精确 head `595b506501b1b893b33845e50b17fc06ae267e75`。
+- 最终离线/确定性独立复审 Standards/Spec 均 Pass、0 阻断；PR 尚未合并、未上线，也未运行真实 Redis server 集成。
 
-## 2. 已实现
+SQLite WAL `RunRegistry` 仍是任务状态权威。默认本地模式使用 InMemory dispatch 和嵌入式 Worker；可选模式用 Redis 做 dispatch、lease、heartbeat、rate limit、reaper 与 dead-letter routing，并通过独立 `techscout-worker` 进程执行。Redis key 不是 run 状态或业务产物权威。
+
+## 2. 已实现（基线）
+
+`750b17a` 已实现 FastAPI、SQLite WAL registry、append-only events、单后台线程、Harness checkpoint、stage workspace、失败投影、sealed Trace 和确定性 gate。产物/Trace 先发布，随后在 SQLite 事务中提交 projection path、终态和终态事件；文件系统与 SQLite 之间仍没有跨资源事务。
+
+## 3. PR #102 已实现并通过独立复审
 
 ```mermaid
 flowchart LR
     UI["React UI"] --> API["FastAPI /api/v2/runs"]
-    API --> REG["SQLite WAL run registry"]
-    API --> EVENT["append-only run_events"]
-    API --> EXEC["TechScoutSingleRunExecutor"]
-    EXEC --> THREAD["one daemon worker thread"]
-    THREAD --> ENGINE["TechScoutRunEngine"]
-    ENGINE --> HARNESS["bounded TechScoutHarness"]
-    HARNESS <--> CHECKPOINT["SQLite harness checkpoints"]
-    ENGINE --> WORKSPACE["stage-workspace.json + backup"]
-    ENGINE --> ARTIFACTS["report / manifest / projection"]
-    ENGINE --> TRACE["sealed JSONL Trace"]
-    ARTIFACTS --> REG
+    API --> REG["SQLite WAL RunRegistry\nstatus authority"]
+    API --> LOCAL["Default: InMemoryRunQueue"]
+    API -. "optional dispatch" .-> REDIS["RedisRunQueue"]
+    LOCAL --> EMBEDDED["embedded TechScoutWorker"]
+    REDIS --> EXTERNAL["techscout-worker process"]
+    EMBEDDED --> ENGINE["TechScoutRunEngine"]
+    EXTERNAL --> ENGINE
+    ENGINE --> HARNESS["bounded Harness + checkpoints"]
+    ENGINE --> ARTIFACTS["artifacts + sealed Trace"]
+    ENGINE --> REG
 ```
 
-当前可靠性边界：
+已验收的代码面：
 
-- `RunRegistry` 使用 SQLite WAL、`busy_timeout=5000` 和短事务；准入时在同一事务写 run 与首个事件。
-- `claim_oldest_techscout` 通过 `BEGIN IMMEDIATE` 和条件更新实现单库内原子 claim，并拒绝在已有 `running` run 时再 claim。
-- `TechScoutSingleRunExecutor` 只有一个进程内后台线程；Web 服务器固定 `workers=1`。
-- Harness checkpoint 与 Web registry 分库/分文件保存；`stage-workspace.json` 使用临时文件、`fsync`、原子替换，并保留一个 backup。
-- 执行完成时先写产物、记录并封存 Trace，随后把 `projection_path`、终态状态和终态事件写入同一 SQLite 事务。
-- 执行异常会尝试生成失败投影与失败 manifest；若终态发布本身失败，最后兜底把仍为 `running` 的 run 标为 `failed`，释放本地队列。
-- Web API 有统一错误 envelope、安全响应头、请求体大小与同源限制；默认仅监听 loopback，且没有认证。
+- `RunQueue` 接口和确定性 `InMemoryRunQueue`；默认体验仍是单进程嵌入式 Worker。
+- `RedisRunQueue` 使用 Lua 原子维护 pending/processing、lease token、expiry、heartbeat、ack/retry、reaper、rate limit 与 dead-letter 数据。
+- API 可通过 `--redis-url` 关闭嵌入式 Worker；`techscout-worker` 使用相同 Registry/output root 运行独立执行进程。
+- Registry 事务化保存 idempotency key/request hash、deadline、attempt count、cancel intent、worker ID、错误 kind/code 和扩展终态。
+- 相同 idempotency key + 相同请求返回同一 run；请求摘要不同返回 `idempotency_conflict`。
+- queued/running 取消、Fast/Verified deadline、transient retry/DLQ 和 `timed_out` 终态。
+- `/health/live`、`/health/ready`、`X-Request-ID`、上下文结构化日志和 credential/token 脱敏已实现。
+- SIGINT/SIGTERM 停止进程入口并等待当前有界工作结束。
 
-## 3. 当前故障域与一致性窗口
+最终验收记录：聚焦 `19 passed`、Web `82 passed`、TechScout `125 passed / 2 skipped`，secret canary、Ruff、OpenAPI/TypeScript 合同和 Web build 通过。
 
-| 故障点 | 当前行为 | 限制 |
-|---|---|---|
-| Web 进程退出 | 下次启动把 `queued/running` TechScout run 重新置为 `queued` | 没有 lease；无法区分仍存活的远端执行者 |
-| stage 中断 | 若 workspace/checkpoint 已落盘，则 Harness 可恢复 | 恢复粒度受最近一次 checkpoint 约束 |
-| 产物已写、registry 未终态 | 下次会重新入队并重新进入引擎 | 存在重复执行/覆盖中断 Trace 的窗口 |
-| registry 终态事务 | 状态与终态事件一起提交 | 产物文件与 SQLite 不是一个原子事务 |
-| 多进程同时启动 | TechScout executor 本身没有跨进程 owner lease | 当前依赖单 Uvicorn worker 与本地部署约束 |
-| SQLite 或磁盘不可写 | 请求或终态发布失败 | 无外部队列/DLQ；需要人工检查磁盘和数据库 |
+## 4. 一致性语义
 
-## 4. 本轮计划：目标分层
+- Worker delivery 明确为 **at least once**，不宣称 exactly once。
+- Registry 的条件 claim 拒绝重复执行已经非 queued 的 run；Redis 只负责投递协调。
+- Redis lease token 会校验 heartbeat、ack、retry、dead-letter 和 reaper 的队列变更。
+- worker ID、lease token、absolute lease expiry 和单调 fencing token 写入 Registry；heartbeat/progress/failure/terminal 通过完整 owner tuple CAS。
+- 取消/deadline 终态优先级、duplicate ack、每请求 readiness、queue failure supervision/backoff 和 fatal worker exit 已通过确定性复审。
+- Redis reaper 已提交但响应丢失时，新 delivery 仅能在 Registry lease expiry 后原子 takeover；ambiguous-success 原始重放最终 `completed`，旧 owner 被 fencing 拒绝。
+- shutdown 无法安全硬终止阻塞的 Python 外部 I/O 线程；PR #102 采用有限 grace 后 fencing/handoff，并暴露 `active_external_io_not_terminated` limitation。
+- 真实 Redis server、API/Worker 多进程竞态、网络分区和 Redis 重启未实际集成验证。
 
-```mermaid
-flowchart LR
-    API["Stateless API"] --> REDIS["Redis task queue + lease state"]
-    WORKER1["Worker A"] <--> REDIS
-    WORKER2["Worker B"] <--> REDIS
-    WORKER1 --> ENGINE["Existing RunEngine/Harness"]
-    WORKER2 --> ENGINE
-    ENGINE --> STORE["Durable artifact store"]
-    ENGINE --> SQL["Durable run projection/event store"]
-    REAPER["Lease reaper"] --> REDIS
-```
+## 5. 未实现或未验证
 
-计划遵守以下模块边界：
-
-- API 只负责校验、幂等准入、查询和取消意图，不在请求线程内执行任务。
-- Redis 只拥有调度态、lease 与短期去重，不成为报告、Trace 或业务事实的唯一持久化来源。
-- Worker 通过现有 `TechScoutRunEngine`/Harness 接口执行，不让调度协议渗入确定性阶段逻辑。
-- 运行投影、事件和产物仍需持久化；最终采用何种数据库/对象存储尚未实现，也未在本文宣称已选型上线。
-- claim、续租、完成和失败必须校验 fencing token，阻止过期 Worker 覆盖新 owner 的结果。
-
-## 5. 未实现
-
-- Redis 拓扑、高可用、持久化参数与容量验证。
-- 独立 Worker 服务、水平扩容、优先级队列和公平调度。
-- lease/heartbeat/reaper、fencing token、延迟重试和 dead-letter queue。
-- 跨存储原子提交、outbox/inbox 或事务消息。
-- 取消、暂停、人工重放、租户配额、认证授权和审计主体。
-- 生产 SLO、告警阈值、容量数字或灾备目标；这些只能在部署与演练后确定。
+- 真实 Redis server 集成测试、Redis Cluster/Sentinel、TLS/ACL、持久化与容量验证。
+- 真实 Redis Lua 执行、网络响应丢失和真实 API/Worker 多进程竞争；当前证据来自确定性 adapter/重放。
+- OS SIGKILL 与阻塞外部 I/O 的硬终止；Python 线程只能 fencing/handoff，不能安全 hard-kill。
+- 产物存储与 SQLite 的跨资源原子提交。
+- 多机共享 checkpoint/产物存储、跨主机部署和故障转移。
+- DLQ 管理/重放 CLI、延迟指数退避、公平优先级和租户配额。
+- 认证、多租户隔离、生产 SLO、告警、备份恢复和灾备目标。
+- 真实模型效果与 Live Eval；不从 synthetic 或可靠性测试推断模型质量。
 
 ## 6. 代码事实入口
 
-- `paper_agent/web/registry.py`：SQLite schema、准入、claim、事件与终态事务。
-- `paper_agent/web/techscout_execution.py`：单线程执行、checkpoint 恢复、失败投影与发布顺序。
-- `paper_agent/web/app.py`：进程内组合、异常处理与安全边界。
-- `paper_agent/web_server.py`：单 worker 与 loopback 默认值。
-- `tests/web/test_registry.py`、`tests/web/test_techscout_wave2_e2e.py`：并发准入、队列释放与 checkpoint 恢复的确定性验证。
+- PR #102：`paper_agent/web/task_queue.py`、`worker.py`、`techscout_worker.py`、`registry.py`、`errors.py`、`structured_logging.py`、`app.py`。
+- 确定性测试：`tests/web/test_backend_reliability.py`、`test_techscout_api.py`。
+- 实现说明：PR #102 中的 `docs/techscout/backend-reliability.md`。
